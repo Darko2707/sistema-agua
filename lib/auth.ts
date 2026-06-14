@@ -7,7 +7,7 @@ export const auth = betterAuth({
   database: drizzleAdapter(db, { provider: 'pg', schema }),
   emailAndPassword: { enabled: true },
   trustedOrigins: [
-    process.env.BETTER_AUTH_URL!,
+    'https://sistema-agua.vercel.app',
     'http://localhost:3000',
   ],
 });
