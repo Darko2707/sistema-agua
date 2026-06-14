@@ -1,14 +1,41 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { authClient, useSession } from '@/lib/auth-client'
 import { useRouter } from 'next/navigation'
+
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 
-const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
-               'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+import {
+  Droplets,
+  CreditCard,
+  LogOut,
+  CheckCircle2,
+  AlertTriangle,
+} from 'lucide-react'
+
+const MESES = [
+  'Enero',
+  'Febrero',
+  'Marzo',
+  'Abril',
+  'Mayo',
+  'Junio',
+  'Julio',
+  'Agosto',
+  'Septiembre',
+  'Octubre',
+  'Noviembre',
+  'Diciembre',
+]
 
 type Pago = {
   id: string
@@ -22,73 +49,165 @@ type Pago = {
 
 export default function ResidentePage() {
   const router = useRouter()
-  const { data: session, isPending } = useSession()
-  const [datos, setDatos] = useState<{ perfil: any; pagos: Pago[]; corteActivo: boolean } | null>(null)
-  const [cargando, setCargando] = useState(true)
-  const [pagando, setPagando] = useState(false)
-  const [exito, setExito] = useState<{ folio: string; monto: string } | null>(null)
-  const [error, setError] = useState('')
+
+  const {
+    data: session,
+    isPending,
+  } = useSession()
+
+  const [datos, setDatos] = useState<{
+    perfil: any
+    pagos: Pago[]
+    corteActivo: boolean
+  } | null>(null)
+
+  const [cargando, setCargando] =
+    useState(true)
+
+  const [pagando, setPagando] =
+    useState(false)
+
+  const [exito, setExito] =
+    useState<{
+      folio: string
+      monto: string
+    } | null>(null)
+
+  const [error, setError] =
+    useState('')
 
   const ahora = new Date()
-  const mesActual  = ahora.getMonth() + 1
-  const anioActual = ahora.getFullYear()
+  const mesActual =
+    ahora.getMonth() + 1
+  const anioActual =
+    ahora.getFullYear()
 
   async function cargarDatos() {
-    const res = await fetch('/api/trpc/pagos.miHistorial?batch=1&input=' +
-      encodeURIComponent(JSON.stringify({ '0': { json: undefined } })))
+    const res = await fetch(
+      '/api/trpc/pagos.miHistorial?batch=1&input=' +
+        encodeURIComponent(
+          JSON.stringify({
+            '0': {
+              json: undefined,
+            },
+          }),
+        ),
+    )
+
     if (res.ok) {
-      const json = await res.json()
-      setDatos(json?.[0]?.result?.data ?? null)
+      const json =
+        await res.json()
+
+      setDatos(
+        json?.[0]?.result?.data ??
+          null,
+      )
     }
+
     setCargando(false)
   }
 
-  useEffect(() => { cargarDatos() }, [])
+  useEffect(() => {
+    cargarDatos()
+  }, [])
 
-  const yaPagoEsteMes = datos?.pagos.some(
-    p => p.mes === mesActual && p.anio === anioActual && p.estado === 'pagado'
-  )
+  async function salir() {
+    await authClient.signOut()
+    router.push('/login')
+  }
 
-  const montoAPagar = datos?.corteActivo ? '350.00' : '50.00'
+  const yaPagoEsteMes =
+    datos?.pagos.some(
+      (p) =>
+        p.mes === mesActual &&
+        p.anio === anioActual &&
+        p.estado === 'pagado',
+    )
+
+  const montoAPagar =
+    datos?.corteActivo
+      ? '350.00'
+      : '50.00'
 
   async function handlePagar() {
     setPagando(true)
     setError('')
 
-    const res = await fetch('/api/trpc/pagos.pagar?batch=1', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ '0': { json: { metodo: 'transferencia' } } }),
-    })
+    const res = await fetch(
+      '/api/trpc/pagos.pagar?batch=1',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type':
+            'application/json',
+        },
+        body: JSON.stringify({
+          '0': {
+            json: {
+              metodo:
+                'transferencia',
+            },
+          },
+        }),
+      },
+    )
 
-    const json = await res.json()
+    const json =
+      await res.json()
 
     if (!res.ok) {
-      const msg = json?.[0]?.error?.json?.message ?? 'No se pudo procesar el pago'
+      const msg =
+        json?.[0]?.error?.json
+          ?.message ??
+        'No se pudo procesar el pago'
+
       setError(msg)
       setPagando(false)
       return
     }
 
-    const data = json?.[0]?.result?.data
-    setExito({ folio: data.folio, monto: data.monto })
+    const data =
+      json?.[0]?.result?.data
+
+    setExito({
+      folio: data.folio,
+      monto: data.monto,
+    })
+
     setPagando(false)
+
     await cargarDatos()
   }
 
-  if (isPending || cargando) return (
-    <div className="min-h-screen flex items-center justify-center">
-      <p className="text-muted-foreground text-sm">Cargando...</p>
-    </div>
-  )
+  if (isPending || cargando) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p className="text-muted-foreground">
+          Cargando...
+        </p>
+      </div>
+    )
+  }
 
   if (!datos?.perfil) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-muted/40 p-4">
-        <Card className="w-full max-w-sm text-center">
-          <CardContent className="pt-6 space-y-3">
-            <p className="text-sm">No encontramos tu perfil de residente.</p>
-            <Button onClick={() => router.push('/registro')}>Completar registro</Button>
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardContent className="space-y-4 pt-6 text-center">
+            <p>
+              No encontramos tu
+              perfil de residente.
+            </p>
+
+            <Button
+              onClick={() =>
+                router.push(
+                  '/registro',
+                )
+              }
+            >
+              Completar registro
+            </Button>
           </CardContent>
         </Card>
       </div>
@@ -96,117 +215,304 @@ export default function ResidentePage() {
   }
 
   return (
-    <div className="min-h-screen bg-muted/40 p-4">
-      <div className="mx-auto max-w-lg space-y-4">
+    <div className="min-h-screen bg-slate-50 p-4 md:p-8">
+      <div className="mx-auto max-w-6xl space-y-6">
+        {/* Header */}
+        <div className="rounded-3xl bg-gradient-to-r from-sky-600 to-cyan-600 p-6 text-white shadow-lg">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h1 className="text-3xl font-bold">
+                Mi Cuenta de Agua
+              </h1>
 
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-semibold">Mi cuenta de agua</h1>
-            <p className="text-sm text-muted-foreground">
-              {session?.user?.name} · {datos.perfil.edificio}, {datos.perfil.departamento}
-            </p>
+              <p className="mt-2 text-sky-100">
+                {
+                  session?.user
+                    ?.name
+                }{' '}
+                ·{' '}
+                {
+                  datos.perfil
+                    .edificio
+                }
+                ,{' '}
+                {
+                  datos.perfil
+                    .departamento
+                }
+              </p>
+            </div>
+
+            <Button
+              variant="secondary"
+              onClick={salir}
+            >
+              <LogOut className="mr-2 h-4 w-4" />
+              Salir
+            </Button>
           </div>
-          <Button variant="ghost" size="sm"
-            onClick={async () => { await authClient.signOut(); router.push('/login') }}>
-            Salir
-          </Button>
         </div>
 
         {datos.corteActivo && (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-center">
-            <p className="text-sm font-medium text-red-800">⚠ Tu servicio está cortado</p>
-            <p className="text-xs text-red-600 mt-1">
-              Paga $50 (mensualidad) + $300 (reconexión) = $350 para restablecer el servicio
-            </p>
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-5">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-6 w-6 text-red-600" />
+
+              <div>
+                <p className="font-semibold text-red-700">
+                  Tu servicio está
+                  suspendido
+                </p>
+
+                <p className="mt-1 text-sm text-red-600">
+                  Debes pagar
+                  $350.00 MXN
+                  ($50 de
+                  mensualidad +
+                  $300 de
+                  reconexión).
+                </p>
+              </div>
+            </div>
           </div>
         )}
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              {MESES[mesActual - 1]} {anioActual}
-            </CardTitle>
-            <CardDescription>Mes actual</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Estado del pago</span>
-              <Badge variant={yaPagoEsteMes ? 'default' : 'destructive'}>
-                {yaPagoEsteMes ? 'Pagado' : 'Pendiente'}
-              </Badge>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Monto a pagar</span>
-              <span className="font-semibold">${montoAPagar} MXN</span>
-            </div>
+        <div className="grid gap-6 lg:grid-cols-3">
+          {/* Pago */}
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle>
+                {
+                  MESES[
+                    mesActual -
+                      1
+                  ]
+                }{' '}
+                {anioActual}
+              </CardTitle>
 
-            {!yaPagoEsteMes && !exito && (
-              <Button className="w-full" onClick={handlePagar} disabled={pagando}>
-                {pagando ? 'Procesando...' : `Pagar $${montoAPagar}`}
-              </Button>
-            )}
+              <CardDescription>
+                Estado del mes
+                actual
+              </CardDescription>
+            </CardHeader>
 
-            {error && <p className="text-sm text-destructive">{error}</p>}
+            <CardContent className="space-y-5">
+              <div className="flex items-center justify-between">
+                <span>
+                  Estado
+                </span>
 
-            {exito && (
-              <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-center">
-                <p className="text-sm font-medium text-green-800">¡Pago registrado!</p>
-                <p className="text-xs text-green-600 mt-1">Folio: {exito.folio}</p>
-                <p className="text-xs text-green-600">Monto: ${exito.monto} MXN</p>
-                <p className="text-xs text-green-600">Recibirás tu comprobante por correo</p>
+                <Badge
+                  variant={
+                    yaPagoEsteMes
+                      ? 'default'
+                      : 'destructive'
+                  }
+                >
+                  {yaPagoEsteMes
+                    ? 'Pagado'
+                    : 'Pendiente'}
+                </Badge>
               </div>
-            )}
-          </CardContent>
-        </Card>
 
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100">
-                <span className="text-xl">💧</span>
-              </div>
-              <div>
-                <p className="text-sm font-medium">Servicio de agua</p>
-                <p className={`text-xs font-medium ${datos.corteActivo ? 'text-destructive' : 'text-green-600'}`}>
-                  {datos.corteActivo ? 'Cortado' : 'Activo'}
-                </p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+              <div className="flex items-center justify-between">
+                <span>
+                  Monto a pagar
+                </span>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Historial de pagos</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-2">
-              {datos.pagos.length === 0 && (
-                <p className="text-sm text-muted-foreground text-center py-4">
-                  Sin pagos registrados
-                </p>
-              )}
-              {datos.pagos.map((p) => (
-                <div key={p.id} className="flex items-center justify-between rounded-lg border p-3">
-                  <div>
-                    <p className="text-sm font-medium">{MESES[p.mes - 1]} {p.anio}</p>
-                    {p.folio && <p className="text-xs text-muted-foreground">{p.folio}</p>}
-                    {p.esReconexion && (
-                      <p className="text-xs text-amber-600">Incluye reconexión</p>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm">${p.monto}</span>
-                    <Badge variant={p.estado === 'pagado' ? 'default' : 'destructive'}>
-                      {p.estado}
-                    </Badge>
-                  </div>
+                <span className="text-2xl font-bold">
+                  $
+                  {
+                    montoAPagar
+                  }{' '}
+                  MXN
+                </span>
+              </div>
+
+              {!yaPagoEsteMes &&
+                !exito && (
+                  <Button
+                    className="w-full h-12"
+                    onClick={
+                      handlePagar
+                    }
+                    disabled={
+                      pagando
+                    }
+                  >
+                    <CreditCard className="mr-2 h-4 w-4" />
+
+                    {pagando
+                      ? 'Procesando...'
+                      : `Pagar $${montoAPagar}`}
+                  </Button>
+                )}
+
+              {error && (
+                <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+                  {error}
                 </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+              )}
 
+              {exito && (
+                <div className="rounded-xl border border-green-200 bg-green-50 p-5 text-center">
+                  <CheckCircle2 className="mx-auto mb-3 h-10 w-10 text-green-600" />
+
+                  <p className="font-semibold text-green-700">
+                    Pago registrado
+                    correctamente
+                  </p>
+
+                  <p className="mt-3 text-sm">
+                    Folio:{' '}
+                    <span className="font-bold">
+                      {
+                        exito.folio
+                      }
+                    </span>
+                  </p>
+
+                  <p className="text-sm">
+                    Monto:{' '}
+                    <span className="font-bold">
+                      $
+                      {
+                        exito.monto
+                      }{' '}
+                      MXN
+                    </span>
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Servicio */}
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center gap-4">
+                <div
+                  className={`flex h-14 w-14 items-center justify-center rounded-2xl ${
+                    datos.corteActivo
+                      ? 'bg-red-100'
+                      : 'bg-green-100'
+                  }`}
+                >
+                  <Droplets
+                    className={`h-7 w-7 ${
+                      datos.corteActivo
+                        ? 'text-red-600'
+                        : 'text-green-600'
+                    }`}
+                  />
+                </div>
+
+                <div>
+                  <p className="font-semibold">
+                    Servicio de
+                    agua
+                  </p>
+
+                  <p
+                    className={`text-sm ${
+                      datos.corteActivo
+                        ? 'text-red-600'
+                        : 'text-green-600'
+                    }`}
+                  >
+                    {datos.corteActivo
+                      ? 'Suspendido'
+                      : 'Activo'}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Historial */}
+          <Card className="lg:col-span-3">
+            <CardHeader>
+              <CardTitle>
+                Historial de
+                pagos
+              </CardTitle>
+            </CardHeader>
+
+            <CardContent>
+              <div className="space-y-3">
+                {datos.pagos
+                  .length ===
+                  0 && (
+                  <p className="py-10 text-center text-muted-foreground">
+                    Sin pagos
+                    registrados.
+                  </p>
+                )}
+
+                {datos.pagos.map(
+                  (p) => (
+                    <div
+                      key={p.id}
+                      className="flex flex-col gap-4 rounded-xl border p-4 md:flex-row md:items-center md:justify-between"
+                    >
+                      <div>
+                        <p className="font-medium">
+                          {
+                            MESES[
+                              p.mes -
+                                1
+                            ]
+                          }{' '}
+                          {
+                            p.anio
+                          }
+                        </p>
+
+                        {p.folio && (
+                          <p className="text-sm text-muted-foreground">
+                            {
+                              p.folio
+                            }
+                          </p>
+                        )}
+
+                        {p.esReconexion && (
+                          <p className="text-sm text-amber-600">
+                            Incluye
+                            reconexión
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        <span className="font-semibold">
+                          $
+                          {
+                            p.monto
+                          }
+                        </span>
+
+                        <Badge
+                          variant={
+                            p.estado ===
+                            'pagado'
+                              ? 'default'
+                              : 'destructive'
+                          }
+                        >
+                          {
+                            p.estado
+                          }
+                        </Badge>
+                      </div>
+                    </div>
+                  ),
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   )

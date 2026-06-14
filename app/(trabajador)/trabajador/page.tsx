@@ -1,11 +1,25 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { authClient, useSession } from '@/lib/auth-client'
 import { useRouter } from 'next/navigation'
+
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+
+import {
+  LogOut,
+  Scissors,
+  RotateCcw,
+  Droplets,
+  AlertTriangle,
+} from 'lucide-react'
 
 type CorteActivo = {
   id: string
@@ -14,117 +28,286 @@ type CorteActivo = {
   perfil: {
     edificio: string
     departamento: string
-    circuito: { nombre: string }
-    usuario: { name: string }
+    circuito: {
+      nombre: string
+    }
+    usuario: {
+      name: string
+    }
   }
 }
 
 function trpcQueryUrl(path: string) {
-  return `/api/trpc/${path}?batch=1&input=` +
-    encodeURIComponent(JSON.stringify({ '0': { json: undefined } }))
+  return (
+    `/api/trpc/${path}?batch=1&input=` +
+    encodeURIComponent(
+      JSON.stringify({
+        '0': {
+          json: undefined,
+        },
+      }),
+    )
+  )
 }
 
 export default function TrabajadorPage() {
   const router = useRouter()
-  const { data: session, isPending } = useSession()
-  const [activos, setActivos] = useState<CorteActivo[]>([])
-  const [reconectados, setReconectados] = useState<CorteActivo[]>([])
-  const [cargando, setCargando] = useState(true)
-  const [procesando, setProcesando] = useState<string | null>(null)
+
+  const {
+    data: session,
+    isPending,
+  } = useSession()
+
+  const [activos, setActivos] =
+    useState<CorteActivo[]>([])
+
+  const [
+    reconectados,
+    setReconectados,
+  ] = useState<CorteActivo[]>([])
+
+  const [cargando, setCargando] =
+    useState(true)
+
+  const [
+    procesando,
+    setProcesando,
+  ] = useState<string | null>(null)
 
   async function cargarDatos() {
-    const [resActivos, resReconectados] = await Promise.all([
-      fetch(trpcQueryUrl('cortes.listarActivos')),
-      fetch(trpcQueryUrl('cortes.reconectadosHoy')),
+    const [
+      resActivos,
+      resReconectados,
+    ] = await Promise.all([
+      fetch(
+        trpcQueryUrl(
+          'cortes.listarActivos',
+        ),
+      ),
+      fetch(
+        trpcQueryUrl(
+          'cortes.reconectadosHoy',
+        ),
+      ),
     ])
 
     if (resActivos.ok) {
-      const json = await resActivos.json()
-      setActivos(json?.[0]?.result?.data ?? [])
+      const json =
+        await resActivos.json()
+
+      setActivos(
+        json?.[0]?.result?.data ??
+          [],
+      )
     }
+
     if (resReconectados.ok) {
-      const json = await resReconectados.json()
-      setReconectados(json?.[0]?.result?.data ?? [])
+      const json =
+        await resReconectados.json()
+
+      setReconectados(
+        json?.[0]?.result?.data ??
+          [],
+      )
     }
+
     setCargando(false)
   }
 
-  useEffect(() => { cargarDatos() }, [])
+  useEffect(() => {
+    cargarDatos()
+  }, [])
 
-  async function handleReconectar(corteId: string) {
+  async function handleReconectar(
+    corteId: string,
+  ) {
     setProcesando(corteId)
 
-    await fetch('/api/trpc/cortes.confirmarReconexion?batch=1', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ '0': { json: { corteId } } }),
-    })
+    await fetch(
+      '/api/trpc/cortes.confirmarReconexion?batch=1',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type':
+            'application/json',
+        },
+        body: JSON.stringify({
+          '0': {
+            json: {
+              corteId,
+            },
+          },
+        }),
+      },
+    )
 
     await cargarDatos()
+
     setProcesando(null)
   }
 
-  if (isPending || cargando) return (
-    <div className="min-h-screen flex items-center justify-center">
-      <p className="text-muted-foreground text-sm">Cargando...</p>
-    </div>
-  )
+  async function salir() {
+    await authClient.signOut()
+    router.push('/login')
+  }
+
+  if (isPending || cargando) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <p>Cargando...</p>
+      </div>
+    )
+  }
 
   return (
-    <div className="min-h-screen bg-muted/40 p-4">
-      <div className="mx-auto max-w-2xl space-y-4">
+    <div className="min-h-screen bg-slate-50 p-4 md:p-8">
+      <div className="mx-auto max-w-6xl space-y-6">
+        {/* Header */}
+        <div className="rounded-3xl bg-gradient-to-r from-sky-600 to-cyan-600 p-6 text-white shadow-lg">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h1 className="text-3xl font-bold">
+                Cuadrilla de Cortes
+              </h1>
 
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-semibold">Cuadrilla de cortes</h1>
-            <p className="text-sm text-muted-foreground">{session?.user?.name}</p>
+              <p className="mt-2 text-sky-100">
+                {session?.user?.name}
+              </p>
+            </div>
+
+            <Button
+              variant="secondary"
+              onClick={salir}
+            >
+              <LogOut className="mr-2 h-4 w-4" />
+              Salir
+            </Button>
           </div>
-          <Button variant="ghost" size="sm"
-            onClick={async () => { await authClient.signOut(); router.push('/login') }}>
-            Salir
-          </Button>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        {/* Estadísticas */}
+        <div className="grid gap-4 md:grid-cols-2">
           <Card>
-            <CardContent className="pt-4">
-              <p className="text-2xl font-bold text-destructive">{activos.length}</p>
-              <p className="text-sm text-muted-foreground">Cortes activos</p>
+            <CardContent className="flex items-center justify-between p-5">
+              <div>
+                <p className="text-sm text-muted-foreground">
+                  Cortes activos
+                </p>
+
+                <p className="text-3xl font-bold text-red-600">
+                  {activos.length}
+                </p>
+              </div>
+
+              <Scissors className="h-8 w-8 text-red-600" />
             </CardContent>
           </Card>
+
           <Card>
-            <CardContent className="pt-4">
-              <p className="text-2xl font-bold text-green-600">{reconectados.length}</p>
-              <p className="text-sm text-muted-foreground">Reconectados hoy</p>
+            <CardContent className="flex items-center justify-between p-5">
+              <div>
+                <p className="text-sm text-muted-foreground">
+                  Reconectados hoy
+                </p>
+
+                <p className="text-3xl font-bold text-green-600">
+                  {
+                    reconectados.length
+                  }
+                </p>
+              </div>
+
+              <RotateCcw className="h-8 w-8 text-green-600" />
             </CardContent>
           </Card>
         </div>
 
+        {/* Pendientes */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Cortes pendientes de reconexión</CardTitle>
+            <CardTitle>
+              Cortes pendientes de
+              reconexión
+            </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3">
-            {activos.length === 0 && (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                Sin cortes pendientes ✓
-              </p>
+
+          <CardContent className="space-y-4">
+            {activos.length ===
+              0 && (
+              <div className="rounded-xl border border-green-200 bg-green-50 p-8 text-center">
+                <Droplets className="mx-auto mb-3 h-10 w-10 text-green-600" />
+
+                <p className="font-medium text-green-700">
+                  Sin cortes
+                  pendientes
+                </p>
+              </div>
             )}
-            {activos.map(c => (
-              <div key={c.id} className="flex items-center justify-between rounded-lg border p-3 gap-3">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{c.perfil.usuario.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {c.perfil.circuito.nombre} · {c.perfil.edificio} · {c.perfil.departamento}
-                  </p>
-                  <p className="text-xs text-muted-foreground">{c.motivo}</p>
+
+            {activos.map((c) => (
+              <div
+                key={c.id}
+                className="flex flex-col gap-4 rounded-xl border p-4 md:flex-row md:items-center md:justify-between"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="rounded-xl bg-red-100 p-3">
+                    <AlertTriangle className="h-5 w-5 text-red-600" />
+                  </div>
+
+                  <div>
+                    <p className="font-medium">
+                      {
+                        c.perfil
+                          .usuario
+                          .name
+                      }
+                    </p>
+
+                    <p className="text-sm text-muted-foreground">
+                      {
+                        c.perfil
+                          .circuito
+                          .nombre
+                      }{' '}
+                      ·{' '}
+                      {
+                        c.perfil
+                          .edificio
+                      }{' '}
+                      ·{' '}
+                      {
+                        c.perfil
+                          .departamento
+                      }
+                    </p>
+
+                    <p className="text-sm text-red-600">
+                      {c.motivo}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <Badge variant="destructive">Cortado</Badge>
-                  <Button size="sm" variant="outline"
-                    disabled={procesando === c.id}
-                    onClick={() => handleReconectar(c.id)}>
-                    {procesando === c.id ? 'Procesando...' : 'Reconectar'}
+
+                <div className="flex items-center gap-3">
+                  <Badge variant="destructive">
+                    Cortado
+                  </Badge>
+
+                  <Button
+                    variant="outline"
+                    disabled={
+                      procesando ===
+                      c.id
+                    }
+                    onClick={() =>
+                      handleReconectar(
+                        c.id,
+                      )
+                    }
+                  >
+                    {procesando ===
+                    c.id
+                      ? 'Procesando...'
+                      : 'Reconectar'}
                   </Button>
                 </div>
               </div>
@@ -132,27 +315,65 @@ export default function TrabajadorPage() {
           </CardContent>
         </Card>
 
-        {reconectados.length > 0 && (
+        {/* Reconectados */}
+        {reconectados.length >
+          0 && (
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Reconectados hoy — cobrar $300</CardTitle>
+              <CardTitle>
+                Reconectados hoy
+              </CardTitle>
+
+              <p className="text-sm text-muted-foreground">
+                Cobrar $300 MXN de
+                reconexión
+              </p>
             </CardHeader>
-            <CardContent className="space-y-2">
-              {reconectados.map(c => (
-                <div key={c.id} className="flex items-center justify-between rounded-lg border p-3">
-                  <div>
-                    <p className="text-sm font-medium">{c.perfil.usuario.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {c.perfil.circuito.nombre} · {c.perfil.edificio} · {c.perfil.departamento}
-                    </p>
+
+            <CardContent className="space-y-3">
+              {reconectados.map(
+                (c) => (
+                  <div
+                    key={c.id}
+                    className="flex flex-col gap-4 rounded-xl border p-4 md:flex-row md:items-center md:justify-between"
+                  >
+                    <div>
+                      <p className="font-medium">
+                        {
+                          c.perfil
+                            .usuario
+                            .name
+                        }
+                      </p>
+
+                      <p className="text-sm text-muted-foreground">
+                        {
+                          c.perfil
+                            .circuito
+                            .nombre
+                        }{' '}
+                        ·{' '}
+                        {
+                          c.perfil
+                            .edificio
+                        }{' '}
+                        ·{' '}
+                        {
+                          c.perfil
+                            .departamento
+                        }
+                      </p>
+                    </div>
+
+                    <Badge>
+                      Reconectado
+                    </Badge>
                   </div>
-                  <Badge variant="default">Reconectado</Badge>
-                </div>
-              ))}
+                ),
+              )}
             </CardContent>
           </Card>
         )}
-
       </div>
     </div>
   )

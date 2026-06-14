@@ -3,30 +3,41 @@
 import { authClient } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
+import { Eye, EyeOff, Droplets } from 'lucide-react';
+
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 
 export default function LoginPage() {
   const router = useRouter();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
+
     setLoading(true);
     setError('');
 
-    const { data, error: signInError } = await authClient.signIn.email({
-      email,
-      password,
-    });
-
-    console.log('data:', data);
-    console.log('error:', signInError);
+    const { data, error: signInError } =
+      await authClient.signIn.email({
+        email,
+        password,
+      });
 
     if (signInError) {
       setError('Correo o contraseña incorrectos');
@@ -35,67 +46,127 @@ export default function LoginPage() {
     }
 
     const rol = (data?.user as any)?.role;
-    console.log('rol:', rol); // También agregué este log para ver el rol
 
-    // Redirección según el rol
     if (rol === 'admin') {
       router.push('/admin');
     } else if (rol === 'representante') {
       router.push('/representante');
-    } else if (rol === 'operador_pozo' || rol === 'cuadrilla_cortes') {
+    } else if (
+      rol === 'operador_pozo' ||
+      rol === 'cuadrilla_cortes'
+    ) {
       router.push('/trabajador');
     } else {
-      // Para residentes (rol 'residente' o cualquier otro)
-      // La página /residente se encargará de redirigir a /registro si el perfil está incompleto
       router.push('/residente');
     }
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-muted/40">
-      <Card className="w-full max-w-sm">
-        <CardHeader className="text-center">
-          <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-full bg-primary">
-            <span className="text-2xl">💧</span>
+    <div className="min-h-screen bg-gradient-to-br from-sky-100 via-white to-cyan-100 flex items-center justify-center p-4">
+      <Card className="w-full max-w-md shadow-2xl border-0">
+        <CardHeader className="space-y-5 text-center">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg">
+            <Droplets className="h-8 w-8" />
           </div>
-          <CardTitle>Sistema de Agua</CardTitle>
-          <CardDescription>Fraccionamiento — Inicia sesión</CardDescription>
+
+          <div>
+            <CardTitle className="text-3xl">
+              Sistema de Agua
+            </CardTitle>
+
+            <CardDescription className="mt-2">
+              Inicia sesión para continuar
+            </CardDescription>
+          </div>
         </CardHeader>
+
         <CardContent>
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div className="space-y-1">
-              <Label htmlFor="email">Correo electrónico</Label>
+          <form
+            onSubmit={handleLogin}
+            className="space-y-5"
+          >
+            <div className="space-y-2">
+              <Label htmlFor="email">
+                Correo electrónico
+              </Label>
+
               <Input
                 id="email"
                 type="email"
                 placeholder="tu@correo.com"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) =>
+                  setEmail(e.target.value)
+                }
                 required
               />
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="password">Contraseña</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
+
+            <div className="space-y-2">
+              <Label htmlFor="password">
+                Contraseña
+              </Label>
+
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={
+                    showPassword
+                      ? 'text'
+                      : 'password'
+                  }
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) =>
+                    setPassword(
+                      e.target.value,
+                    )
+                  }
+                  required
+                />
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setShowPassword(
+                      !showPassword,
+                    )
+                  }
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                >
+                  {showPassword ? (
+                    <EyeOff size={18} />
+                  ) : (
+                    <Eye size={18} />
+                  )}
+                </button>
+              </div>
             </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'Entrando...' : 'Iniciar sesión'}
+
+            {error && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+                {error}
+              </div>
+            )}
+
+            <Button
+              type="submit"
+              className="w-full h-11"
+              disabled={loading}
+            >
+              {loading
+                ? 'Entrando...'
+                : 'Iniciar sesión'}
             </Button>
           </form>
         </CardContent>
-        <CardFooter className="flex justify-center">
+
+        <CardFooter className="justify-center">
           <Button
             variant="link"
-            onClick={() => router.push('/registro')}
-            className="text-sm text-muted-foreground"
+            onClick={() =>
+              router.push('/registro')
+            }
           >
             ¿No tienes cuenta? Regístrate
           </Button>
