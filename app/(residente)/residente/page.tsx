@@ -63,14 +63,11 @@ export default function ResidentePage() {
   } | null>(null)
 
   const [cargando, setCargando] = useState(true)
-
   const [pagando, setPagando] = useState(false)
-
   const [exito, setExito] = useState<{
     folio: string
     monto: string
   } | null>(null)
-
   const [error, setError] = useState('')
 
   const ahora = new Date()
@@ -102,16 +99,41 @@ export default function ResidentePage() {
 
   const montoAPagar = datos?.corteActivo ? '350.00' : '50.00'
 
+  // ✅ Nuevo: Pago con Stripe Checkout
   async function handlePagar() {
     setPagando(true)
     setError('')
+    setExito(null)
+    
     try {
-      const data = await trpc.pagos.pagar.mutate({ metodo: 'transferencia' })
-      setExito({ folio: data.folio, monto: data.monto })
-      await cargarDatos()
+      // Determinar el tipo de pago (normal o reconexión)
+      const esReconexion = datos?.corteActivo || false
+      
+      const res = await fetch('/api/stripe/checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          esReconexion,
+          monto: montoAPagar,
+          mes: mesActual,
+          anio: anioActual,
+        }),
+        credentials: 'include',
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || 'No se pudo iniciar el pago')
+      }
+
+      // Redirigir a Stripe Checkout
+      window.location.href = data.url
     } catch (err: any) {
-      setError(err.message ?? 'No se pudo procesar el pago')
-    } finally {
+      console.error('Error en pago:', err)
+      setError(err.message || 'No se pudo iniciar el pago')
       setPagando(false)
     }
   }
@@ -130,7 +152,6 @@ export default function ResidentePage() {
         <Card className="w-full max-w-md">
           <CardContent className="space-y-4 pt-6 text-center">
             <p>No encontramos tu perfil de residente.</p>
-
             <Button onClick={() => router.push('/registro')}>
               Completar registro
             </Button>
@@ -148,13 +169,10 @@ export default function ResidentePage() {
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <h1 className="text-3xl font-bold">Mi Cuenta de Agua</h1>
-
               <p className="mt-2 text-sky-100">
-                {session?.user?.name} · {datos.perfil.edificio},{' '}
-                {datos.perfil.departamento}
+                {session?.user?.name} · {datos.perfil.edificio}, {datos.perfil.departamento}
               </p>
             </div>
-
             <Button variant="secondary" onClick={salir}>
               <LogOut className="mr-2 h-4 w-4" />
               Salir
@@ -166,15 +184,12 @@ export default function ResidentePage() {
           <div className="rounded-2xl border border-red-200 bg-red-50 p-5">
             <div className="flex items-start gap-3">
               <AlertTriangle className="h-6 w-6 text-red-600" />
-
               <div>
                 <p className="font-semibold text-red-700">
                   Tu servicio está suspendido
                 </p>
-
                 <p className="mt-1 text-sm text-red-600">
-                  Debes pagar $350.00 MXN ($50 de mensualidad + $300 de
-                  reconexión).
+                  Debes pagar $350.00 MXN ($50 de mensualidad + $300 de reconexión).
                 </p>
               </div>
             </div>
@@ -188,14 +203,12 @@ export default function ResidentePage() {
               <CardTitle>
                 {MESES[mesActual - 1]} {anioActual}
               </CardTitle>
-
               <CardDescription>Estado del mes actual</CardDescription>
             </CardHeader>
 
             <CardContent className="space-y-5">
               <div className="flex items-center justify-between">
                 <span>Estado</span>
-
                 <Badge variant={yaPagoEsteMes ? 'default' : 'destructive'}>
                   {yaPagoEsteMes ? 'Pagado' : 'Pendiente'}
                 </Badge>
@@ -203,7 +216,6 @@ export default function ResidentePage() {
 
               <div className="flex items-center justify-between">
                 <span>Monto a pagar</span>
-
                 <span className="text-2xl font-bold">${montoAPagar} MXN</span>
               </div>
 
@@ -214,8 +226,7 @@ export default function ResidentePage() {
                   disabled={pagando}
                 >
                   <CreditCard className="mr-2 h-4 w-4" />
-
-                  {pagando ? 'Procesando...' : `Pagar $${montoAPagar}`}
+                  {pagando ? 'Redirigiendo a Stripe...' : `Pagar $${montoAPagar} con Stripe`}
                 </Button>
               )}
 
@@ -228,15 +239,12 @@ export default function ResidentePage() {
               {exito && (
                 <div className="rounded-xl border border-green-200 bg-green-50 p-5 text-center">
                   <CheckCircle2 className="mx-auto mb-3 h-10 w-10 text-green-600" />
-
                   <p className="font-semibold text-green-700">
                     Pago registrado correctamente
                   </p>
-
                   <p className="mt-3 text-sm">
                     Folio: <span className="font-bold">{exito.folio}</span>
                   </p>
-
                   <p className="text-sm">
                     Monto: <span className="font-bold">${exito.monto} MXN</span>
                   </p>
@@ -260,10 +268,8 @@ export default function ResidentePage() {
                     }`}
                   />
                 </div>
-
                 <div>
                   <p className="font-semibold">Servicio de agua</p>
-
                   <p
                     className={`text-sm ${
                       datos.corteActivo ? 'text-red-600' : 'text-green-600'
@@ -281,7 +287,6 @@ export default function ResidentePage() {
             <CardHeader>
               <CardTitle>Historial de pagos</CardTitle>
             </CardHeader>
-
             <CardContent>
               <div className="space-y-3">
                 {datos.pagos.length === 0 && (
@@ -289,7 +294,6 @@ export default function ResidentePage() {
                     Sin pagos registrados.
                   </p>
                 )}
-
                 {datos.pagos.map((p) => (
                   <div
                     key={p.id}
@@ -299,23 +303,19 @@ export default function ResidentePage() {
                       <p className="font-medium">
                         {MESES[p.mes - 1]} {p.anio}
                       </p>
-
                       {p.folio && (
                         <p className="text-sm text-muted-foreground">
                           {p.folio}
                         </p>
                       )}
-
                       {p.esReconexion && (
                         <p className="text-sm text-amber-600">
                           Incluye reconexión
                         </p>
                       )}
                     </div>
-
                     <div className="flex items-center gap-3">
                       <span className="font-semibold">${p.monto}</span>
-
                       <Badge
                         variant={p.estado === 'pagado' ? 'default' : 'destructive'}
                       >
