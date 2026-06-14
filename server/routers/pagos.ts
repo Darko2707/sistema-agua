@@ -1,17 +1,19 @@
 import { router, protectedProcedure, roleProcedure } from '../trpc';
 import { z } from 'zod';
 import { db } from '@/db';
-import { pagos, perfilesResidente, cortes } from '@/db/schema';
+import { pagos, perfilesResidente, cortes, tickets } from '@/db/schema';
 import { nanoid } from 'nanoid';
 import { eq, and } from 'drizzle-orm';
-import { ticketQueue } from '@/server/queues';
 import { TRPCError } from '@trpc/server';
+import { generarTicketPDF } from '@/lib/ticket';
+import { subirPDF } from '@/lib/storage';
+import { Resend } from 'resend';
 
 const MONTO_MENSUAL = '50.00';
 const MONTO_RECONEXION = '300.00';
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 export const pagosRouter = router({
-  // Historial del residente autenticado
   miHistorial: protectedProcedure.query(async ({ ctx }) => {
     const perfil = await db.query.perfilesResidente.findFirst({
       where: (p, { eq }) => eq(p.userId, ctx.user.id),
@@ -31,7 +33,6 @@ export const pagosRouter = router({
     return { perfil, pagos: historial, corteActivo: !!corteActivo };
   }),
 
-  // Pagar mensualidad (y reconexión si está cortado)
   pagar: protectedProcedure
     .input(z.object({ metodo: z.enum(['transferencia', 'efectivo']) }))
     .mutation(async ({ ctx, input }) => {
@@ -44,14 +45,12 @@ export const pagosRouter = router({
       const mes = ahora.getMonth() + 1;
       const anio = ahora.getFullYear();
 
-      // Ya pagó este mes?
       const yaPago = await db.query.pagos.findFirst({
         where: (p, { eq, and }) =>
           and(eq(p.perfilId, perfil.id), eq(p.mes, mes), eq(p.anio, anio), eq(p.estado, 'pagado')),
       });
       if (yaPago) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Ya pagaste este mes' });
 
-      // Corte activo?
       const corteActivo = await db.query.cortes.findFirst({
         where: (c, { eq, and }) => and(eq(c.perfilId, perfil.id), eq(c.activo, true)),
       });
@@ -63,7 +62,7 @@ export const pagosRouter = router({
 
       const folio = `AGU-${nanoid(10).toUpperCase()}`;
 
-      // Usar transacción para garantizar consistencia
+      // Transacción para guardar pago y actualizar corte
       const result = await db.transaction(async (tx) => {
         const [pago] = await tx
           .insert(pagos)
@@ -95,17 +94,43 @@ export const pagosRouter = router({
         return pago;
       });
 
-      // Encolar generación de ticket (no dentro de la transacción)
-      await ticketQueue.add('generar', {
+      // === Procesamiento sincrónico del ticket ===
+      // Obtener el usuario (para el nombre)
+      const usuario = await db.query.user.findFirst({
+        where: (u, { eq }) => eq(u.id, ctx.user.id),
+      });
+
+      // Generar PDF
+      const pdfBuffer = await generarTicketPDF({
+        folio,
+        nombre: usuario?.name ?? 'Residente',
+        mes,
+        anio,
+        monto,
+      });
+
+      // Subir a Supabase
+      const pdfUrl = await subirPDF(folio, pdfBuffer);
+
+      // Guardar ticket en base de datos
+      await db.insert(tickets).values({
         pagoId: result.id,
         folio,
-        email: ctx.user.email,
+        pdfUrl,
+      });
+
+      // Enviar email con Resend
+      await resend.emails.send({
+        from: 'Agua Fraccionamiento <no-reply@tudominio.com>', // Cambia por dominio verificado en Resend
+        to: ctx.user.email,
+        subject: `Comprobante de pago ${folio}`,
+        html: `<h1>Pago registrado</h1><p>Folio: ${folio}</p><p>Monto: $${monto}</p><p>Adjunto encontrarás tu comprobante.</p>`,
+        attachments: [{ filename: `${folio}.pdf`, content: pdfBuffer }],
       });
 
       return { folio, monto, esReconexion };
     }),
 
-  // Admin/representante: historial de un perfil específico
   historialDe: roleProcedure('admin', 'representante')
     .input(z.object({ perfilId: z.string().uuid() }))
     .query(async ({ input }) => {
@@ -115,7 +140,6 @@ export const pagosRouter = router({
       });
     }),
 
-  // Resumen del mes para dashboards
   resumenMes: roleProcedure('admin', 'representante').query(async ({ ctx }) => {
     const ahora = new Date();
     const mes = ahora.getMonth() + 1;
@@ -129,9 +153,7 @@ export const pagosRouter = router({
       const miCircuito = await db.query.circuitos.findFirst({
         where: (c, { eq }) => eq(c.representanteId, ctx.user.id),
       });
-      if (!miCircuito) {
-        return { totalDeptos: 0, pagados: 0, recaudado: 0, porCircuito: [] };
-      }
+      if (!miCircuito) return { totalDeptos: 0, pagados: 0, recaudado: 0, porCircuito: [] };
       perfiles = await db.query.perfilesResidente.findMany({
         where: (p, { eq }) => eq(p.circuitoId, miCircuito.id),
         with: { circuito: true },
@@ -148,7 +170,6 @@ export const pagosRouter = router({
       .filter((p) => perfiles.some((perf) => perf.id === p.perfilId))
       .reduce((acc, p) => acc + parseFloat(p.monto), 0);
 
-    // Agrupar por circuito (solo para admin)
     const porCircuitoMap = new Map<string, { nombre: string; total: number; pagados: number }>();
     for (const perfil of perfiles) {
       const nombre = perfil.circuito?.nombre ?? 'Sin circuito';

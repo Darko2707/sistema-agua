@@ -1,24 +1,22 @@
-import { db } from '@/db'
-import { tickets, pagos, departamentos, usuarios } from '@/db/schema'
-import { eq } from 'drizzle-orm'
+import { db } from '@/db';
+import { tickets, pagos, perfilesResidente, user } from '@/db/schema';
+import { eq } from 'drizzle-orm';
 
-export default async function VerificarPage({
-  params
-}: {
-  params: { folio: string }
-}) {
+export default async function VerificarPage({ params }: { params: { folio: string } }) {
   const ticket = await db.query.tickets.findFirst({
     where: (t, { eq }) => eq(t.folio, params.folio),
     with: {
       pago: {
         with: {
-          departamento: {
-            with: { residente: true }
-          }
-        }
-      }
-    }
-  })
+          perfil: {
+            with: {
+              usuario: true, // esto es la tabla user
+            },
+          },
+        },
+      },
+    },
+  });
 
   if (!ticket) {
     return (
@@ -31,11 +29,17 @@ export default async function VerificarPage({
           </p>
         </div>
       </div>
-    )
+    );
   }
 
-  const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio',
-                 'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+  const MESES = [
+    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+  ];
+
+  const pago = ticket.pago;
+  const perfil = pago?.perfil;
+  const residente = perfil?.usuario;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-muted/40 p-4">
@@ -52,21 +56,17 @@ export default async function VerificarPage({
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Residente</span>
-            <span className="font-medium">
-              {ticket.pago?.departamento?.residente?.nombre ?? '—'}
-            </span>
+            <span className="font-medium">{residente?.name ?? '—'}</span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Periodo</span>
             <span className="font-medium">
-              {MESES[(ticket.pago?.mes ?? 1) - 1]} {ticket.pago?.anio}
+              {MESES[(pago?.mes ?? 1) - 1]} {pago?.anio}
             </span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Monto</span>
-            <span className="font-medium text-green-700">
-              ${ticket.pago?.monto} MXN
-            </span>
+            <span className="font-medium text-green-700">${pago?.monto} MXN</span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Emitido</span>
@@ -77,5 +77,5 @@ export default async function VerificarPage({
         </div>
       </div>
     </div>
-  )
+  );
 }
