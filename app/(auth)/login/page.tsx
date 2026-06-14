@@ -25,6 +25,9 @@ export default function LoginPage() {
       password,
     });
 
+    console.log('data:', data);
+    console.log('error:', signInError);
+
     if (signInError) {
       setError('Correo o contraseña incorrectos');
       setLoading(false);
@@ -32,6 +35,7 @@ export default function LoginPage() {
     }
 
     const rol = (data?.user as any)?.role;
+    console.log('rol:', rol); // También agregué este log para ver el rol
 
     // Redirección según el rol
     if (rol === 'admin') {
