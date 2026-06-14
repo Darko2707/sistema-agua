@@ -34,12 +34,16 @@ export const pagosRouter = router({
   }),
 
   pagar: protectedProcedure
-    .input(z.object({ metodo: z.enum(['transferencia', 'efectivo']) }))
-    .mutation(async ({ ctx, input }) => {
-      const perfil = await db.query.perfilesResidente.findFirst({
-        where: (p, { eq }) => eq(p.userId, ctx.user.id),
-      });
-      if (!perfil) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Completa tu perfil primero' });
+  .input(z.object({ metodo: z.enum(['transferencia', 'efectivo']) }))
+  .mutation(async ({ ctx, input }) => {
+    console.log('USER ID EN SESION:', ctx.user.id);
+    
+    const perfil = await db.query.perfilesResidente.findFirst({
+      where: (p, { eq }) => eq(p.userId, ctx.user.id),
+    });
+    console.log('PERFIL ENCONTRADO:', perfil);
+    
+    if (!perfil) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Completa tu perfil primero' });
 
       const ahora = new Date();
       const mes = ahora.getMonth() + 1;
