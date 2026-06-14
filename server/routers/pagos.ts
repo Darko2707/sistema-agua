@@ -5,13 +5,9 @@ import { pagos, perfilesResidente, cortes, tickets } from '@/db/schema';
 import { nanoid } from 'nanoid';
 import { eq, and } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
-import { generarTicketPDF } from '@/lib/ticket';
-import { subirPDF } from '@/lib/storage';
-import { Resend } from 'resend';
 
 const MONTO_MENSUAL = '50.00';
 const MONTO_RECONEXION = '300.00';
-const resend = new Resend(process.env.RESEND_API_KEY);
 
 export const pagosRouter = router({
   miHistorial: protectedProcedure.query(async ({ ctx }) => {
@@ -34,16 +30,16 @@ export const pagosRouter = router({
   }),
 
   pagar: protectedProcedure
-  .input(z.object({ metodo: z.enum(['transferencia', 'efectivo']) }))
-  .mutation(async ({ ctx, input }) => {
-    console.log('USER ID EN SESION:', ctx.user.id);
-    
-    const perfil = await db.query.perfilesResidente.findFirst({
-      where: (p, { eq }) => eq(p.userId, ctx.user.id),
-    });
-    console.log('PERFIL ENCONTRADO:', perfil);
-    
-    if (!perfil) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Completa tu perfil primero' });
+    .input(z.object({ metodo: z.enum(['transferencia', 'efectivo']) }))
+    .mutation(async ({ ctx, input }) => {
+      console.log('USER ID EN SESION:', ctx.user.id);
+      
+      const perfil = await db.query.perfilesResidente.findFirst({
+        where: (p, { eq }) => eq(p.userId, ctx.user.id),
+      });
+      console.log('PERFIL ENCONTRADO:', perfil);
+      
+      if (!perfil) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Completa tu perfil primero' });
 
       const ahora = new Date();
       const mes = ahora.getMonth() + 1;
@@ -98,38 +94,11 @@ export const pagosRouter = router({
         return pago;
       });
 
-      // === Procesamiento sincrónico del ticket ===
-      // Obtener el usuario (para el nombre)
-      const usuario = await db.query.user.findFirst({
-        where: (u, { eq }) => eq(u.id, ctx.user.id),
-      });
-
-      // Generar PDF
-      const pdfBuffer = await generarTicketPDF({
-        folio,
-        nombre: usuario?.name ?? 'Residente',
-        mes,
-        anio,
-        monto,
-      });
-
-      // Subir a Supabase
-      const pdfUrl = await subirPDF(folio, pdfBuffer);
-
-      // Guardar ticket en base de datos
+      // Guardar ticket sin PDF por ahora
       await db.insert(tickets).values({
         pagoId: result.id,
         folio,
-        pdfUrl,
-      });
-
-      // Enviar email con Resend
-      await resend.emails.send({
-        from: 'Agua Fraccionamiento <no-reply@tudominio.com>', // Cambia por dominio verificado en Resend
-        to: ctx.user.email,
-        subject: `Comprobante de pago ${folio}`,
-        html: `<h1>Pago registrado</h1><p>Folio: ${folio}</p><p>Monto: $${monto}</p><p>Adjunto encontrarás tu comprobante.</p>`,
-        attachments: [{ filename: `${folio}.pdf`, content: pdfBuffer }],
+        pdfUrl: null,
       });
 
       return { folio, monto, esReconexion };
