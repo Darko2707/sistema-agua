@@ -1,27 +1,41 @@
-import { initTRPC, TRPCError } from '@trpc/server'
-import { auth } from '@/lib/auth'
+import { initTRPC, TRPCError } from '@trpc/server';
+import { auth } from '@/lib/auth';
+import { db } from '@/db';
 
 export const createTRPCContext = async (opts: { headers: Headers }) => {
-  const session = await auth.api.getSession({ headers: opts.headers })
-  return { user: session?.user ?? null }
-}
+  const session = await auth.api.getSession({ headers: opts.headers });
+  let user: any = session?.user ?? null;
 
-const t = initTRPC.context<typeof createTRPCContext>().create()
+  if (user) {
+    // Buscar el rol en la tabla 'user' (no en la sesión)
+    const userId = user.id;
+    const dbUser = await db.query.user.findFirst({
+      where: (u, { eq }) => eq(u.id, userId),
+    });
+    if (dbUser) {
+      user = { ...user, role: dbUser.role };
+    }
+  }
 
-export const router          = t.router
-export const publicProcedure = t.procedure
+  return { user };
+};
+
+const t = initTRPC.context<typeof createTRPCContext>().create();
+
+export const router = t.router;
+export const publicProcedure = t.procedure;
 
 export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
-  if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' })
-  return next({ ctx: { user: ctx.user } })
-})
+  if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
+  return next({ ctx: { user: ctx.user } });
+});
 
 export function roleProcedure(...roles: string[]) {
   return protectedProcedure.use(({ ctx, next }) => {
-    const userRole = (ctx.user as any).role
+    const userRole = (ctx.user as any).role;
     if (!roles.includes(userRole)) {
-      throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes permisos para esto' })
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes permisos' });
     }
-    return next({ ctx })
-  })
+    return next({ ctx });
+  });
 }

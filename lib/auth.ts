@@ -1,13 +1,9 @@
-import { betterAuth } from 'better-auth'
-import { drizzleAdapter } from 'better-auth/adapters/drizzle'
-import { db } from '@/db'
-import * as schema from '@/db/schema'
+import { betterAuth } from 'better-auth';
+import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { db } from '@/db';
+import * as schema from '@/db/schema'; // Ajusta la ruta a tu archivo de esquema
 
 export const auth = betterAuth({
-  database: drizzleAdapter(db, {
-    provider: 'pg',
-    schema: schema,
-  }),
+  database: drizzleAdapter(db, { provider: 'pg', schema }),
   emailAndPassword: { enabled: true },
-  session: { expiresIn: 60 * 60 * 24 * 7 },
-})
+});

@@ -1,8 +1,12 @@
-import { Queue } from 'bullmq'
+import { Queue } from 'bullmq';
 
-// Use connection options instead of an ioredis instance to avoid duplicate ioredis type conflicts
-const connection = { url: process.env.REDIS_URL!, maxRetriesPerRequest: null } as any
+const redisUrl = new URL(process.env.REDIS_URL!);
+const connection = {
+  host: redisUrl.hostname,
+  port: Number(redisUrl.port),
+  password: redisUrl.password,
+  maxRetriesPerRequest: null,
+};
 
-export const ticketQueue = new Queue('tickets', { connection })
-export const corteQueue  = new Queue('cortes',  { connection })
-
+export const ticketQueue = new Queue('tickets', { connection });
+export const corteQueue = new Queue('cortes', { connection });
