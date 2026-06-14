@@ -3,9 +3,7 @@
 import { createAuthClient } from 'better-auth/client'
 import { useState, useEffect } from 'react'
 
-export const authClient = createAuthClient({
-  baseURL: 'https://sistema-agua-itfw4twbz-darko-s-projects5.vercel.app',
-})
+export const authClient = createAuthClient()
 
 type SessionData = {
   user: {
