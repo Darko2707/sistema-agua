@@ -4,7 +4,7 @@ import { createAuthClient } from 'better-auth/client'
 import { useState, useEffect } from 'react'
 
 export const authClient = createAuthClient({
-  baseURL: process.env.NEXT_PUBLIC_APP_URL ?? 'https://sistema-agua-itfw4twbz-darko-s-projects5.vercel.app',
+  baseURL: 'https://sistema-agua-itfw4twbz-darko-s-projects5.vercel.app',
 })
 
 type SessionData = {
