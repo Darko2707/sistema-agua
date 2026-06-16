@@ -153,6 +153,7 @@ export default function AdminPage() {
     cargarDatos();
   }, []);
 
+  // ✅ Función corregida: usar llamada directa sin batch
   async function cambiarRol(userId: string, rol: string) {
     if (!userId) {
       setError('No se puede cambiar rol: usuario ID no válido');
@@ -163,18 +164,19 @@ export default function AdminPage() {
     setError(null);
     
     try {
-      const res = await fetch('/api/trpc/usuarios.cambiarRol?batch=1', {
+      const res = await fetch('/api/trpc/usuarios.cambiarRol', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ '0': { json: { userId, rol } } }),
+        body: JSON.stringify({ userId, rol }),
       });
       
-      if (res.ok) {
-        await cargarDatos();
-      } else {
-        const errorData = await res.json();
-        setError(errorData?.[0]?.error?.json?.message || 'Error al cambiar rol');
+      const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data?.error?.message || 'Error al cambiar rol');
       }
+      
+      await cargarDatos();
     } catch (err: any) {
       setError(err.message || 'Error al cambiar rol');
     }
@@ -184,10 +186,10 @@ export default function AdminPage() {
   async function asignarRepresentante(circuitoId: string, userId: string) {
     if (!userId) return;
     setActualizando(circuitoId);
-    await fetch('/api/trpc/usuarios.asignarRepresentante?batch=1', {
+    await fetch('/api/trpc/usuarios.asignarRepresentante', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ '0': { json: { circuitoId, userId } } }),
+      body: JSON.stringify({ circuitoId, userId }),
     });
     await cargarDatos();
     setActualizando(null);
@@ -373,7 +375,14 @@ export default function AdminPage() {
                     <select
                       value={p.role}
                       disabled={actualizando === p.id}
-                      onChange={(e) => cambiarRol(p.id, e.target.value)}
+                      onChange={(e) => {
+                        const userId = p.id;
+                        if (!userId) {
+                          setError('No se puede cambiar rol: usuario ID no válido');
+                          return;
+                        }
+                        cambiarRol(userId, e.target.value);
+                      }}
                       className="h-10 rounded-lg border bg-background px-3 md:w-72"
                     >
                       {ROLES.map((r) => (
@@ -502,7 +511,6 @@ export default function AdminPage() {
                         {r.circuito?.nombre || 'Sin circuito'} · {r.edificio} · {r.departamento}
                       </p>
                       <p className="text-xs text-muted-foreground">{r.usuario?.email || 'Sin email'}</p>
-                      <p className="text-xs text-muted-foreground">ID: {usuarioId}</p>
                     </div>
 
                     <div className="flex items-center gap-2 flex-wrap">

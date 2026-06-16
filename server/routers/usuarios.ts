@@ -7,7 +7,6 @@ import { TRPCError } from '@trpc/server';
 import { obtenerPeriodoVigente, esMoroso } from '../utils';
 
 export const usuariosRouter = router({
-  // El residente recién registrado completa su perfil
   crearPerfil: protectedProcedure
     .input(z.object({
       telefono:     z.string().min(10),
@@ -33,7 +32,6 @@ export const usuariosRouter = router({
       return perfil;
     }),
 
-  // Obtiene mi propio perfil (residente)
   miPerfil: protectedProcedure.query(async ({ ctx }) => {
     return db.query.perfilesResidente.findFirst({
       where: (p, { eq }) => eq(p.userId, ctx.user.id),
@@ -41,12 +39,10 @@ export const usuariosRouter = router({
     });
   }),
 
-  // Lista de circuitos para el formulario de registro
   listarCircuitos: protectedProcedure.query(async () => {
     return db.select().from(circuitos);
   }),
 
-  // Admin / Representante: lista residentes con estado de pago del mes
   listarResidentes: roleProcedure('admin', 'representante').query(async ({ ctx }) => {
     const { mes, anio } = obtenerPeriodoVigente();
     const rol = (ctx.user as any).role;
@@ -64,7 +60,6 @@ export const usuariosRouter = router({
         orderBy: (p, { desc }) => [desc(p.creadoEn)],
       });
     } else {
-      // Representante: solo su circuito
       const miCircuito = await db.query.circuitos.findFirst({
         where: (c, { eq }) => eq(c.representanteId, ctx.user.id),
       });
@@ -82,7 +77,6 @@ export const usuariosRouter = router({
       });
     }
 
-    // Mapear resultados con estado de pago del mes y lógica de moroso por fecha
     return perfiles.map((p) => ({
       id: p.id,
       edificio: p.edificio,
@@ -111,22 +105,24 @@ export const usuariosRouter = router({
     }));
   }),
 
-  // Admin: cambiar rol de un usuario
+  // ✅ Cambiar rol con validación mejorada
   cambiarRol: roleProcedure('admin')
     .input(z.object({
-      userId: z.string(),
+      userId: z.string().min(1, 'userId es requerido'),
       rol: z.enum(['admin', 'representante', 'operador_pozo', 'cuadrilla_cortes', 'residente']),
     }))
     .mutation(async ({ input }) => {
-      console.log('📝 Cambiando rol:', input);
+      console.log('📝 Cambiando rol - input:', JSON.stringify(input, null, 2));
       
-      // Verificar que el usuario existe
       const usuario = await db.query.user.findFirst({
         where: (u, { eq }) => eq(u.id, input.userId),
       });
       if (!usuario) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: `Usuario con ID ${input.userId} no encontrado` });
+        console.error(`❌ Usuario con ID ${input.userId} no encontrado`);
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
       }
+      
+      console.log(`✅ Usuario: ${usuario.email} - rol actual: ${usuario.role} -> nuevo: ${input.rol}`);
       
       await db.update(user)
         .set({ role: input.rol })
@@ -135,7 +131,6 @@ export const usuariosRouter = router({
       return { ok: true };
     }),
 
-  // Admin: lista de personal (no residentes)
   listarPersonal: roleProcedure('admin').query(async () => {
     return db.query.user.findMany({
       where: (u, { ne }) => ne(u.role, 'residente'),
