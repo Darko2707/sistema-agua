@@ -64,41 +64,39 @@ export default function LoginPage() {
     }
   }
 
-  // ✅ Usar fetch al endpoint /api/auth/forgot-password
   async function handleResetPassword(e: React.FormEvent) {
-    e.preventDefault();
-    setResetLoading(true);
-    setResetError('');
-    setResetSent(false);
+  e.preventDefault();
+  setResetLoading(true);
+  setResetError('');
+  setResetSent(false);
 
-    try {
-      const res = await fetch('/api/auth/forgot-password', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: resetEmail,
-          callbackURL: `${window.location.origin}/reset-password`,
-        }),
-      });
+  try {
+    const res = await fetch('/api/auth/reset-password', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: resetEmail,
+      }),
+    });
 
-      if (res.ok) {
-        setResetSent(true);
-        setResetEmail('');
-        setTimeout(() => {
-          setShowReset(false);
-          setResetSent(false);
-        }, 5000);
-      } else {
-        const data = await res.json();
-        setResetError(data.error || 'Error al enviar el correo de recuperación');
-      }
-    } catch (err: any) {
-      setResetError(err.message || 'Error al enviar el correo');
+    if (res.ok) {
+      setResetSent(true);
+      setResetEmail('');
+      setTimeout(() => {
+        setShowReset(false);
+        setResetSent(false);
+      }, 5000);
+    } else {
+      const data = await res.json();
+      setResetError(data.error || 'Error al enviar el correo de recuperación');
     }
-    setResetLoading(false);
+  } catch (err: any) {
+    setResetError(err.message || 'Error al enviar el correo');
   }
+  setResetLoading(false);
+}
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-100 via-white to-cyan-100 flex items-center justify-center p-4">
