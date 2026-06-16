@@ -184,16 +184,27 @@ export default function AdminPage() {
   }
 
   async function asignarRepresentante(circuitoId: string, userId: string) {
-    if (!userId) return;
-    setActualizando(circuitoId);
-    await fetch('/api/trpc/usuarios.asignarRepresentante', {
+  if (!userId) return;
+  setActualizando(circuitoId);
+  
+  try {
+    const res = await fetch('/api/trpc/usuarios.asignarRepresentante', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ circuitoId, userId }),
     });
-    await cargarDatos();
-    setActualizando(null);
+    
+    if (res.ok) {
+      await cargarDatos();
+    } else {
+      const errorData = await res.json();
+      setError(errorData?.error?.message || 'Error al asignar representante');
+    }
+  } catch (err: any) {
+    setError(err.message || 'Error al asignar representante');
   }
+  setActualizando(null);
+}
 
   async function salir() {
     await authClient.signOut();

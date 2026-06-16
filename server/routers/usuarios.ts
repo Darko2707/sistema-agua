@@ -7,6 +7,7 @@ import { TRPCError } from '@trpc/server';
 import { obtenerPeriodoVigente, esMoroso } from '../utils';
 
 export const usuariosRouter = router({
+  // El residente recién registrado completa su perfil
   crearPerfil: protectedProcedure
     .input(z.object({
       telefono:     z.string().min(10),
@@ -32,6 +33,7 @@ export const usuariosRouter = router({
       return perfil;
     }),
 
+  // Obtiene mi propio perfil (residente)
   miPerfil: protectedProcedure.query(async ({ ctx }) => {
     return db.query.perfilesResidente.findFirst({
       where: (p, { eq }) => eq(p.userId, ctx.user.id),
@@ -39,10 +41,12 @@ export const usuariosRouter = router({
     });
   }),
 
+  // Lista de circuitos para el formulario de registro
   listarCircuitos: protectedProcedure.query(async () => {
     return db.select().from(circuitos);
   }),
 
+  // Admin / Representante: lista residentes con estado de pago del mes
   listarResidentes: roleProcedure('admin', 'representante').query(async ({ ctx }) => {
     const { mes, anio } = obtenerPeriodoVigente();
     const rol = (ctx.user as any).role;
@@ -60,6 +64,7 @@ export const usuariosRouter = router({
         orderBy: (p, { desc }) => [desc(p.creadoEn)],
       });
     } else {
+      // Representante: solo su circuito
       const miCircuito = await db.query.circuitos.findFirst({
         where: (c, { eq }) => eq(c.representanteId, ctx.user.id),
       });
@@ -105,24 +110,21 @@ export const usuariosRouter = router({
     }));
   }),
 
-  // ✅ Cambiar rol con validación mejorada
+  // Admin: cambiar rol de un usuario
   cambiarRol: roleProcedure('admin')
     .input(z.object({
-      userId: z.string().min(1, 'userId es requerido'),
+      userId: z.string(),
       rol: z.enum(['admin', 'representante', 'operador_pozo', 'cuadrilla_cortes', 'residente']),
     }))
     .mutation(async ({ input }) => {
-      console.log('📝 Cambiando rol - input:', JSON.stringify(input, null, 2));
+      console.log('📝 Cambiando rol:', input);
       
       const usuario = await db.query.user.findFirst({
         where: (u, { eq }) => eq(u.id, input.userId),
       });
       if (!usuario) {
-        console.error(`❌ Usuario con ID ${input.userId} no encontrado`);
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
       }
-      
-      console.log(`✅ Usuario: ${usuario.email} - rol actual: ${usuario.role} -> nuevo: ${input.rol}`);
       
       await db.update(user)
         .set({ role: input.rol })
@@ -131,6 +133,45 @@ export const usuariosRouter = router({
       return { ok: true };
     }),
 
+  // ✅ NUEVO: Admin: asignar representante a un circuito
+  asignarRepresentante: roleProcedure('admin')
+    .input(z.object({
+      circuitoId: z.string().uuid(),
+      userId: z.string(),
+    }))
+    .mutation(async ({ input }) => {
+      console.log('📝 Asignando representante:', input);
+      
+      // Verificar que el usuario existe
+      const usuario = await db.query.user.findFirst({
+        where: (u, { eq }) => eq(u.id, input.userId),
+      });
+      if (!usuario) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
+      }
+
+      // Verificar que el circuito existe
+      const circuito = await db.query.circuitos.findFirst({
+        where: (c, { eq }) => eq(c.id, input.circuitoId),
+      });
+      if (!circuito) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Circuito no encontrado' });
+      }
+
+      // Asignar representante al circuito
+      await db.update(circuitos)
+        .set({ representanteId: input.userId })
+        .where(eq(circuitos.id, input.circuitoId));
+      
+      // Actualizar el rol del usuario a representante
+      await db.update(user)
+        .set({ role: 'representante' })
+        .where(eq(user.id, input.userId));
+      
+      return { ok: true };
+    }),
+
+  // Admin: lista de personal (no residentes)
   listarPersonal: roleProcedure('admin').query(async () => {
     return db.query.user.findMany({
       where: (u, { ne }) => ne(u.role, 'residente'),
