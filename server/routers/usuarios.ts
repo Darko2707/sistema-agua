@@ -107,6 +107,19 @@ export const usuariosRouter = router({
     }));
   }),
 
+  // ✅ NUEVO: Admin: cambiar rol de un usuario
+  cambiarRol: roleProcedure('admin')
+    .input(z.object({
+      userId: z.string(),
+      rol: z.enum(['admin', 'representante', 'operador_pozo', 'cuadrilla_cortes', 'residente']),
+    }))
+    .mutation(async ({ input }) => {
+      await db.update(user)
+        .set({ role: input.rol })
+        .where(eq(user.id, input.userId));
+      return { ok: true };
+    }),
+
   // Admin: lista de personal (no residentes)
   listarPersonal: roleProcedure('admin').query(async () => {
     return db.query.user.findMany({
