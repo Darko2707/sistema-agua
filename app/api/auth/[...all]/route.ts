@@ -1,8 +1,10 @@
-import { createAuthClient } from 'better-auth/client';
+import { auth } from '@/lib/auth';
+import { toNextJsHandler } from 'better-auth/next-js';
 
-export const authClient = createAuthClient({
-  baseURL: process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000',
-});
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
 
-// Export available auth client helpers
-export const { useSession, signIn, signOut } = authClient;
+const handler = toNextJsHandler(auth);
+
+export const GET = handler.GET;
+export const POST = handler.POST;
