@@ -18,8 +18,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Perfil no encontrado' }, { status: 400 });
   }
 
+  const ahora = new Date();
+  const mes = ahora.getMonth() + 1;
+  const anio = ahora.getFullYear();
+
+  // Verificar si ya pagó este mes
+  const yaPago = await db.query.pagos.findFirst({
+    where: (p, { eq, and }) =>
+      and(eq(p.perfilId, perfil.id), eq(p.mes, mes), eq(p.anio, anio), eq(p.estado, 'pagado')),
+  });
+  if (yaPago) {
+    return NextResponse.json({ error: 'Ya pagaste este mes' }, { status: 400 });
+  }
+
+  // ✅ CORREGIDO: Calcular monto según estado del agua
+  // - Si está 'cortado' → $350 (50 + 300 de reconexión)
+  // - Si está 'pendiente_corte' → $50 (solo mensualidad, aún no cortado físicamente)
+  // - Si está 'activo' → $50
   const esReconexion = perfil.estadoAgua === 'cortado';
-  const monto = esReconexion ? 35000 : 5000; // en centavos: $350 o $50
+  const montoEnCentavos = esReconexion ? 35000 : 5000; // $350 o $50
 
   const checkoutSession = await stripe.checkout.sessions.create({
     payment_method_types: ['card'],
@@ -30,9 +47,9 @@ export async function POST(req: NextRequest) {
           currency: 'mxn',
           product_data: {
             name: esReconexion ? 'Pago mensual + Reconexión' : 'Pago mensual de agua',
-            description: `Edificio ${perfil.edificio}, Depto ${perfil.departamento}`,
+            description: `Edificio ${perfil.edificio}, Depto ${perfil.departamento} - ${mes}/${anio}`,
           },
-          unit_amount: monto,
+          unit_amount: montoEnCentavos,
         },
         quantity: 1,
       },
@@ -41,6 +58,9 @@ export async function POST(req: NextRequest) {
       userId: session.user.id,
       perfilId: perfil.id,
       esReconexion: String(esReconexion),
+      mes: String(mes),     // ✅ AGREGADO
+      anio: String(anio),   // ✅ AGREGADO
+      monto: String(montoEnCentavos / 100), // ✅ AGREGADO
     },
     success_url: `${process.env.NEXT_PUBLIC_APP_URL}/residente?pago=ok`,
     cancel_url: `${process.env.NEXT_PUBLIC_APP_URL}/residente?pago=cancelado`,
