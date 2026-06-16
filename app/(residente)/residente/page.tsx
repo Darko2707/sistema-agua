@@ -1,19 +1,19 @@
-'use client'
+'use client';
 
-import { useEffect, useState } from 'react'
-import { authClient, useSession } from '@/lib/auth-client'
-import { useRouter } from 'next/navigation'
-import { trpc } from '@/lib/trpc-client'
+import { useEffect, useState } from 'react';
+import { authClient, useSession } from '@/lib/auth-client';
+import { useRouter } from 'next/navigation';
+import { trpc } from '@/lib/trpc-client';
 
-import { Button } from '@/components/ui/button'
+import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+} from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 
 import {
   Droplets,
@@ -21,7 +21,8 @@ import {
   LogOut,
   CheckCircle2,
   AlertTriangle,
-} from 'lucide-react'
+  UserCog,
+} from 'lucide-react';
 
 const MESES = [
   'Enero',
@@ -36,79 +37,82 @@ const MESES = [
   'Octubre',
   'Noviembre',
   'Diciembre',
-]
+];
 
 type Pago = {
-  id: string
-  mes: number
-  anio: number
-  estado: string | null
-  folio: string | null
-  monto: string
-  esReconexion: boolean | null
-}
+  id: string;
+  mes: number;
+  anio: number;
+  estado: string | null;
+  folio: string | null;
+  monto: string;
+  esReconexion: boolean | null;
+};
 
 export default function ResidentePage() {
-  const router = useRouter()
-
-  const {
-    data: session,
-    isPending,
-  } = useSession()
+  const router = useRouter();
+  const { data: session, isPending } = useSession();
 
   const [datos, setDatos] = useState<{
-    perfil: any
-    pagos: Pago[]
-    corteActivo: boolean
-  } | null>(null)
+    perfil: any;
+    pagos: Pago[];
+    corteActivo: boolean;
+  } | null>(null);
 
-  const [cargando, setCargando] = useState(true)
-  const [pagando, setPagando] = useState(false)
+  const [miRol, setMiRol] = useState<string>('residente');
+  const [cargando, setCargando] = useState(true);
+  const [pagando, setPagando] = useState(false);
   const [exito, setExito] = useState<{
-    folio: string
-    monto: string
-  } | null>(null)
-  const [error, setError] = useState('')
+    folio: string;
+    monto: string;
+  } | null>(null);
+  const [error, setError] = useState('');
 
-  const ahora = new Date()
-  const mesActual = ahora.getMonth() + 1
-  const anioActual = ahora.getFullYear()
+  const ahora = new Date();
+  const mesActual = ahora.getMonth() + 1;
+  const anioActual = ahora.getFullYear();
+
+  // Obtener el rol del usuario autenticado
+  useEffect(() => {
+    fetch('/api/me')
+      .then((r) => r.json())
+      .then((d) => setMiRol(d.role ?? 'residente'))
+      .catch(() => setMiRol('residente'));
+  }, []);
 
   async function cargarDatos() {
     try {
-      const data = await trpc.pagos.miHistorial.query()
-      setDatos(data)
+      const data = await trpc.pagos.miHistorial.query();
+      setDatos(data);
     } catch (e) {
-      console.error(e)
+      console.error(e);
     }
-    setCargando(false)
+    setCargando(false);
   }
 
   useEffect(() => {
-    cargarDatos()
-  }, [])
+    cargarDatos();
+  }, []);
 
   async function salir() {
-    await authClient.signOut()
-    router.push('/login')
+    await authClient.signOut();
+    router.push('/login');
   }
 
   const yaPagoEsteMes = datos?.pagos.some(
     (p) => p.mes === mesActual && p.anio === anioActual && p.estado === 'pagado'
-  )
+  );
 
-  const montoAPagar = datos?.corteActivo ? '350.00' : '50.00'
+  const montoAPagar = datos?.corteActivo ? '350.00' : '50.00';
 
-  // ✅ Nuevo: Pago con Stripe Checkout
   async function handlePagar() {
-    setPagando(true)
-    setError('')
-    setExito(null)
-    
+    setPagando(true);
+    setError('');
+    setExito(null);
+
     try {
-      // Determinar el tipo de pago (normal o reconexión)
-      const esReconexion = datos?.corteActivo || false
-      
+      const esReconexion = datos?.corteActivo || false;
+
       const res = await fetch('/api/stripe/checkout', {
         method: 'POST',
         headers: {
@@ -121,20 +125,19 @@ export default function ResidentePage() {
           anio: anioActual,
         }),
         credentials: 'include',
-      })
+      });
 
-      const data = await res.json()
+      const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || 'No se pudo iniciar el pago')
+        throw new Error(data.error || 'No se pudo iniciar el pago');
       }
 
-      // Redirigir a Stripe Checkout
-      window.location.href = data.url
+      window.location.href = data.url;
     } catch (err: any) {
-      console.error('Error en pago:', err)
-      setError(err.message || 'No se pudo iniciar el pago')
-      setPagando(false)
+      console.error('Error en pago:', err);
+      setError(err.message || 'No se pudo iniciar el pago');
+      setPagando(false);
     }
   }
 
@@ -143,7 +146,7 @@ export default function ResidentePage() {
       <div className="min-h-screen flex items-center justify-center">
         <p className="text-muted-foreground">Cargando...</p>
       </div>
-    )
+    );
   }
 
   if (!datos?.perfil) {
@@ -158,8 +161,12 @@ export default function ResidentePage() {
           </CardContent>
         </Card>
       </div>
-    )
+    );
   }
+
+  const isAdmin = miRol === 'admin';
+  const isRepresentante = miRol === 'representante';
+  const isTrabajador = miRol === 'operador_pozo' || miRol === 'cuadrilla_cortes';
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8">
@@ -168,15 +175,52 @@ export default function ResidentePage() {
         <div className="rounded-3xl bg-gradient-to-r from-sky-600 to-cyan-600 p-6 text-white shadow-lg">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <h1 className="text-3xl font-bold">Mi Cuenta de Agua</h1>
+              <div className="flex items-center gap-3">
+                <h1 className="text-3xl font-bold">Mi Cuenta de Agua</h1>
+                <Badge variant="secondary" className="bg-white/20 text-white">
+                  {miRol}
+                </Badge>
+              </div>
               <p className="mt-2 text-sky-100">
                 {session?.user?.name} · {datos.perfil.edificio}, {datos.perfil.departamento}
               </p>
             </div>
-            <Button variant="secondary" onClick={salir}>
-              <LogOut className="mr-2 h-4 w-4" />
-              Salir
-            </Button>
+            <div className="flex gap-2">
+              {isAdmin && (
+                <Button
+                  variant="secondary"
+                  onClick={() => router.push('/admin')}
+                  className="bg-white/20 text-white hover:bg-white/30"
+                >
+                  <UserCog className="mr-2 h-4 w-4" />
+                  Admin
+                </Button>
+              )}
+              {isRepresentante && (
+                <Button
+                  variant="secondary"
+                  onClick={() => router.push('/representante')}
+                  className="bg-white/20 text-white hover:bg-white/30"
+                >
+                  <UserCog className="mr-2 h-4 w-4" />
+                  Representante
+                </Button>
+              )}
+              {isTrabajador && (
+                <Button
+                  variant="secondary"
+                  onClick={() => router.push('/trabajador')}
+                  className="bg-white/20 text-white hover:bg-white/30"
+                >
+                  <UserCog className="mr-2 h-4 w-4" />
+                  Trabajador
+                </Button>
+              )}
+              <Button variant="secondary" onClick={salir}>
+                <LogOut className="mr-2 h-4 w-4" />
+                Salir
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -330,5 +374,5 @@ export default function ResidentePage() {
         </div>
       </div>
     </div>
-  )
+  );
 }
