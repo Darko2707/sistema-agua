@@ -1,6 +1,6 @@
 'use client';
 
-import { authClient } from '@/lib/auth-client';
+import { authClient, signIn } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Eye, EyeOff, Droplets } from 'lucide-react';
@@ -36,7 +36,7 @@ export default function LoginPage() {
     setError('');
 
     try {
-      const { error: signInError } = await authClient.signIn.email({ email, password });
+      const { error: signInError } = await signIn.email({ email, password });
 
       if (signInError) {
         setError(signInError.message || 'Correo o contraseña incorrectos');
@@ -64,7 +64,7 @@ export default function LoginPage() {
     }
   }
 
-  // ✅ Usar fetch directo al endpoint de better-auth para forget password
+  // ✅ Usar fetch directo al endpoint de better-auth
   async function handleResetPassword(e: React.FormEvent) {
     e.preventDefault();
     setResetLoading(true);

@@ -32,9 +32,12 @@ export function useSession() {
   return { data, isPending };
 }
 
-// ✅ Exportar authClient y los métodos necesarios
 export const signIn = authClient.signIn;
 export const signOut = authClient.signOut;
+export const resetPassword = authClient.resetPassword;
+
+// ✅ Usar el método forgetPassword si existe, o null si no
+export const forgetPassword = (authClient as any).forgetPassword;
 
 export { authClient };
 export default authClient;
