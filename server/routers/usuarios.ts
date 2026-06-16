@@ -5,7 +5,6 @@ import { perfilesResidente, circuitos, user, cortes } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import { obtenerPeriodoVigente, esMoroso } from '../utils';
-import bcrypt from 'bcryptjs';
 
 export const usuariosRouter = router({
   // El residente recién registrado completa su perfil
@@ -89,7 +88,12 @@ export const usuariosRouter = router({
       edificio: p.edificio,
       departamento: p.departamento,
       estadoAgua: p.estadoAgua,
-      usuario: p.usuario,
+      usuario: {
+        id: p.usuario?.id,
+        name: p.usuario?.name,
+        email: p.usuario?.email,
+        role: p.usuario?.role,
+      },
       circuito: p.circuito,
       pagoEsteMes: p.pagos.some(
         (pg) => pg.mes === mes && pg.anio === anio && pg.estado === 'pagado'
@@ -107,16 +111,27 @@ export const usuariosRouter = router({
     }));
   }),
 
-  // ✅ NUEVO: Admin: cambiar rol de un usuario
+  // Admin: cambiar rol de un usuario
   cambiarRol: roleProcedure('admin')
     .input(z.object({
       userId: z.string(),
       rol: z.enum(['admin', 'representante', 'operador_pozo', 'cuadrilla_cortes', 'residente']),
     }))
     .mutation(async ({ input }) => {
+      console.log('📝 Cambiando rol:', input);
+      
+      // Verificar que el usuario existe
+      const usuario = await db.query.user.findFirst({
+        where: (u, { eq }) => eq(u.id, input.userId),
+      });
+      if (!usuario) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: `Usuario con ID ${input.userId} no encontrado` });
+      }
+      
       await db.update(user)
         .set({ role: input.rol })
         .where(eq(user.id, input.userId));
+      
       return { ok: true };
     }),
 

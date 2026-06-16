@@ -67,7 +67,12 @@ type ResidenteCompleto = {
   pagoEsteMes: boolean;
   esMoroso: boolean;
   corteActivo: boolean;
-  usuario: { id: string; name: string; email: string };
+  usuario: {
+    id: string;
+    name: string;
+    email: string;
+    role: string;
+  };
   circuito?: { id: string; nombre: string } | null;
 };
 
@@ -122,6 +127,7 @@ export default function AdminPage() {
   const [actualizando, setActualizando] = useState<string | null>(null);
   const [filtroCircuito, setFiltroCircuito] = useState<string>('todos');
   const [filtroEstado, setFiltroEstado] = useState<string>('todos');
+  const [error, setError] = useState<string | null>(null);
 
   async function cargarDatos() {
     const [resR, resP, resL, resC, resPC, resPR] = await Promise.all([
@@ -148,20 +154,29 @@ export default function AdminPage() {
   }, []);
 
   async function cambiarRol(userId: string, rol: string) {
+    if (!userId) {
+      setError('No se puede cambiar rol: usuario ID no válido');
+      return;
+    }
+    
     setActualizando(userId);
+    setError(null);
+    
     try {
       const res = await fetch('/api/trpc/usuarios.cambiarRol?batch=1', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ '0': { json: { userId, rol } } }),
       });
+      
       if (res.ok) {
         await cargarDatos();
       } else {
-        console.error('Error al cambiar rol');
+        const errorData = await res.json();
+        setError(errorData?.[0]?.error?.json?.message || 'Error al cambiar rol');
       }
-    } catch (error) {
-      console.error('Error:', error);
+    } catch (err: any) {
+      setError(err.message || 'Error al cambiar rol');
     }
     setActualizando(null);
   }
@@ -274,6 +289,13 @@ export default function AdminPage() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Error global */}
+        {error && (
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-600">
+            {error}
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="flex flex-wrap gap-2">
@@ -468,6 +490,7 @@ export default function AdminPage() {
               {residentesFiltrados.map((r) => {
                 const estadoInfo = getEstadoAguaLabel(r.estadoAgua);
                 const usuarioId = r.usuario?.id || r.id;
+                
                 return (
                   <div
                     key={r.id}
@@ -479,6 +502,7 @@ export default function AdminPage() {
                         {r.circuito?.nombre || 'Sin circuito'} · {r.edificio} · {r.departamento}
                       </p>
                       <p className="text-xs text-muted-foreground">{r.usuario?.email || 'Sin email'}</p>
+                      <p className="text-xs text-muted-foreground">ID: {usuarioId}</p>
                     </div>
 
                     <div className="flex items-center gap-2 flex-wrap">
@@ -501,9 +525,15 @@ export default function AdminPage() {
                     {/* ✅ Selector de rol para residentes */}
                     <div className="flex items-center gap-2">
                       <select
-                        value={(r.usuario as any)?.role || 'residente'}
+                        value={r.usuario?.role || 'residente'}
                         disabled={actualizando === r.id}
-                        onChange={(e) => cambiarRol(usuarioId, e.target.value)}
+                        onChange={(e) => {
+                          if (!usuarioId) {
+                            setError('No se puede cambiar rol: usuario ID no válido');
+                            return;
+                          }
+                          cambiarRol(usuarioId, e.target.value);
+                        }}
                         className="h-9 rounded-lg border bg-background px-2 text-sm md:w-40"
                       >
                         {ROLES.map((role) => (
