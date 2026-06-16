@@ -1,10 +1,10 @@
+// app/api/forgot-password/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/db';
 import { user } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { Resend } from 'resend';
 import { nanoid } from 'nanoid';
-import bcrypt from 'bcryptjs';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -12,7 +12,6 @@ export async function POST(req: NextRequest) {
   try {
     const { email } = await req.json();
 
-    // Verificar que el usuario existe
     const usuario = await db.query.user.findFirst({
       where: (u, { eq }) => eq(u.email, email),
     });
@@ -24,10 +23,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Generar token (guardar en una tabla de tokens o usar el sistema de better-auth)
     const token = nanoid(32);
-    // Guardar token en la base de datos (necesitarías una tabla de tokens)
-    // ... implementar guardado de token
+    // Guardar token en la base de datos (opcional)
 
     const resetUrl = `${process.env.NEXT_PUBLIC_APP_URL}/reset-password?token=${token}`;
 
