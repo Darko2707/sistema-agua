@@ -49,15 +49,20 @@ type Pago = {
   esReconexion: boolean | null;
 };
 
+type DatosResidente = {
+  perfil: any | null;
+  pagos: Pago[];
+  corteActivo: boolean;
+  esMoroso: boolean;
+  mes?: number;
+  anio?: number;
+};
+
 export default function ResidentePage() {
   const router = useRouter();
   const { data: session, isPending } = useSession();
 
-  const [datos, setDatos] = useState<{
-    perfil: any;
-    pagos: Pago[];
-    corteActivo: boolean;
-  } | null>(null);
+  const [datos, setDatos] = useState<DatosResidente | null>(null);
 
   const [miRol, setMiRol] = useState<string>('residente');
   const [cargando, setCargando] = useState(true);
@@ -103,7 +108,8 @@ export default function ResidentePage() {
     (p) => p.mes === mesActual && p.anio === anioActual && p.estado === 'pagado'
   );
 
-  const montoAPagar = datos?.corteActivo ? '350.00' : '50.00';
+  // ✅ Monto según estado del agua
+  const montoAPagar = datos?.perfil?.estadoAgua === 'cortado' ? '350.00' : '50.00';
 
   async function handlePagar() {
     setPagando(true);
@@ -111,7 +117,7 @@ export default function ResidentePage() {
     setExito(null);
 
     try {
-      const esReconexion = datos?.corteActivo || false;
+      const esReconexion = datos?.perfil?.estadoAgua === 'cortado';
 
       const res = await fetch('/api/stripe/checkout', {
         method: 'POST',
@@ -224,6 +230,7 @@ export default function ResidentePage() {
           </div>
         </div>
 
+        {/* ⚠️ AVISO DE CORTE ACTIVO */}
         {datos.corteActivo && (
           <div className="rounded-2xl border border-red-200 bg-red-50 p-5">
             <div className="flex items-start gap-3">
@@ -234,6 +241,42 @@ export default function ResidentePage() {
                 </p>
                 <p className="mt-1 text-sm text-red-600">
                   Debes pagar $350.00 MXN ($50 de mensualidad + $300 de reconexión).
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ✅ AVISO DE MOROSO (si no ha pagado y pasó el día 5) */}
+        {datos.esMoroso && !datos.corteActivo && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-6 w-6 text-amber-600" />
+              <div>
+                <p className="font-semibold text-amber-700">
+                  ⚠ Tu pago venció el día 5 del mes
+                </p>
+                <p className="mt-1 text-sm text-amber-600">
+                  Realiza tu pago a la brevedad para evitar el corte del servicio.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ✅ AVISO DE PENDIENTE DE RECONEXIÓN */}
+        {datos.perfil?.estadoAgua === 'pendiente_reconexion' && (
+          <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-6 w-6 text-blue-600" />
+              <div>
+                <p className="font-semibold text-blue-700">
+                  🔄 Tu pago de reconexión fue registrado
+                </p>
+                <p className="mt-1 text-sm text-blue-600">
+                  La cuadrilla está en camino para reconectar tu servicio físicamente.
+                  <br />
+                  <span className="text-xs">El proceso puede tomar hasta 24 horas hábiles.</span>
                 </p>
               </div>
             </div>
@@ -263,7 +306,7 @@ export default function ResidentePage() {
                 <span className="text-2xl font-bold">${montoAPagar} MXN</span>
               </div>
 
-              {!yaPagoEsteMes && !exito && (
+              {!yaPagoEsteMes && !exito && datos.perfil?.estadoAgua !== 'pendiente_reconexion' && (
                 <Button
                   className="w-full h-12"
                   onClick={handlePagar}
@@ -271,6 +314,13 @@ export default function ResidentePage() {
                 >
                   <CreditCard className="mr-2 h-4 w-4" />
                   {pagando ? 'Redirigiendo a Stripe...' : `Pagar $${montoAPagar} con Stripe`}
+                </Button>
+              )}
+
+              {datos.perfil?.estadoAgua === 'pendiente_reconexion' && (
+                <Button className="w-full h-12" disabled>
+                  <CreditCard className="mr-2 h-4 w-4" />
+                  Esperando reconexión física...
                 </Button>
               )}
 
@@ -292,6 +342,9 @@ export default function ResidentePage() {
                   <p className="text-sm">
                     Monto: <span className="font-bold">${exito.monto} MXN</span>
                   </p>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    La cuadrilla será notificada para reconectar tu servicio.
+                  </p>
                 </div>
               )}
             </CardContent>
@@ -303,12 +356,16 @@ export default function ResidentePage() {
               <div className="flex items-center gap-4">
                 <div
                   className={`flex h-14 w-14 items-center justify-center rounded-2xl ${
-                    datos.corteActivo ? 'bg-red-100' : 'bg-green-100'
+                    datos.corteActivo ? 'bg-red-100' :
+                    datos.perfil?.estadoAgua === 'pendiente_reconexion' ? 'bg-blue-100' :
+                    'bg-green-100'
                   }`}
                 >
                   <Droplets
                     className={`h-7 w-7 ${
-                      datos.corteActivo ? 'text-red-600' : 'text-green-600'
+                      datos.corteActivo ? 'text-red-600' :
+                      datos.perfil?.estadoAgua === 'pendiente_reconexion' ? 'text-blue-600' :
+                      'text-green-600'
                     }`}
                   />
                 </div>
@@ -316,10 +373,14 @@ export default function ResidentePage() {
                   <p className="font-semibold">Servicio de agua</p>
                   <p
                     className={`text-sm ${
-                      datos.corteActivo ? 'text-red-600' : 'text-green-600'
+                      datos.corteActivo ? 'text-red-600' :
+                      datos.perfil?.estadoAgua === 'pendiente_reconexion' ? 'text-blue-600' :
+                      'text-green-600'
                     }`}
                   >
-                    {datos.corteActivo ? 'Suspendido' : 'Activo'}
+                    {datos.corteActivo ? 'Suspendido' :
+                     datos.perfil?.estadoAgua === 'pendiente_reconexion' ? 'Pendiente de reconexión' :
+                     'Activo'}
                   </p>
                 </div>
               </div>

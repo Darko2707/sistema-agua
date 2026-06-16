@@ -6,87 +6,61 @@ import { eq, and } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 
 export const cortesRouter = router({
-  // Cuadrilla de cortes: lista de cortes activos pendientes de reconectar
-  listarActivos: roleProcedure('cuadrilla_cortes', 'admin').query(async () => {
-    return db.query.cortes.findMany({
-      where: (c, { eq }) => eq(c.activo, true),
-      with: { perfil: { with: { usuario: true, circuito: true } } },
-      orderBy: (c, { desc }) => [desc(c.fechaCorte)],
-    });
-  }),
 
-  // Cuadrilla: historial de reconexiones recientes
-  reconectadosHoy: roleProcedure('cuadrilla_cortes', 'admin').query(async () => {
-    const hoy = new Date();
-    hoy.setHours(0, 0, 0, 0);
+  // Representante y cuadrilla: lista de residentes pendientes de corte de su circuito
+  pendientesDeCorte: roleProcedure('representante', 'cuadrilla_cortes', 'admin')
+    .query(async ({ ctx }) => {
+      const rol = (ctx.user as any).role;
 
-    return db.query.cortes.findMany({
-      where: (c, { eq, and, gte }) => and(eq(c.activo, false), gte(c.fechaReconexion, hoy)),
-      with: { perfil: { with: { usuario: true, circuito: true } } },
-      orderBy: (c, { desc }) => [desc(c.fechaReconexion)],
-    });
-  }),
+      let circuitoId: string | null = null;
 
-  // Cuadrilla: confirma que reconectó físicamente el servicio
-  confirmarReconexion: roleProcedure('cuadrilla_cortes', 'admin')
-    .input(z.object({ corteId: z.string().uuid() }))
-    .mutation(async ({ ctx, input }) => {
-      const corte = await db.query.cortes.findFirst({
-        where: (c, { eq }) => eq(c.id, input.corteId),
+      if (rol === 'representante') {
+        const circ = await db.query.circuitos.findFirst({
+          where: (c, { eq }) => eq(c.representanteId, ctx.user.id),
+        });
+        circuitoId = circ?.id ?? null;
+      }
+
+      return db.query.perfilesResidente.findMany({
+        where: (p, { eq, and }) => circuitoId
+          ? and(eq(p.estadoAgua, 'pendiente_corte'), eq(p.circuitoId, circuitoId))
+          : eq(p.estadoAgua, 'pendiente_corte'),
+        with: { usuario: true, circuito: true },
+        orderBy: (p, { desc }) => [desc(p.creadoEn)],
       });
-      if (!corte) throw new TRPCError({ code: 'NOT_FOUND' });
-
-      await db.update(cortes)
-        .set({
-          activo: false,
-          fechaReconexion: new Date(),
-          reconectadoPor: ctx.user.id,
-        })
-        .where(eq(cortes.id, input.corteId));
-
-      await db.update(perfilesResidente)
-        .set({ estadoAgua: 'activo' })
-        .where(eq(perfilesResidente.id, corte.perfilId));
-
-      return { ok: true };
     }),
 
-  // Representante: solicita corte por falta de pago
-  solicitarCorte: roleProcedure('representante', 'admin')
-    .input(z.object({
-      perfilId: z.string().uuid(),
-      motivo: z.string().min(3),
-    }))
+  // ✅ NUEVO: Lista de residentes pendientes de reconexión (pagaron, esperan reconexión física)
+  pendientesDeReconexion: roleProcedure('cuadrilla_cortes', 'admin')
+    .query(async () => {
+      return db.query.perfilesResidente.findMany({
+        where: (p, { eq }) => eq(p.estadoAgua, 'pendiente_reconexion'),
+        with: { usuario: true, circuito: true },
+        orderBy: (p, { desc }) => [desc(p.creadoEn)],
+      });
+    }),
+
+  // Cuadrilla: confirma que cortó físicamente el servicio
+  confirmarCorte: roleProcedure('cuadrilla_cortes', 'admin')
+    .input(z.object({ perfilId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      // Verificar que el representante tenga acceso a este perfil (opcional)
-      // Si quieres validar que el representante solo pueda cortar a residentes de su circuito:
       const perfil = await db.query.perfilesResidente.findFirst({
         where: (p, { eq }) => eq(p.id, input.perfilId),
-        with: { circuito: true },
       });
-      if (!perfil) throw new TRPCError({ code: 'NOT_FOUND', message: 'Perfil no encontrado' });
+      if (!perfil) throw new TRPCError({ code: 'NOT_FOUND' });
+      if (perfil.estadoAgua !== 'pendiente_corte') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'El residente no está pendiente de corte' });
+      }
 
-      // Verificar si el representante está asignado a este circuito
-      const circuito = await db.query.circuitos.findFirst({
-        where: (c, { eq }) => eq(c.representanteId, ctx.user.id),
-      });
-      if (!circuito) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes acceso a este circuito' });
-
-      const yaActivo = await db.query.cortes.findFirst({
-        where: (c, { and }) => and(
-          eq(c.perfilId, input.perfilId),
-          eq(c.activo, true)
-        ),
-      });
-      if (yaActivo) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Ya tiene un corte activo' });
-
+      // Registra el corte
       const [corte] = await db.insert(cortes).values({
         perfilId: input.perfilId,
         trabajadorId: ctx.user.id,
-        motivo: input.motivo,
+        motivo: 'falta_pago',
         activo: true,
       }).returning();
 
+      // Cambia estado a cortado
       await db.update(perfilesResidente)
         .set({ estadoAgua: 'cortado' })
         .where(eq(perfilesResidente.id, input.perfilId));
@@ -94,17 +68,59 @@ export const cortesRouter = router({
       return corte;
     }),
 
-  // Operador de pozo / admin: corte manual (ej. mantenimiento, fuga, etc.)
+  // Cuadrilla: lista de cortes activos (ya cortados, esperando pago para reconectar)
+  listarCortados: roleProcedure('cuadrilla_cortes', 'admin').query(async () => {
+    return db.query.perfilesResidente.findMany({
+      where: (p, { eq }) => eq(p.estadoAgua, 'cortado'),
+      with: { usuario: true, circuito: true },
+      orderBy: (p, { desc }) => [desc(p.creadoEn)],
+    });
+  }),
+
+  // Cuadrilla: confirma reconexión física (después de que el residente pagó)
+  confirmarReconexion: roleProcedure('cuadrilla_cortes', 'admin')
+    .input(z.object({ perfilId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const perfil = await db.query.perfilesResidente.findFirst({
+        where: (p, { eq }) => eq(p.id, input.perfilId),
+      });
+      if (!perfil) throw new TRPCError({ code: 'NOT_FOUND' });
+      if (perfil.estadoAgua !== 'cortado' && perfil.estadoAgua !== ('pendiente_reconexion' as string)) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'El residente no está cortado o pendiente de reconexión' });
+      }
+
+      // Cierra el corte activo
+      const corteActivo = await db.query.cortes.findFirst({
+        where: (c, { eq, and }) => and(
+          eq(c.perfilId, input.perfilId),
+          eq(c.activo, true)
+        ),
+      });
+      if (corteActivo) {
+        await db.update(cortes)
+          .set({ activo: false, fechaReconexion: new Date(), reconectadoPor: ctx.user.id })
+          .where(eq(cortes.id, corteActivo.id));
+      }
+
+      // Regresa a activo
+      await db.update(perfilesResidente)
+        .set({ estadoAgua: 'activo' })
+        .where(eq(perfilesResidente.id, input.perfilId));
+
+      return { ok: true };
+    }),
+
+  // Operador de pozo: corte manual por mantenimiento u otro motivo
   crearCorteManual: roleProcedure('operador_pozo', 'admin')
     .input(z.object({
       perfilId: z.string().uuid(),
       motivo: z.string().min(3),
     }))
     .mutation(async ({ ctx, input }) => {
-      const yaActivo = await db.query.cortes.findFirst({
-        where: (c, { eq, and }) => and(eq(c.perfilId, input.perfilId), eq(c.activo, true)),
+      const perfil = await db.query.perfilesResidente.findFirst({
+        where: (p, { eq }) => eq(p.id, input.perfilId),
       });
-      if (yaActivo) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Ya tiene un corte activo' });
+      if (!perfil) throw new TRPCError({ code: 'NOT_FOUND' });
 
       const [corte] = await db.insert(cortes).values({
         perfilId: input.perfilId,
@@ -119,12 +135,4 @@ export const cortesRouter = router({
 
       return corte;
     }),
-
-  // Resumen para admin/operador: estado de cortes
-  resumen: roleProcedure('admin', 'operador_pozo').query(async () => {
-    const activos = await db.query.cortes.findMany({
-      where: (c, { eq }) => eq(c.activo, true),
-    });
-    return { totalActivos: activos.length };
-  }),
 });

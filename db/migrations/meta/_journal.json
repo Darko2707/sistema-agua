@@ -8,6 +8,13 @@
       "when": 1781319084884,
       "tag": "0000_cynical_magdalene",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1781611362019,
+      "tag": "0001_steady_vivisector",
+      "breakpoints": true
     }
   ]
 }

@@ -1,107 +1,101 @@
-'use client'
+'use client';
 
-import { useEffect, useState } from 'react'
-import { authClient, useSession } from '@/lib/auth-client'
-import { useRouter } from 'next/navigation'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
+import { useEffect, useState } from 'react';
+import { authClient, useSession } from '@/lib/auth-client';
+import { useRouter } from 'next/navigation';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import {
   LogOut, Users, AlertTriangle,
-  TrendingUp, Droplets, Home, Scissors,
-} from 'lucide-react'
+  TrendingUp, Droplets, Home,
+} from 'lucide-react';
 
-const MESES = ['Ene','Feb','Mar','Abr','May','Jun',
-               'Jul','Ago','Sep','Oct','Nov','Dic']
-const ahora = new Date()
+const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
+  'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+const ahora = new Date();
 
 type Residente = {
-  id: string
-  edificio: string
-  departamento: string
-  estadoAgua: string
-  pagoEsteMes: boolean
-  corteActivo: boolean
-  usuario: { name: string; email: string }
-  circuito: { nombre: string }
-}
+  id: string;
+  edificio: string;
+  departamento: string;
+  estadoAgua: string;
+  pagoEsteMes: boolean;
+  corteActivo: boolean;
+  usuario: { name: string; email: string };
+  circuito: { nombre: string };
+};
 
 type Resumen = {
-  totalDeptos: number
-  pagados: number
-  recaudado: number
-  porCircuito: { nombre: string; total: number; pagados: number }[]
-}
+  totalDeptos: number;
+  pagados: number;
+  recaudado: number;
+  porCircuito: { nombre: string; total: number; pagados: number }[];
+};
 
 function trpcQueryUrl(path: string) {
   return `/api/trpc/${path}?batch=1&input=` +
-    encodeURIComponent(JSON.stringify({ '0': { json: undefined } }))
+    encodeURIComponent(JSON.stringify({ '0': { json: undefined } }));
+}
+
+function getEstadoAguaLabel(estado: string): { label: string; variant: 'default' | 'destructive' | 'outline' } {
+  switch (estado) {
+    case 'activo':
+      return { label: 'Activo', variant: 'default' };
+    case 'pendiente_corte':
+      return { label: 'Pendiente corte', variant: 'destructive' };
+    case 'cortado':
+      return { label: 'Cortado', variant: 'destructive' };
+    case 'pendiente_reconexion':
+      return { label: 'Pendiente reconexión', variant: 'outline' };
+    default:
+      return { label: estado, variant: 'outline' };
+  }
 }
 
 export default function RepresentantePage() {
-  const router = useRouter()
-  const { data: session, isPending } = useSession()
-  const [resumen, setResumen]     = useState<Resumen | null>(null)
-  const [residentes, setResidentes] = useState<Residente[]>([])
-  const [cargando, setCargando]   = useState(true)
-  const [tab, setTab]             = useState<'todos' | 'morosos'>('todos')
-  const [solicitando, setSolicitando] = useState<string | null>(null)
-  const [mensaje, setMensaje]     = useState<{ id: string; texto: string } | null>(null)
+  const router = useRouter();
+  const { data: session, isPending } = useSession();
+  const [resumen, setResumen] = useState<Resumen | null>(null);
+  const [residentes, setResidentes] = useState<Residente[]>([]);
+  const [cargando, setCargando] = useState(true);
+  const [tab, setTab] = useState<'todos' | 'morosos'>('todos');
 
   async function cargar() {
     const [resR, resL] = await Promise.all([
       fetch(trpcQueryUrl('pagos.resumenMes')),
       fetch(trpcQueryUrl('usuarios.listarResidentes')),
-    ])
-    if (resR.ok) setResumen((await resR.json())?.[0]?.result?.data ?? null)
-    if (resL.ok) setResidentes((await resL.json())?.[0]?.result?.data ?? [])
-    setCargando(false)
+    ]);
+    if (resR.ok) setResumen((await resR.json())?.[0]?.result?.data ?? null);
+    if (resL.ok) setResidentes((await resL.json())?.[0]?.result?.data ?? []);
+    setCargando(false);
   }
 
-  useEffect(() => { cargar() }, [])
+  useEffect(() => { cargar(); }, []);
 
-  async function solicitarCorte(perfilId: string) {
-    setSolicitando(perfilId)
-    setMensaje(null)
-
-    const res = await fetch('/api/trpc/cortes.solicitarCorte?batch=1', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ '0': { json: { perfilId, motivo: 'falta_pago' } } }),
-    })
-
-    if (res.ok) {
-      setMensaje({ id: perfilId, texto: 'Corte solicitado correctamente' })
-      await cargar()
-    } else {
-      const json = await res.json()
-      setMensaje({
-        id: perfilId,
-        texto: json?.[0]?.error?.json?.message ?? 'No se pudo solicitar el corte',
-      })
-    }
-    setSolicitando(null)
+  async function salir() {
+    await authClient.signOut();
+    router.push('/login');
   }
 
   if (isPending || cargando) return (
     <div className="min-h-screen flex items-center justify-center">
       <p className="text-muted-foreground">Cargando...</p>
     </div>
-  )
+  );
 
-  const morosos    = resumen ? resumen.totalDeptos - resumen.pagados : 0
+  const morosos = resumen ? resumen.totalDeptos - resumen.pagados : 0;
   const porcentaje = resumen && resumen.totalDeptos > 0
-    ? Math.round((resumen.pagados / resumen.totalDeptos) * 100) : 0
+    ? Math.round((resumen.pagados / resumen.totalDeptos) * 100) : 0;
 
   const listaMostrar = tab === 'morosos'
     ? residentes.filter(r => !r.pagoEsteMes)
-    : residentes
+    : residentes;
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
 
-        {/* Header */}
         <div className="rounded-3xl bg-gradient-to-r from-sky-600 to-cyan-600 p-6 text-white shadow-lg">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
@@ -116,8 +110,7 @@ export default function RepresentantePage() {
                 <Home className="mr-2 h-4 w-4" />
                 Mi cuenta
               </Button>
-              <Button variant="secondary"
-                onClick={async () => { await authClient.signOut(); router.push('/login') }}>
+              <Button variant="secondary" onClick={salir}>
                 <LogOut className="mr-2 h-4 w-4" />
                 Salir
               </Button>
@@ -125,7 +118,6 @@ export default function RepresentantePage() {
           </div>
         </div>
 
-        {/* KPIs */}
         <div className="grid gap-4 md:grid-cols-3">
           <Card>
             <CardContent className="flex items-center justify-between p-5">
@@ -156,7 +148,6 @@ export default function RepresentantePage() {
           </Card>
         </div>
 
-        {/* Barra de progreso */}
         <Card>
           <CardHeader><CardTitle>Avance de cobranza</CardTitle></CardHeader>
           <CardContent>
@@ -173,7 +164,6 @@ export default function RepresentantePage() {
           </CardContent>
         </Card>
 
-        {/* Tabs */}
         <div className="flex gap-2">
           <Button variant={tab === 'todos' ? 'default' : 'outline'}
             onClick={() => setTab('todos')}>
@@ -185,7 +175,6 @@ export default function RepresentantePage() {
           </Button>
         </div>
 
-        {/* Lista */}
         <Card>
           <CardHeader>
             <CardTitle>
@@ -198,52 +187,44 @@ export default function RepresentantePage() {
                 {tab === 'morosos' ? 'Sin morosos este mes ✓' : 'No hay residentes registrados'}
               </p>
             )}
-            {listaMostrar.map(r => (
-              <div key={r.id}
-                className="flex flex-col gap-4 rounded-xl border bg-background p-4 md:flex-row md:items-center md:justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-100">
-                    <Droplets className="h-6 w-6 text-sky-600" />
+            {listaMostrar.map(r => {
+              const estadoInfo = getEstadoAguaLabel(r.estadoAgua);
+              return (
+                <div key={r.id}
+                  className="flex flex-col gap-4 rounded-xl border bg-background p-4 md:flex-row md:items-center md:justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-100">
+                      <Droplets className="h-6 w-6 text-sky-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium">{r.usuario.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {r.edificio} · {r.departamento}
+                      </p>
+                      <p className="text-xs text-muted-foreground">{r.usuario.email}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-medium">{r.usuario.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {r.edificio} · {r.departamento}
-                    </p>
-                    <p className="text-xs text-muted-foreground">{r.usuario.email}</p>
-                    {mensaje?.id === r.id && (
-                      <p className="text-xs text-amber-600 mt-1">{mensaje.texto}</p>
+
+                  <div className="flex items-center gap-2 flex-wrap justify-end">
+                    <Badge variant={r.pagoEsteMes ? 'default' : 'destructive'}>
+                      {r.pagoEsteMes ? 'Pagado' : 'Sin pago'}
+                    </Badge>
+                    <Badge variant={estadoInfo.variant}>
+                      {estadoInfo.label}
+                    </Badge>
+                    {r.corteActivo && (
+                      <Badge variant="outline" className="border-red-300 text-red-600">
+                        Corte automático
+                      </Badge>
                     )}
                   </div>
                 </div>
-
-                <div className="flex items-center gap-2 flex-wrap justify-end">
-                  <Badge variant={r.pagoEsteMes ? 'default' : 'destructive'}>
-                    {r.pagoEsteMes ? 'Pagado' : 'Sin pago'}
-                  </Badge>
-                  <Badge variant={r.estadoAgua === 'activo' ? 'default' : 'destructive'}>
-                    {r.estadoAgua === 'activo' ? 'Agua activa' : 'Cortado'}
-                  </Badge>
-                  {!r.pagoEsteMes && !r.corteActivo && (
-                    <Button size="sm" variant="destructive"
-                      disabled={solicitando === r.id}
-                      onClick={() => solicitarCorte(r.id)}>
-                      <Scissors className="mr-1 h-3 w-3" />
-                      {solicitando === r.id ? 'Solicitando...' : 'Solicitar corte'}
-                    </Button>
-                  )}
-                  {r.corteActivo && (
-                    <Badge variant="outline" className="border-red-300 text-red-600">
-                      Corte en proceso
-                    </Badge>
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </CardContent>
         </Card>
 
       </div>
     </div>
-  )
+  );
 }

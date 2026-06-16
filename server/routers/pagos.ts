@@ -5,21 +5,25 @@ import { pagos, perfilesResidente, cortes, tickets, circuitos } from '@/db/schem
 import { nanoid } from 'nanoid';
 import { eq, and } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
+import { obtenerPeriodoVigente, esMoroso } from '../utils';
 
 const MONTO_MENSUAL = '50.00';
 const MONTO_RECONEXION = '300.00';
 
 export const pagosRouter = router({
+  // ============================================
+  // miHistorial: Historial del residente autenticado
+  // ============================================
   miHistorial: protectedProcedure.query(async ({ ctx }) => {
     console.log('=== miHistorial iniciado ===');
     console.log('USER ID:', ctx.user.id);
-    
+
     const perfil = await db.query.perfilesResidente.findFirst({
       where: (p, { eq }) => eq(p.userId, ctx.user.id),
     });
     console.log('PERFIL ENCONTRADO:', perfil ? perfil.id : 'NO ENCONTRADO');
-    
-    if (!perfil) return { perfil: null, pagos: [], corteActivo: false };
+
+    if (!perfil) return { perfil: null, pagos: [], corteActivo: false, esMoroso: false };
 
     const historial = await db.query.pagos.findMany({
       where: (p, { eq }) => eq(p.perfilId, perfil.id),
@@ -33,22 +37,40 @@ export const pagosRouter = router({
     });
     console.log('CORTE ACTIVO:', corteActivo ? 'SI' : 'NO');
 
-    return { perfil, pagos: historial, corteActivo: !!corteActivo };
+    const { mes, anio } = obtenerPeriodoVigente();
+    const historialParaMoroso = historial.map((p) => ({
+      mes: p.mes,
+      anio: p.anio,
+      estado: p.estado ?? '',
+    }));
+    const moroso = esMoroso(historialParaMoroso, mes, anio);
+    console.log(`MOROSO: ${moroso}, PERIODO: ${mes}/${anio}`);
+
+    return {
+      perfil,
+      pagos: historial,
+      corteActivo: !!corteActivo,
+      esMoroso: moroso,
+      mes,
+      anio,
+    };
   }),
 
+  // ============================================
+  // pagar: Registrar pago mensual o reconexión
+  // ============================================
   pagar: protectedProcedure
     .input(z.object({ metodo: z.enum(['transferencia', 'efectivo']) }))
     .mutation(async ({ ctx, input }) => {
       console.log('=== PAGAR iniciado ===');
       console.log('USER ID:', ctx.user.id);
       console.log('METODO:', input.metodo);
-      
-      // Obtener perfil del residente
+
       const perfil = await db.query.perfilesResidente.findFirst({
         where: (p, { eq }) => eq(p.userId, ctx.user.id),
       });
       console.log('PERFIL ENCONTRADO:', perfil ? perfil.id : 'NO ENCONTRADO');
-      
+
       if (!perfil) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Completa tu perfil primero' });
       }
@@ -57,6 +79,7 @@ export const pagosRouter = router({
       const mes = ahora.getMonth() + 1;
       const anio = ahora.getFullYear();
       console.log(`PERIODO: ${mes}/${anio}`);
+      console.log(`ESTADO DEL AGUA ACTUAL: ${perfil.estadoAgua}`);
 
       // Verificar si ya pagó este mes
       console.log('VERIFICANDO SI YA PAGO ESTE MES...');
@@ -70,14 +93,8 @@ export const pagosRouter = router({
       }
       console.log('VERIFICACION OK - NO HABIA PAGADO');
 
-      // Verificar corte activo
-      console.log('VERIFICANDO CORTE ACTIVO...');
-      const corteActivo = await db.query.cortes.findFirst({
-        where: (c, { eq, and }) => and(eq(c.perfilId, perfil.id), eq(c.activo, true)),
-      });
-      console.log('CORTE ACTIVO:', corteActivo ? `SI (id: ${corteActivo.id})` : 'NO');
-
-      const esReconexion = !!corteActivo;
+      // ✅ NUEVO: Monto según estado del agua
+      const esReconexion = perfil.estadoAgua === 'cortado';
       const monto = esReconexion
         ? (parseFloat(MONTO_MENSUAL) + parseFloat(MONTO_RECONEXION)).toFixed(2)
         : MONTO_MENSUAL;
@@ -108,20 +125,27 @@ export const pagosRouter = router({
             .returning();
           console.log('PAGO INSERTADO, ID:', pago.id);
 
-          if (corteActivo) {
-            console.log('ACTUALIZANDO CORTE (desactivando)...');
-            await tx
-              .update(cortes)
-              .set({ activo: false, fechaReconexion: new Date() })
-              .where(eq(cortes.id, corteActivo.id));
-            console.log('CORTE ACTUALIZADO');
-
-            console.log('ACTUALIZANDO ESTADO DEL AGUA DEL PERFIL...');
+          // ✅ NUEVO: Si estaba cortado, pasa a 'pendiente_reconexion'
+          if (esReconexion) {
+            console.log('ACTUALIZANDO ESTADO A pendiente_reconexion...');
             await tx
               .update(perfilesResidente)
-              .set({ estadoAgua: 'activo' })
+              .set({ estadoAgua: 'pendiente_reconexion' as any })
               .where(eq(perfilesResidente.id, perfil.id));
-            console.log('ESTADO DEL AGUA ACTUALIZADO');
+            console.log('ESTADO ACTUALIZADO A pendiente_reconexion');
+
+            // Buscar y desactivar el corte activo
+            const corteActivo = await tx.query.cortes.findFirst({
+              where: (c, { eq, and }) => and(eq(c.perfilId, perfil.id), eq(c.activo, true)),
+            });
+            if (corteActivo) {
+              console.log('DESACTIVANDO CORTE ACTIVO...');
+              await tx
+                .update(cortes)
+                .set({ activo: false, fechaReconexion: new Date() })
+                .where(eq(cortes.id, corteActivo.id));
+              console.log('CORTE DESACTIVADO');
+            }
           }
 
           return pago;
@@ -130,14 +154,14 @@ export const pagosRouter = router({
       } catch (txError: any) {
         console.error('❌ ERROR EN TRANSACCION:', txError.message);
         console.error('ERROR COMPLETO:', txError);
-        throw new TRPCError({ 
-          code: 'INTERNAL_SERVER_ERROR', 
-          message: `Error en transacción: ${txError.message}` 
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Error en transacción: ${txError.message}`,
         });
       }
 
       // INSERTAR TICKET
-      console.log('INSERTANDO TICKET (sin PDF)...');
+      console.log('INSERTANDO TICKET...');
       try {
         await db.insert(tickets).values({
           pagoId: result.id,
@@ -148,9 +172,9 @@ export const pagosRouter = router({
       } catch (ticketError: any) {
         console.error('❌ ERROR INSERTANDO TICKET:', ticketError.message);
         console.error('ERROR COMPLETO:', ticketError);
-        throw new TRPCError({ 
-          code: 'INTERNAL_SERVER_ERROR', 
-          message: `Error insertando ticket: ${ticketError.message}` 
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Error insertando ticket: ${ticketError.message}`,
         });
       }
 
@@ -158,28 +182,32 @@ export const pagosRouter = router({
       return { folio, monto, esReconexion };
     }),
 
+  // ============================================
+  // historialDe: Historial de un perfil específico
+  // ============================================
   historialDe: roleProcedure('admin', 'representante')
     .input(z.object({ perfilId: z.string().uuid() }))
     .query(async ({ input }) => {
       console.log('=== historialDe iniciado ===');
       console.log('PERFIL ID:', input.perfilId);
-      
+
       const result = await db.query.pagos.findMany({
         where: (p, { eq }) => eq(p.perfilId, input.perfilId),
         orderBy: (p, { desc }) => [desc(p.anio), desc(p.mes)],
       });
       console.log(`HISTORIAL: ${result.length} pagos encontrados`);
-      
+
       return result;
     }),
 
+  // ============================================
+  // resumenMes: Resumen para dashboards (admin / representante)
+  // ============================================
   resumenMes: roleProcedure('admin', 'representante').query(async ({ ctx }) => {
     console.log('=== resumenMes iniciado ===');
     console.log('ROL:', (ctx.user as any).role);
-    
-    const ahora = new Date();
-    const mes = ahora.getMonth() + 1;
-    const anio = ahora.getFullYear();
+
+    const { mes, anio } = obtenerPeriodoVigente();
     const rol = (ctx.user as any).role;
     console.log(`PERIODO PARA RESUMEN: ${mes}/${anio}`);
 
@@ -194,7 +222,7 @@ export const pagosRouter = router({
       });
       if (!miCircuito) {
         console.log('REPRESENTANTE SIN CIRCUITO ASIGNADO');
-        return { totalDeptos: 0, pagados: 0, recaudado: 0, porCircuito: [] };
+        return { totalDeptos: 0, pagados: 0, recaudado: 0, mes, anio, porCircuito: [] };
       }
       console.log('CIRCUITO ENCONTRADO:', miCircuito.id, miCircuito.nombre);
       perfiles = await db.query.perfilesResidente.findMany({
@@ -230,6 +258,8 @@ export const pagosRouter = router({
       totalDeptos: perfiles.length,
       pagados,
       recaudado,
+      mes,
+      anio,
       porCircuito: Array.from(porCircuitoMap.values()),
     };
   }),

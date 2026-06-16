@@ -4,9 +4,10 @@ import { db } from '@/db';
 import { perfilesResidente, circuitos, user, cortes } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
+import { obtenerPeriodoVigente, esMoroso } from '../utils';
+import bcrypt from 'bcryptjs';
 
 export const usuariosRouter = router({
-
   // El residente recién registrado completa su perfil
   crearPerfil: protectedProcedure
     .input(z.object({
@@ -48,9 +49,7 @@ export const usuariosRouter = router({
 
   // Admin / Representante: lista residentes con estado de pago del mes
   listarResidentes: roleProcedure('admin', 'representante').query(async ({ ctx }) => {
-    const ahora = new Date();
-    const mes = ahora.getMonth() + 1;
-    const anio = ahora.getFullYear();
+    const { mes, anio } = obtenerPeriodoVigente();
     const rol = (ctx.user as any).role;
 
     let perfiles;
@@ -84,7 +83,7 @@ export const usuariosRouter = router({
       });
     }
 
-    // Mapear resultados con estado de pago del mes
+    // Mapear resultados con estado de pago del mes y lógica de moroso por fecha
     return perfiles.map((p) => ({
       id: p.id,
       edificio: p.edificio,
@@ -95,34 +94,18 @@ export const usuariosRouter = router({
       pagoEsteMes: p.pagos.some(
         (pg) => pg.mes === mes && pg.anio === anio && pg.estado === 'pagado'
       ),
+      esMoroso: esMoroso(
+        p.pagos.map((pg) => ({
+          mes: pg.mes,
+          anio: pg.anio,
+          estado: pg.estado ?? 'pendiente',
+        })),
+        mes,
+        anio
+      ),
       corteActivo: p.cortes.some((c) => c.activo),
     }));
   }),
-
-  // Admin: cambiar rol de un usuario
-  cambiarRol: roleProcedure('admin')
-    .input(z.object({
-      userId: z.string(),
-      rol: z.enum(['admin', 'representante', 'operador_pozo', 'cuadrilla_cortes', 'residente']),
-    }))
-    .mutation(async ({ input }) => {
-      await db.update(user).set({ role: input.rol }).where(eq(user.id, input.userId));
-      return { ok: true };
-    }),
-
-  // Admin: asignar representante a un circuito
-  asignarRepresentante: roleProcedure('admin')
-    .input(z.object({
-      circuitoId: z.string().uuid(),
-      userId: z.string(),
-    }))
-    .mutation(async ({ input }) => {
-      await db.update(circuitos)
-        .set({ representanteId: input.userId })
-        .where(eq(circuitos.id, input.circuitoId));
-      await db.update(user).set({ role: 'representante' }).where(eq(user.id, input.userId));
-      return { ok: true };
-    }),
 
   // Admin: lista de personal (no residentes)
   listarPersonal: roleProcedure('admin').query(async () => {

@@ -22,13 +22,15 @@ import {
   Home,
 } from 'lucide-react';
 
-type CorteActivo = {
+type CortePendiente = {
   id: string;
   motivo: string;
   fechaCorte: string;
   perfil: {
+    id: string;
     edificio: string;
     departamento: string;
+    estadoAgua: string;
     circuito: {
       nombre: string;
     };
@@ -55,20 +57,28 @@ export default function TrabajadorPage() {
   const router = useRouter();
   const { data: session, isPending } = useSession();
 
-  const [activos, setActivos] = useState<CorteActivo[]>([]);
-  const [reconectados, setReconectados] = useState<CorteActivo[]>([]);
+  const [pendientesCorte, setPendientesCorte] = useState<CortePendiente[]>([]);
+  const [pendientesReconexion, setPendientesReconexion] = useState<CortePendiente[]>([]);
+  const [reconectados, setReconectados] = useState<CortePendiente[]>([]);
   const [cargando, setCargando] = useState(true);
   const [procesando, setProcesando] = useState<string | null>(null);
+  const [tab, setTab] = useState<'cortes' | 'reconexiones'>('cortes');
 
   async function cargarDatos() {
-    const [resActivos, resReconectados] = await Promise.all([
-      fetch(trpcQueryUrl('cortes.listarActivos')),
-      fetch(trpcQueryUrl('cortes.reconectadosHoy')),
+    const [resPendientesCorte, resPendientesReconexion, resReconectados] = await Promise.all([
+      fetch(trpcQueryUrl('cortes.pendientesDeCorte')),
+      fetch(trpcQueryUrl('cortes.pendientesDeReconexion')),
+      fetch(trpcQueryUrl('cortes.listarCortados')),
     ]);
 
-    if (resActivos.ok) {
-      const json = await resActivos.json();
-      setActivos(json?.[0]?.result?.data ?? []);
+    if (resPendientesCorte.ok) {
+      const json = await resPendientesCorte.json();
+      setPendientesCorte(json?.[0]?.result?.data ?? []);
+    }
+
+    if (resPendientesReconexion.ok) {
+      const json = await resPendientesReconexion.json();
+      setPendientesReconexion(json?.[0]?.result?.data ?? []);
     }
 
     if (resReconectados.ok) {
@@ -83,8 +93,29 @@ export default function TrabajadorPage() {
     cargarDatos();
   }, []);
 
-  async function handleReconectar(corteId: string) {
-    setProcesando(corteId);
+  async function handleConfirmarCorte(perfilId: string) {
+    setProcesando(perfilId);
+
+    await fetch('/api/trpc/cortes.confirmarCorte?batch=1', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        '0': {
+          json: {
+            perfilId,
+          },
+        },
+      }),
+    });
+
+    await cargarDatos();
+    setProcesando(null);
+  }
+
+  async function handleConfirmarReconexion(perfilId: string) {
+    setProcesando(perfilId);
 
     await fetch('/api/trpc/cortes.confirmarReconexion?batch=1', {
       method: 'POST',
@@ -94,7 +125,7 @@ export default function TrabajadorPage() {
       body: JSON.stringify({
         '0': {
           json: {
-            corteId,
+            perfilId,
           },
         },
       }),
@@ -116,7 +147,7 @@ export default function TrabajadorPage() {
   if (isPending || cargando) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <p>Cargando...</p>
+        <p className="text-muted-foreground">Cargando...</p>
       </div>
     );
   }
@@ -132,7 +163,6 @@ export default function TrabajadorPage() {
               <p className="mt-2 text-sky-100">{session?.user?.name}</p>
             </div>
             <div className="flex gap-2">
-              {/* Botón para volver al panel de residente */}
               <Button
                 variant="secondary"
                 onClick={irAResidente}
@@ -154,8 +184,8 @@ export default function TrabajadorPage() {
           <Card>
             <CardContent className="flex items-center justify-between p-5">
               <div>
-                <p className="text-sm text-muted-foreground">Cortes activos</p>
-                <p className="text-3xl font-bold text-red-600">{activos.length}</p>
+                <p className="text-sm text-muted-foreground">Pendientes de corte</p>
+                <p className="text-3xl font-bold text-red-600">{pendientesCorte.length}</p>
               </div>
               <Scissors className="h-8 w-8 text-red-600" />
             </CardContent>
@@ -164,66 +194,140 @@ export default function TrabajadorPage() {
           <Card>
             <CardContent className="flex items-center justify-between p-5">
               <div>
-                <p className="text-sm text-muted-foreground">Reconectados hoy</p>
-                <p className="text-3xl font-bold text-green-600">{reconectados.length}</p>
+                <p className="text-sm text-muted-foreground">Pendientes de reconexión</p>
+                <p className="text-3xl font-bold text-amber-600">{pendientesReconexion.length}</p>
               </div>
-              <RotateCcw className="h-8 w-8 text-green-600" />
+              <RotateCcw className="h-8 w-8 text-amber-600" />
             </CardContent>
           </Card>
         </div>
 
-        {/* Pendientes */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Cortes pendientes de reconexión</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {activos.length === 0 && (
-              <div className="rounded-xl border border-green-200 bg-green-50 p-8 text-center">
-                <Droplets className="mx-auto mb-3 h-10 w-10 text-green-600" />
-                <p className="font-medium text-green-700">Sin cortes pendientes</p>
-              </div>
-            )}
+        {/* Tabs */}
+        <div className="flex gap-2">
+          <Button
+            variant={tab === 'cortes' ? 'default' : 'outline'}
+            onClick={() => setTab('cortes')}
+          >
+            Cortes pendientes ({pendientesCorte.length})
+          </Button>
+          <Button
+            variant={tab === 'reconexiones' ? 'default' : 'outline'}
+            onClick={() => setTab('reconexiones')}
+          >
+            Reconexiones pendientes ({pendientesReconexion.length})
+          </Button>
+        </div>
 
-            {activos.map((c) => (
-              <div
-                key={c.id}
-                className="flex flex-col gap-4 rounded-xl border p-4 md:flex-row md:items-center md:justify-between"
-              >
-                <div className="flex items-start gap-3">
-                  <div className="rounded-xl bg-red-100 p-3">
-                    <AlertTriangle className="h-5 w-5 text-red-600" />
+        {/* Pendientes de Corte */}
+        {tab === 'cortes' && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Residentes que deben ser cortados</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                La cuadrilla debe ir a cortar físicamente el servicio
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {pendientesCorte.length === 0 && (
+                <div className="rounded-xl border border-green-200 bg-green-50 p-8 text-center">
+                  <Droplets className="mx-auto mb-3 h-10 w-10 text-green-600" />
+                  <p className="font-medium text-green-700">Sin cortes pendientes</p>
+                </div>
+              )}
+
+              {pendientesCorte.map((c) => (
+                <div
+                  key={c.id}
+                  className="flex flex-col gap-4 rounded-xl border p-4 md:flex-row md:items-center md:justify-between"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-xl bg-red-100 p-3">
+                      <AlertTriangle className="h-5 w-5 text-red-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium">{c.perfil.usuario.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {c.perfil.circuito.nombre} · {c.perfil.edificio} · {c.perfil.departamento}
+                      </p>
+                      <p className="text-sm text-red-600">{c.motivo}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-medium">{c.perfil.usuario.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {c.perfil.circuito.nombre} · {c.perfil.edificio} · {c.perfil.departamento}
-                    </p>
-                    <p className="text-sm text-red-600">{c.motivo}</p>
+                  <div className="flex items-center gap-3">
+                    <Badge variant="destructive">Pendiente de corte</Badge>
+                    <Button
+                      variant="default"
+                      disabled={procesando === c.perfil.id}
+                      onClick={() => handleConfirmarCorte(c.perfil.id)}
+                    >
+                      {procesando === c.perfil.id ? 'Procesando...' : 'Confirmar corte'}
+                    </Button>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <Badge variant="destructive">Cortado</Badge>
-                  <Button
-                    variant="outline"
-                    disabled={procesando === c.id}
-                    onClick={() => handleReconectar(c.id)}
-                  >
-                    {procesando === c.id ? 'Procesando...' : 'Reconectar'}
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
+              ))}
+            </CardContent>
+          </Card>
+        )}
 
-        {/* Reconectados */}
+        {/* Pendientes de Reconexión */}
+        {tab === 'reconexiones' && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Residentes que deben ser reconectados</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                Ya pagaron, la cuadrilla debe ir a reconectar el servicio
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {pendientesReconexion.length === 0 && (
+                <div className="rounded-xl border border-green-200 bg-green-50 p-8 text-center">
+                  <Droplets className="mx-auto mb-3 h-10 w-10 text-green-600" />
+                  <p className="font-medium text-green-700">Sin reconexiones pendientes</p>
+                </div>
+              )}
+
+              {pendientesReconexion.map((c) => (
+                <div
+                  key={c.id}
+                  className="flex flex-col gap-4 rounded-xl border p-4 md:flex-row md:items-center md:justify-between"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-xl bg-amber-100 p-3">
+                      <RotateCcw className="h-5 w-5 text-amber-600" />
+                    </div>
+                    <div>
+                      <p className="font-medium">{c.perfil.usuario.name}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {c.perfil.circuito.nombre} · {c.perfil.edificio} · {c.perfil.departamento}
+                      </p>
+                      <p className="text-sm text-amber-600">Pagó reconexión - pendiente de reconexión física</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Badge variant="outline" className="border-amber-300 text-amber-600">
+                      Pendiente reconexión
+                    </Badge>
+                    <Button
+                      variant="default"
+                      disabled={procesando === c.perfil.id}
+                      onClick={() => handleConfirmarReconexion(c.perfil.id)}
+                      className="bg-green-600 hover:bg-green-700"
+                    >
+                      {procesando === c.perfil.id ? 'Procesando...' : 'Confirmar reconexión'}
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Reconectados hoy */}
         {reconectados.length > 0 && (
           <Card>
             <CardHeader>
               <CardTitle>Reconectados hoy</CardTitle>
               <p className="text-sm text-muted-foreground">
-                Cobrar $300 MXN de reconexión
+                Cortes completados exitosamente
               </p>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -235,11 +339,10 @@ export default function TrabajadorPage() {
                   <div>
                     <p className="font-medium">{c.perfil.usuario.name}</p>
                     <p className="text-sm text-muted-foreground">
-                      {c.perfil.circuito.nombre} · {c.perfil.edificio} ·{' '}
-                      {c.perfil.departamento}
+                      {c.perfil.circuito.nombre} · {c.perfil.edificio} · {c.perfil.departamento}
                     </p>
                   </div>
-                  <Badge>Reconectado</Badge>
+                  <Badge variant="default" className="bg-green-600">Reconectado</Badge>
                 </div>
               ))}
             </CardContent>

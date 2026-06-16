@@ -1,6 +1,6 @@
 import { pgTable, uuid, text, integer, decimal,
-         timestamp, boolean, pgEnum } from 'drizzle-orm/pg-core'
-import { relations } from 'drizzle-orm'
+         timestamp, boolean, pgEnum } from 'drizzle-orm/pg-core';
+import { relations } from 'drizzle-orm';
 
 export const rolEnum = pgEnum('rol', [
   'admin',
@@ -8,11 +8,21 @@ export const rolEnum = pgEnum('rol', [
   'operador_pozo',
   'cuadrilla_cortes',
   'residente',
-])
+]);
 
-export const estadoPagoEnum = pgEnum('estado_pago', ['pendiente', 'pagado', 'vencido'])
-export const tenenciaEnum   = pgEnum('tenencia', ['propietario', 'inquilino'])
-export const sexoEnum       = pgEnum('sexo', ['masculino', 'femenino', 'otro'])
+export const estadoPagoEnum = pgEnum('estado_pago', ['pendiente', 'pagado', 'vencido']);
+export const tenenciaEnum   = pgEnum('tenencia', ['propietario', 'inquilino']);
+export const sexoEnum       = pgEnum('sexo', ['masculino', 'femenino', 'otro']);
+
+// ============================================
+// NUEVO: Estado del agua para perfiles
+// ============================================
+export const estadoAguaEnum = pgEnum('estado_agua', [
+  'activo',           // pagando al corriente
+  'pendiente_corte',  // debe el mes, cuadrilla debe ir a cortar
+  'cortado',          // ya sin servicio, debe pagar reconexión
+  'pendiente_reconexion',
+]);
 
 // ─────────────────────────────────────────────
 // Better Auth — tablas requeridas
@@ -26,7 +36,7 @@ export const user = pgTable('user', {
   role:          rolEnum('role').notNull().default('residente'),
   createdAt:     timestamp('created_at').notNull().defaultNow(),
   updatedAt:     timestamp('updated_at').notNull().defaultNow(),
-})
+});
 
 export const session = pgTable('session', {
   id:        text('id').primaryKey(),
@@ -37,7 +47,7 @@ export const session = pgTable('session', {
   userId:    text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
-})
+});
 
 export const account = pgTable('account', {
   id:           text('id').primaryKey(),
@@ -51,7 +61,7 @@ export const account = pgTable('account', {
   password:     text('password'),
   createdAt:    timestamp('created_at').notNull().defaultNow(),
   updatedAt:    timestamp('updated_at').notNull().defaultNow(),
-})
+});
 
 export const verification = pgTable('verification', {
   id:         text('id').primaryKey(),
@@ -60,7 +70,7 @@ export const verification = pgTable('verification', {
   expiresAt:  timestamp('expires_at').notNull(),
   createdAt:  timestamp('created_at').defaultNow(),
   updatedAt:  timestamp('updated_at').defaultNow(),
-})
+});
 
 // ─────────────────────────────────────────────
 // Estructura del fraccionamiento
@@ -69,7 +79,7 @@ export const circuitos = pgTable('circuitos', {
   id:              uuid('id').defaultRandom().primaryKey(),
   nombre:          text('nombre').notNull(),
   representanteId: text('representante_id').references(() => user.id),
-})
+});
 
 // Perfil extendido del residente — 1:1 con user
 export const perfilesResidente = pgTable('perfiles_residente', {
@@ -81,9 +91,10 @@ export const perfilesResidente = pgTable('perfiles_residente', {
   circuitoId:   uuid('circuito_id').notNull().references(() => circuitos.id),
   edificio:     text('edificio').notNull(),
   departamento: text('departamento').notNull(),
-  estadoAgua:   text('estado_agua').notNull().default('activo'), // 'activo' | 'cortado'
+  // ✅ ACTUALIZADO: usa el nuevo enum
+  estadoAgua:   estadoAguaEnum('estado_agua').notNull().default('activo'),
   creadoEn:     timestamp('creado_en').defaultNow(),
-})
+});
 
 // ─────────────────────────────────────────────
 // Pagos, cortes y tickets
@@ -100,7 +111,7 @@ export const pagos = pgTable('pagos', {
   esReconexion: boolean('es_reconexion').default(false),
   fechaPago:    timestamp('fecha_pago'),
   creadoEn:     timestamp('creado_en').defaultNow(),
-})
+});
 
 export const cortes = pgTable('cortes', {
   id:              uuid('id').defaultRandom().primaryKey(),
@@ -111,7 +122,7 @@ export const cortes = pgTable('cortes', {
   fechaCorte:      timestamp('fecha_corte').defaultNow(),
   fechaReconexion: timestamp('fecha_reconexion'),
   reconectadoPor:  text('reconectado_por').references(() => user.id),
-})
+});
 
 export const tickets = pgTable('tickets', {
   id:        uuid('id').defaultRandom().primaryKey(),
@@ -120,7 +131,7 @@ export const tickets = pgTable('tickets', {
   qrCode:    text('qr_code'),
   pdfUrl:    text('pdf_url'),
   emitidoEn: timestamp('emitido_en').defaultNow(),
-})
+});
 
 // ─────────────────────────────────────────────
 // Relaciones
@@ -130,7 +141,7 @@ export const userRelations = relations(user, ({ one, many }) => ({
     fields: [user.id], references: [perfilesResidente.userId],
   }),
   circuitoRepresentado: many(circuitos),
-}))
+}));
 
 export const circuitosRelations = relations(circuitos, ({ many, one }) => ({
   perfiles: many(perfilesResidente),
@@ -138,7 +149,7 @@ export const circuitosRelations = relations(circuitos, ({ many, one }) => ({
     fields: [circuitos.representanteId],
     references: [user.id],
   }),
-}))
+}));
 
 export const perfilesResidenteRelations = relations(perfilesResidente, ({ one, many }) => ({
   usuario: one(user, {
@@ -151,7 +162,7 @@ export const perfilesResidenteRelations = relations(perfilesResidente, ({ one, m
   }),
   pagos:  many(pagos),
   cortes: many(cortes),
-}))
+}));
 
 export const pagosRelations = relations(pagos, ({ one }) => ({
   perfil: one(perfilesResidente, {
@@ -162,7 +173,7 @@ export const pagosRelations = relations(pagos, ({ one }) => ({
     fields: [pagos.id],
     references: [tickets.pagoId],
   }),
-}))
+}));
 
 export const cortesRelations = relations(cortes, ({ one }) => ({
   perfil: one(perfilesResidente, {
@@ -173,11 +184,11 @@ export const cortesRelations = relations(cortes, ({ one }) => ({
     fields: [cortes.trabajadorId],
     references: [user.id],
   }),
-}))
+}));
 
 export const ticketsRelations = relations(tickets, ({ one }) => ({
   pago: one(pagos, {
     fields: [tickets.pagoId],
     references: [pagos.id],
   }),
-}))
+}));
