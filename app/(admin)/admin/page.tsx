@@ -67,7 +67,7 @@ type ResidenteCompleto = {
   pagoEsteMes: boolean;
   esMoroso: boolean;
   corteActivo: boolean;
-  usuario: { name: string; email: string };
+  usuario: { id: string; name: string; email: string };
   circuito?: { id: string; nombre: string } | null;
 };
 
@@ -149,12 +149,20 @@ export default function AdminPage() {
 
   async function cambiarRol(userId: string, rol: string) {
     setActualizando(userId);
-    await fetch('/api/trpc/usuarios.cambiarRol?batch=1', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ '0': { json: { userId, rol } } }),
-    });
-    await cargarDatos();
+    try {
+      const res = await fetch('/api/trpc/usuarios.cambiarRol?batch=1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ '0': { json: { userId, rol } } }),
+      });
+      if (res.ok) {
+        await cargarDatos();
+      } else {
+        console.error('Error al cambiar rol');
+      }
+    } catch (error) {
+      console.error('Error:', error);
+    }
     setActualizando(null);
   }
 
@@ -400,7 +408,7 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* Residentes con filtros */}
+        {/* Residentes con filtros y cambio de rol */}
         {tab === 'residentes' && (
           <Card>
             <CardHeader>
@@ -459,18 +467,20 @@ export default function AdminPage() {
               )}
               {residentesFiltrados.map((r) => {
                 const estadoInfo = getEstadoAguaLabel(r.estadoAgua);
+                const usuarioId = r.usuario?.id || r.id;
                 return (
                   <div
                     key={r.id}
                     className="flex flex-col gap-4 rounded-xl border p-4 md:flex-row md:items-center md:justify-between"
                   >
-                    <div>
-                      <p className="font-medium">{r.usuario.name}</p>
+                    <div className="flex-1">
+                      <p className="font-medium">{r.usuario?.name || 'Sin nombre'}</p>
                       <p className="text-sm text-muted-foreground">
                         {r.circuito?.nombre || 'Sin circuito'} · {r.edificio} · {r.departamento}
                       </p>
-                      <p className="text-xs text-muted-foreground">{r.usuario.email}</p>
+                      <p className="text-xs text-muted-foreground">{r.usuario?.email || 'Sin email'}</p>
                     </div>
+
                     <div className="flex items-center gap-2 flex-wrap">
                       <Badge variant={r.pagoEsteMes ? 'default' : 'destructive'}>
                         {r.pagoEsteMes ? 'Pagado' : 'Sin pago'}
@@ -485,6 +495,25 @@ export default function AdminPage() {
                         <Badge variant="outline" className="border-red-300 text-red-600">
                           Corte activo
                         </Badge>
+                      )}
+                    </div>
+
+                    {/* ✅ Selector de rol para residentes */}
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={(r.usuario as any)?.role || 'residente'}
+                        disabled={actualizando === r.id}
+                        onChange={(e) => cambiarRol(usuarioId, e.target.value)}
+                        className="h-9 rounded-lg border bg-background px-2 text-sm md:w-40"
+                      >
+                        {ROLES.map((role) => (
+                          <option key={role.value} value={role.value}>
+                            {role.label}
+                          </option>
+                        ))}
+                      </select>
+                      {actualizando === r.id && (
+                        <span className="text-xs text-muted-foreground">Guardando...</span>
                       )}
                     </div>
                   </div>
@@ -515,7 +544,7 @@ export default function AdminPage() {
                     className="flex flex-col gap-4 rounded-xl border p-4 md:flex-row md:items-center md:justify-between"
                   >
                     <div>
-                      <p className="font-medium">{r.usuario.name}</p>
+                      <p className="font-medium">{r.usuario?.name || 'Sin nombre'}</p>
                       <p className="text-sm text-muted-foreground">
                         {r.circuito?.nombre || 'Sin circuito'} · {r.edificio} · {r.departamento}
                       </p>
@@ -547,7 +576,7 @@ export default function AdminPage() {
                     className="flex flex-col gap-4 rounded-xl border p-4 md:flex-row md:items-center md:justify-between"
                   >
                     <div>
-                      <p className="font-medium">{r.usuario.name}</p>
+                      <p className="font-medium">{r.usuario?.name || 'Sin nombre'}</p>
                       <p className="text-sm text-muted-foreground">
                         {r.circuito?.nombre || 'Sin circuito'} · {r.edificio} · {r.departamento}
                       </p>
