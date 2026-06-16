@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useState } from 'react';
 import { authClient } from '@/lib/auth-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,7 +16,7 @@ import {
 } from '@/components/ui/card';
 import { Droplets } from 'lucide-react';
 
-export default function ResetPasswordPage() {
+function ResetPasswordContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
@@ -44,10 +45,15 @@ export default function ResetPasswordPage() {
     }
 
     try {
+      if (!token) {
+        throw new Error('Token no válido');
+      }
+      
       await authClient.resetPassword({
         newPassword: password,
-        token: token || '',
+        token: token,
       });
+      
       setSuccess(true);
       setTimeout(() => {
         router.push('/login');
@@ -132,5 +138,13 @@ export default function ResetPasswordPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Cargando...</div>}>
+      <ResetPasswordContent />
+    </Suspense>
   );
 }
