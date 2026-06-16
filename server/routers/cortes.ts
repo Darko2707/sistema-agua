@@ -6,12 +6,10 @@ import { eq, and } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 
 export const cortesRouter = router({
-
   // Representante y cuadrilla: lista de residentes pendientes de corte de su circuito
   pendientesDeCorte: roleProcedure('representante', 'cuadrilla_cortes', 'admin')
     .query(async ({ ctx }) => {
       const rol = (ctx.user as any).role;
-
       let circuitoId: string | null = null;
 
       if (rol === 'representante') {
@@ -30,7 +28,7 @@ export const cortesRouter = router({
       });
     }),
 
-  // ✅ NUEVO: Lista de residentes pendientes de reconexión (pagaron, esperan reconexión física)
+  // Lista de residentes pendientes de reconexión
   pendientesDeReconexion: roleProcedure('cuadrilla_cortes', 'admin')
     .query(async () => {
       return db.query.perfilesResidente.findMany({
@@ -52,7 +50,6 @@ export const cortesRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'El residente no está pendiente de corte' });
       }
 
-      // Registra el corte
       const [corte] = await db.insert(cortes).values({
         perfilId: input.perfilId,
         trabajadorId: ctx.user.id,
@@ -60,7 +57,6 @@ export const cortesRouter = router({
         activo: true,
       }).returning();
 
-      // Cambia estado a cortado
       await db.update(perfilesResidente)
         .set({ estadoAgua: 'cortado' })
         .where(eq(perfilesResidente.id, input.perfilId));
@@ -68,7 +64,7 @@ export const cortesRouter = router({
       return corte;
     }),
 
-  // Cuadrilla: lista de cortes activos (ya cortados, esperando pago para reconectar)
+  // Lista de cortes activos
   listarCortados: roleProcedure('cuadrilla_cortes', 'admin').query(async () => {
     return db.query.perfilesResidente.findMany({
       where: (p, { eq }) => eq(p.estadoAgua, 'cortado'),
@@ -77,7 +73,7 @@ export const cortesRouter = router({
     });
   }),
 
-  // Cuadrilla: confirma reconexión física (después de que el residente pagó)
+  // Confirma reconexión física
   confirmarReconexion: roleProcedure('cuadrilla_cortes', 'admin')
     .input(z.object({ perfilId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
@@ -85,11 +81,10 @@ export const cortesRouter = router({
         where: (p, { eq }) => eq(p.id, input.perfilId),
       });
       if (!perfil) throw new TRPCError({ code: 'NOT_FOUND' });
-      if (perfil.estadoAgua !== 'cortado' && perfil.estadoAgua !== ('pendiente_reconexion' as string)) {
+      if (perfil.estadoAgua !== 'cortado' && perfil.estadoAgua !== 'pendiente_reconexion') {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'El residente no está cortado o pendiente de reconexión' });
       }
 
-      // Cierra el corte activo
       const corteActivo = await db.query.cortes.findFirst({
         where: (c, { eq, and }) => and(
           eq(c.perfilId, input.perfilId),
@@ -102,7 +97,6 @@ export const cortesRouter = router({
           .where(eq(cortes.id, corteActivo.id));
       }
 
-      // Regresa a activo
       await db.update(perfilesResidente)
         .set({ estadoAgua: 'activo' })
         .where(eq(perfilesResidente.id, input.perfilId));
@@ -110,7 +104,7 @@ export const cortesRouter = router({
       return { ok: true };
     }),
 
-  // Operador de pozo: corte manual por mantenimiento u otro motivo
+  // Operador de pozo: corte manual
   crearCorteManual: roleProcedure('operador_pozo', 'admin')
     .input(z.object({
       perfilId: z.string().uuid(),
