@@ -26,43 +26,32 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
 
   async function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
+  e.preventDefault()
+  setLoading(true)
+  setError('')
 
-    try {
-      const { error: signInError } = await authClient.signIn.email({ email, password });
+  try {
+    const { error: signInError } = await authClient.signIn.email({ email, password })
 
-      if (signInError) {
-        setError(signInError.message || 'Correo o contraseña incorrectos');
-        setLoading(false);
-        return;
-      }
-
-      // Obtener sesión actualizada con el rol real de la BD
-      const sessionRes = await authClient.getSession();
-      const rol = (sessionRes?.data?.user as any)?.role;
-      
-      // ========== LOGS AGREGADOS ==========
-      console.log('ROL DETECTADO:', rol);
-      console.log('SESSION DATA:', sessionRes?.data);
-      console.log('USER COMPLETO:', sessionRes?.data?.user);
-      // ===================================
-
-      if (rol === 'admin') {
-        router.push('/admin');
-      } else if (rol === 'representante') {
-        router.push('/representante');
-      } else if (rol === 'operador_pozo' || rol === 'cuadrilla_cortes') {
-        router.push('/trabajador');
-      } else {
-        router.push('/residente');
-      }
-    } catch (err: any) {
-      setError(err.message || 'Error inesperado');
-      setLoading(false);
+    if (signInError) {
+      setError(signInError.message || 'Correo o contraseña incorrectos')
+      setLoading(false)
+      return
     }
+
+    const meRes = await fetch('/api/me')
+    const { role: rol } = await meRes.json()
+
+    if (rol === 'admin')                                              router.push('/admin')
+    else if (rol === 'representante')                                 router.push('/representante')
+    else if (rol === 'operador_pozo' || rol === 'cuadrilla_cortes')  router.push('/trabajador')
+    else                                                              router.push('/residente')
+
+  } catch (err: any) {
+    setError(err.message || 'Error inesperado')
+    setLoading(false)
   }
+}
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-100 via-white to-cyan-100 flex items-center justify-center p-4">
