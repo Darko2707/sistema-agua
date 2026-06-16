@@ -68,7 +68,7 @@ type ResidenteCompleto = {
   esMoroso: boolean;
   corteActivo: boolean;
   usuario: { name: string; email: string };
-  circuito: { nombre: string };
+  circuito?: { id: string; nombre: string } | null;
 };
 
 type Circuito = {
@@ -120,6 +120,8 @@ export default function AdminPage() {
   const [pendientesReconexion, setPendientesReconexion] = useState<ResidenteCompleto[]>([]);
   const [cargando, setCargando] = useState(true);
   const [actualizando, setActualizando] = useState<string | null>(null);
+  const [filtroCircuito, setFiltroCircuito] = useState<string>('todos');
+  const [filtroEstado, setFiltroEstado] = useState<string>('todos');
 
   async function cargarDatos() {
     const [resR, resP, resL, resC, resPC, resPR] = await Promise.all([
@@ -176,6 +178,13 @@ export default function AdminPage() {
   function irAResidente() {
     router.push('/residente');
   }
+
+  // Filtrar residentes
+  const residentesFiltrados = residentes.filter((r) => {
+    const porCircuito = filtroCircuito === 'todos' || r.circuito?.id === filtroCircuito;
+    const porEstado = filtroEstado === 'todos' || r.estadoAgua === filtroEstado;
+    return porCircuito && porEstado;
+  });
 
   if (isPending || cargando) {
     return (
@@ -307,7 +316,6 @@ export default function AdminPage() {
         {/* Personal - Gestión de roles */}
         {tab === 'personal' && (
           <div className="space-y-6">
-            {/* Lista de personal */}
             <Card>
               <CardHeader>
                 <CardTitle>Personal del sistema</CardTitle>
@@ -349,7 +357,6 @@ export default function AdminPage() {
               </CardContent>
             </Card>
 
-            {/* Circuitos y representantes */}
             <Card>
               <CardHeader>
                 <CardTitle>Circuitos y representantes</CardTitle>
@@ -393,17 +400,64 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* Residentes */}
+        {/* Residentes con filtros */}
         {tab === 'residentes' && (
           <Card>
             <CardHeader>
               <CardTitle>Todos los residentes</CardTitle>
+              <div className="flex flex-wrap gap-4 mt-2">
+                {/* Filtro por circuito */}
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-muted-foreground">Circuito:</label>
+                  <select
+                    value={filtroCircuito}
+                    onChange={(e) => setFiltroCircuito(e.target.value)}
+                    className="h-9 rounded-lg border bg-background px-3 text-sm"
+                  >
+                    <option value="todos">Todos</option>
+                    {circuitos.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Filtro por estado */}
+                <div className="flex items-center gap-2">
+                  <label className="text-sm text-muted-foreground">Estado:</label>
+                  <select
+                    value={filtroEstado}
+                    onChange={(e) => setFiltroEstado(e.target.value)}
+                    className="h-9 rounded-lg border bg-background px-3 text-sm"
+                  >
+                    <option value="todos">Todos</option>
+                    <option value="activo">Activo</option>
+                    <option value="pendiente_corte">Pendiente corte</option>
+                    <option value="cortado">Cortado</option>
+                    <option value="pendiente_reconexion">Pendiente reconexión</option>
+                  </select>
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setFiltroCircuito('todos');
+                    setFiltroEstado('todos');
+                  }}
+                >
+                  Limpiar filtros
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-3">
-              {residentes.length === 0 && (
-                <p className="py-10 text-center text-muted-foreground">No hay residentes registrados.</p>
+              {residentesFiltrados.length === 0 && (
+                <p className="py-10 text-center text-muted-foreground">
+                  No hay residentes que coincidan con los filtros.
+                </p>
               )}
-              {residentes.map((r) => {
+              {residentesFiltrados.map((r) => {
                 const estadoInfo = getEstadoAguaLabel(r.estadoAgua);
                 return (
                   <div
@@ -413,7 +467,7 @@ export default function AdminPage() {
                     <div>
                       <p className="font-medium">{r.usuario.name}</p>
                       <p className="text-sm text-muted-foreground">
-                        {r.circuito.nombre} · {r.edificio} · {r.departamento}
+                        {r.circuito?.nombre || 'Sin circuito'} · {r.edificio} · {r.departamento}
                       </p>
                       <p className="text-xs text-muted-foreground">{r.usuario.email}</p>
                     </div>
@@ -443,7 +497,6 @@ export default function AdminPage() {
         {/* Pendientes */}
         {tab === 'pendientes' && (
           <div className="space-y-6">
-            {/* Pendientes de corte */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="flex items-center gap-2">
@@ -464,7 +517,7 @@ export default function AdminPage() {
                     <div>
                       <p className="font-medium">{r.usuario.name}</p>
                       <p className="text-sm text-muted-foreground">
-                        {r.circuito.nombre} · {r.edificio} · {r.departamento}
+                        {r.circuito?.nombre || 'Sin circuito'} · {r.edificio} · {r.departamento}
                       </p>
                       <Badge variant="destructive">Pendiente de corte</Badge>
                     </div>
@@ -474,7 +527,6 @@ export default function AdminPage() {
               </CardContent>
             </Card>
 
-            {/* Pendientes de reconexión */}
             <Card>
               <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle className="flex items-center gap-2">
@@ -497,7 +549,7 @@ export default function AdminPage() {
                     <div>
                       <p className="font-medium">{r.usuario.name}</p>
                       <p className="text-sm text-muted-foreground">
-                        {r.circuito.nombre} · {r.edificio} · {r.departamento}
+                        {r.circuito?.nombre || 'Sin circuito'} · {r.edificio} · {r.departamento}
                       </p>
                       <Badge variant="outline" className="border-amber-300 text-amber-600">
                         Pendiente reconexión

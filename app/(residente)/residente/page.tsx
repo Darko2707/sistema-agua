@@ -22,6 +22,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   UserCog,
+  Shield,
 } from 'lucide-react';
 
 const MESES = [
@@ -63,7 +64,6 @@ export default function ResidentePage() {
   const { data: session, isPending } = useSession();
 
   const [datos, setDatos] = useState<DatosResidente | null>(null);
-
   const [miRol, setMiRol] = useState<string>('residente');
   const [cargando, setCargando] = useState(true);
   const [pagando, setPagando] = useState(false);
@@ -151,6 +151,37 @@ export default function ResidentePage() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <p className="text-muted-foreground">Cargando...</p>
+      </div>
+    );
+  }
+
+  // ✅ Si es admin, mostrar mensaje y redirigir
+  if (miRol === 'admin') {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardContent className="space-y-6 pt-6 text-center">
+            <div className="flex justify-center">
+              <Shield className="h-16 w-16 text-primary" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold">Panel de Administrador</h2>
+              <p className="text-muted-foreground mt-2">
+                Los administradores no tienen acceso al panel de pagos.
+              </p>
+              <p className="text-sm text-muted-foreground mt-1">
+                Ve al panel de administrador para gestionar el sistema.
+              </p>
+            </div>
+            <Button onClick={() => router.push('/admin')} className="w-full">
+              Ir al panel de administrador
+            </Button>
+            <Button variant="outline" onClick={salir} className="w-full">
+              <LogOut className="mr-2 h-4 w-4" />
+              Cerrar sesión
+            </Button>
+          </CardContent>
+        </Card>
       </div>
     );
   }
@@ -284,7 +315,7 @@ export default function ResidentePage() {
         )}
 
         <div className="grid gap-6 lg:grid-cols-3">
-          {/* Pago */}
+          {/* Pago - Solo visible para no-admins */}
           <Card className="lg:col-span-2">
             <CardHeader>
               <CardTitle>
