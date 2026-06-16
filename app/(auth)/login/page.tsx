@@ -64,7 +64,7 @@ export default function LoginPage() {
     }
   }
 
-  // ✅ Usar fetch directo al endpoint de better-auth
+  // ✅ Usar fetch al endpoint /api/auth/forgot-password
   async function handleResetPassword(e: React.FormEvent) {
     e.preventDefault();
     setResetLoading(true);
@@ -72,14 +72,14 @@ export default function LoginPage() {
     setResetSent(false);
 
     try {
-      const res = await fetch('/api/auth/forget-password', {
+      const res = await fetch('/api/auth/forgot-password', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           email: resetEmail,
-          redirectTo: `${window.location.origin}/reset-password`,
+          callbackURL: `${window.location.origin}/reset-password`,
         }),
       });
 
