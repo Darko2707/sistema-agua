@@ -36,16 +36,8 @@ type ResidentePendiente = {
 };
 
 function trpcQueryUrl(path: string) {
-  return (
-    `/api/trpc/${path}?batch=1&input=` +
-    encodeURIComponent(
-      JSON.stringify({
-        '0': {
-          json: undefined,
-        },
-      })
-    )
-  );
+  return `/api/trpc/${path}?batch=1&input=` +
+    encodeURIComponent(JSON.stringify({ '0': { json: undefined } }));
 }
 
 export default function TrabajadorPage() {
@@ -57,6 +49,7 @@ export default function TrabajadorPage() {
   const [reconectados, setReconectados] = useState<ResidentePendiente[]>([]);
   const [cargando, setCargando] = useState(true);
   const [procesando, setProcesando] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<'cortes' | 'reconexiones'>('cortes');
 
   async function cargarDatos() {
@@ -88,45 +81,61 @@ export default function TrabajadorPage() {
     cargarDatos();
   }, []);
 
+  // ✅ CORREGIDO: llamada directa sin batch
   async function handleConfirmarCorte(perfilId: string) {
     setProcesando(perfilId);
+    setError(null);
 
-    await fetch('/api/trpc/cortes.confirmarCorte?batch=1', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        '0': {
-          json: {
-            perfilId,
-          },
+    try {
+      const res = await fetch('/api/trpc/cortes.confirmarCorte', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
-      }),
-    });
+        body: JSON.stringify({ perfilId }),
+      });
 
-    await cargarDatos();
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.error?.json?.message || 'Error al confirmar corte');
+      }
+
+      await cargarDatos();
+    } catch (err: any) {
+      setError(err.message);
+      console.error('Error:', err);
+    }
+
     setProcesando(null);
   }
 
+  // ✅ CORREGIDO: llamada directa sin batch
   async function handleConfirmarReconexion(perfilId: string) {
     setProcesando(perfilId);
+    setError(null);
 
-    await fetch('/api/trpc/cortes.confirmarReconexion?batch=1', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        '0': {
-          json: {
-            perfilId,
-          },
+    try {
+      const res = await fetch('/api/trpc/cortes.confirmarReconexion', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
-      }),
-    });
+        body: JSON.stringify({ perfilId }),
+      });
 
-    await cargarDatos();
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.error?.json?.message || 'Error al confirmar reconexión');
+      }
+
+      await cargarDatos();
+    } catch (err: any) {
+      setError(err.message);
+      console.error('Error:', err);
+    }
+
     setProcesando(null);
   }
 
@@ -150,6 +159,7 @@ export default function TrabajadorPage() {
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8">
       <div className="mx-auto max-w-6xl space-y-6">
+        {/* Header */}
         <div className="rounded-3xl bg-gradient-to-r from-sky-600 to-cyan-600 p-6 text-white shadow-lg">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
@@ -173,6 +183,14 @@ export default function TrabajadorPage() {
           </div>
         </div>
 
+        {/* Error global */}
+        {error && (
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-600">
+            {error}
+          </div>
+        )}
+
+        {/* Estadísticas */}
         <div className="grid gap-4 md:grid-cols-2">
           <Card>
             <CardContent className="flex items-center justify-between p-5">
@@ -195,6 +213,7 @@ export default function TrabajadorPage() {
           </Card>
         </div>
 
+        {/* Tabs */}
         <div className="flex gap-2">
           <Button
             variant={tab === 'cortes' ? 'default' : 'outline'}
@@ -210,6 +229,7 @@ export default function TrabajadorPage() {
           </Button>
         </div>
 
+        {/* Pendientes de Corte */}
         {tab === 'cortes' && (
           <Card>
             <CardHeader>
@@ -259,6 +279,7 @@ export default function TrabajadorPage() {
           </Card>
         )}
 
+        {/* Pendientes de Reconexión */}
         {tab === 'reconexiones' && (
           <Card>
             <CardHeader>
@@ -311,6 +332,7 @@ export default function TrabajadorPage() {
           </Card>
         )}
 
+        {/* Reconectados hoy */}
         {reconectados.length > 0 && (
           <Card>
             <CardHeader>
