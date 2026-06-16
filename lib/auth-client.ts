@@ -1,33 +1,40 @@
-'use client'
+'use client';
 
-import { createAuthClient } from 'better-auth/client'
-import { useState, useEffect } from 'react'
+import { createAuthClient } from 'better-auth/client';
+import { useState, useEffect } from 'react';
 
-export const authClient = createAuthClient()
+const authClient = createAuthClient();
 
 type SessionData = {
   user: {
-    id: string
-    name: string
-    email: string
-    role?: string
-  }
-} | null
+    id: string;
+    name: string;
+    email: string;
+    role?: string;
+  };
+} | null;
 
 export function useSession() {
-  const [data, setData]           = useState<SessionData>(null)
-  const [isPending, setIsPending] = useState(true)
+  const [data, setData] = useState<SessionData>(null);
+  const [isPending, setIsPending] = useState(true);
 
   useEffect(() => {
-    let active = true
+    let active = true;
     authClient.getSession().then((res: any) => {
       if (active) {
-        setData(res?.data ?? null)
-        setIsPending(false)
+        setData(res?.data ?? null);
+        setIsPending(false);
       }
-    })
-    return () => { active = false }
-  }, [])
+    });
+    return () => { active = false; };
+  }, []);
 
-  return { data, isPending }
+  return { data, isPending };
 }
+
+// ✅ Exportar authClient y los métodos necesarios
+export const signIn = authClient.signIn;
+export const signOut = authClient.signOut;
+
+export { authClient };
+export default authClient;
