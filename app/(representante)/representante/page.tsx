@@ -1,134 +1,106 @@
-'use client';
+'use client'
 
-import { useEffect, useState } from 'react';
-import { authClient, useSession } from '@/lib/auth-client';
-import { useRouter } from 'next/navigation';
-
-import { Button } from '@/components/ui/button';
+import { useEffect, useState } from 'react'
+import { authClient, useSession } from '@/lib/auth-client'
+import { useRouter } from 'next/navigation'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
 import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
+  LogOut, Users, AlertTriangle,
+  TrendingUp, Droplets, Home, Scissors,
+} from 'lucide-react'
 
-import {
-  LogOut,
-  Users,
-  AlertTriangle,
-  TrendingUp,
-  Droplets,
-  Home,
-} from 'lucide-react';
-
-const MESES = [
-  'Ene',
-  'Feb',
-  'Mar',
-  'Abr',
-  'May',
-  'Jun',
-  'Jul',
-  'Ago',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dic',
-];
-
-const ahora = new Date();
+const MESES = ['Ene','Feb','Mar','Abr','May','Jun',
+               'Jul','Ago','Sep','Oct','Nov','Dic']
+const ahora = new Date()
 
 type Residente = {
-  id: string;
-  edificio: string;
-  departamento: string;
-  estadoAgua: string;
-  usuario: {
-    name: string;
-    email: string;
-  };
-};
+  id: string
+  edificio: string
+  departamento: string
+  estadoAgua: string
+  pagoEsteMes: boolean
+  corteActivo: boolean
+  usuario: { name: string; email: string }
+  circuito: { nombre: string }
+}
 
 type Resumen = {
-  totalDeptos: number;
-  pagados: number;
-  recaudado: number;
-  porCircuito: {
-    nombre: string;
-    total: number;
-    pagados: number;
-  }[];
-};
+  totalDeptos: number
+  pagados: number
+  recaudado: number
+  porCircuito: { nombre: string; total: number; pagados: number }[]
+}
 
 function trpcQueryUrl(path: string) {
-  return (
-    `/api/trpc/${path}?batch=1&input=` +
-    encodeURIComponent(
-      JSON.stringify({
-        '0': {
-          json: undefined,
-        },
-      })
-    )
-  );
+  return `/api/trpc/${path}?batch=1&input=` +
+    encodeURIComponent(JSON.stringify({ '0': { json: undefined } }))
 }
 
 export default function RepresentantePage() {
-  const router = useRouter();
-  const { data: session, isPending } = useSession();
+  const router = useRouter()
+  const { data: session, isPending } = useSession()
+  const [resumen, setResumen]     = useState<Resumen | null>(null)
+  const [residentes, setResidentes] = useState<Residente[]>([])
+  const [cargando, setCargando]   = useState(true)
+  const [tab, setTab]             = useState<'todos' | 'morosos'>('todos')
+  const [solicitando, setSolicitando] = useState<string | null>(null)
+  const [mensaje, setMensaje]     = useState<{ id: string; texto: string } | null>(null)
 
-  const [resumen, setResumen] = useState<Resumen | null>(null);
-  const [residentes, setResidentes] = useState<Residente[]>([]);
-  const [cargando, setCargando] = useState(true);
+  async function cargar() {
+    const [resR, resL] = await Promise.all([
+      fetch(trpcQueryUrl('pagos.resumenMes')),
+      fetch(trpcQueryUrl('usuarios.listarResidentes')),
+    ])
+    if (resR.ok) setResumen((await resR.json())?.[0]?.result?.data ?? null)
+    if (resL.ok) setResidentes((await resL.json())?.[0]?.result?.data ?? [])
+    setCargando(false)
+  }
 
-  useEffect(() => {
-    async function cargar() {
-      const [resR, resL] = await Promise.all([
-        fetch(trpcQueryUrl('pagos.resumenMes')),
-        fetch(trpcQueryUrl('usuarios.listarResidentes')),
-      ]);
+  useEffect(() => { cargar() }, [])
 
-      if (resR.ok) {
-        setResumen((await resR.json())?.[0]?.result?.data ?? null);
-      }
+  async function solicitarCorte(perfilId: string) {
+    setSolicitando(perfilId)
+    setMensaje(null)
 
-      if (resL.ok) {
-        setResidentes((await resL.json())?.[0]?.result?.data ?? []);
-      }
+    const res = await fetch('/api/trpc/cortes.solicitarCorte?batch=1', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ '0': { json: { perfilId, motivo: 'falta_pago' } } }),
+    })
 
-      setCargando(false);
+    if (res.ok) {
+      setMensaje({ id: perfilId, texto: 'Corte solicitado correctamente' })
+      await cargar()
+    } else {
+      const json = await res.json()
+      setMensaje({
+        id: perfilId,
+        texto: json?.[0]?.error?.json?.message ?? 'No se pudo solicitar el corte',
+      })
     }
-
-    cargar();
-  }, []);
-
-  async function salir() {
-    await authClient.signOut();
-    router.push('/login');
+    setSolicitando(null)
   }
 
-  function irAResidente() {
-    router.push('/residente');
-  }
+  if (isPending || cargando) return (
+    <div className="min-h-screen flex items-center justify-center">
+      <p className="text-muted-foreground">Cargando...</p>
+    </div>
+  )
 
-  if (isPending || cargando) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p className="text-muted-foreground">Cargando...</p>
-      </div>
-    );
-  }
+  const morosos    = resumen ? resumen.totalDeptos - resumen.pagados : 0
+  const porcentaje = resumen && resumen.totalDeptos > 0
+    ? Math.round((resumen.pagados / resumen.totalDeptos) * 100) : 0
 
-  const morosos = resumen ? resumen.totalDeptos - resumen.pagados : 0;
-  const porcentaje =
-    resumen && resumen.totalDeptos > 0
-      ? Math.round((resumen.pagados / resumen.totalDeptos) * 100)
-      : 0;
+  const listaMostrar = tab === 'morosos'
+    ? residentes.filter(r => !r.pagoEsteMes)
+    : residentes
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
+
         {/* Header */}
         <div className="rounded-3xl bg-gradient-to-r from-sky-600 to-cyan-600 p-6 text-white shadow-lg">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -139,16 +111,13 @@ export default function RepresentantePage() {
               </p>
             </div>
             <div className="flex gap-2">
-              {/* Botón para volver al panel de residente */}
-              <Button
-                variant="secondary"
-                onClick={irAResidente}
-                className="bg-white/20 text-white hover:bg-white/30"
-              >
+              <Button variant="secondary" onClick={() => router.push('/residente')}
+                className="bg-white/20 text-white hover:bg-white/30">
                 <Home className="mr-2 h-4 w-4" />
                 Mi cuenta
               </Button>
-              <Button variant="secondary" onClick={salir}>
+              <Button variant="secondary"
+                onClick={async () => { await authClient.signOut(); router.push('/login') }}>
                 <LogOut className="mr-2 h-4 w-4" />
                 Salir
               </Button>
@@ -156,20 +125,17 @@ export default function RepresentantePage() {
           </div>
         </div>
 
-        {/* Estadísticas */}
+        {/* KPIs */}
         <div className="grid gap-4 md:grid-cols-3">
           <Card>
             <CardContent className="flex items-center justify-between p-5">
               <div>
                 <p className="text-sm text-muted-foreground">Pagados</p>
-                <p className="text-3xl font-bold text-green-600">
-                  {resumen?.pagados ?? 0}
-                </p>
+                <p className="text-3xl font-bold text-green-600">{resumen?.pagados ?? 0}</p>
               </div>
               <Users className="h-8 w-8 text-green-600" />
             </CardContent>
           </Card>
-
           <Card>
             <CardContent className="flex items-center justify-between p-5">
               <div>
@@ -179,7 +145,6 @@ export default function RepresentantePage() {
               <AlertTriangle className="h-8 w-8 text-red-600" />
             </CardContent>
           </Card>
-
           <Card>
             <CardContent className="flex items-center justify-between p-5">
               <div>
@@ -191,11 +156,9 @@ export default function RepresentantePage() {
           </Card>
         </div>
 
-        {/* Barra */}
+        {/* Barra de progreso */}
         <Card>
-          <CardHeader>
-            <CardTitle>Avance de cobranza</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Avance de cobranza</CardTitle></CardHeader>
           <CardContent>
             <div className="mb-3 flex justify-between text-sm">
               <span>Pagos recibidos</span>
@@ -204,30 +167,40 @@ export default function RepresentantePage() {
               </span>
             </div>
             <div className="h-4 overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full bg-green-500 transition-all duration-500"
-                style={{ width: `${porcentaje}%` }}
-              />
+              <div className="h-full rounded-full bg-green-500 transition-all duration-500"
+                style={{ width: `${porcentaje}%` }} />
             </div>
           </CardContent>
         </Card>
 
-        {/* Residentes */}
+        {/* Tabs */}
+        <div className="flex gap-2">
+          <Button variant={tab === 'todos' ? 'default' : 'outline'}
+            onClick={() => setTab('todos')}>
+            Todos ({residentes.length})
+          </Button>
+          <Button variant={tab === 'morosos' ? 'destructive' : 'outline'}
+            onClick={() => setTab('morosos')}>
+            Morosos ({residentes.filter(r => !r.pagoEsteMes).length})
+          </Button>
+        </div>
+
+        {/* Lista */}
         <Card>
           <CardHeader>
-            <CardTitle>Residentes del circuito</CardTitle>
+            <CardTitle>
+              {tab === 'morosos' ? 'Residentes morosos' : 'Todos los residentes'}
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {residentes.length === 0 && (
+            {listaMostrar.length === 0 && (
               <p className="py-10 text-center text-muted-foreground">
-                No hay residentes registrados.
+                {tab === 'morosos' ? 'Sin morosos este mes ✓' : 'No hay residentes registrados'}
               </p>
             )}
-            {residentes.map((r) => (
-              <div
-                key={r.id}
-                className="flex flex-col gap-4 rounded-xl border bg-background p-4 transition hover:shadow-sm md:flex-row md:items-center md:justify-between"
-              >
+            {listaMostrar.map(r => (
+              <div key={r.id}
+                className="flex flex-col gap-4 rounded-xl border bg-background p-4 md:flex-row md:items-center md:justify-between">
                 <div className="flex items-center gap-4">
                   <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-100">
                     <Droplets className="h-6 w-6 text-sky-600" />
@@ -238,16 +211,39 @@ export default function RepresentantePage() {
                       {r.edificio} · {r.departamento}
                     </p>
                     <p className="text-xs text-muted-foreground">{r.usuario.email}</p>
+                    {mensaje?.id === r.id && (
+                      <p className="text-xs text-amber-600 mt-1">{mensaje.texto}</p>
+                    )}
                   </div>
                 </div>
-                <Badge variant={r.estadoAgua === 'activo' ? 'default' : 'destructive'}>
-                  {r.estadoAgua === 'activo' ? 'Al corriente' : 'Cortado'}
-                </Badge>
+
+                <div className="flex items-center gap-2 flex-wrap justify-end">
+                  <Badge variant={r.pagoEsteMes ? 'default' : 'destructive'}>
+                    {r.pagoEsteMes ? 'Pagado' : 'Sin pago'}
+                  </Badge>
+                  <Badge variant={r.estadoAgua === 'activo' ? 'default' : 'destructive'}>
+                    {r.estadoAgua === 'activo' ? 'Agua activa' : 'Cortado'}
+                  </Badge>
+                  {!r.pagoEsteMes && !r.corteActivo && (
+                    <Button size="sm" variant="destructive"
+                      disabled={solicitando === r.id}
+                      onClick={() => solicitarCorte(r.id)}>
+                      <Scissors className="mr-1 h-3 w-3" />
+                      {solicitando === r.id ? 'Solicitando...' : 'Solicitar corte'}
+                    </Button>
+                  )}
+                  {r.corteActivo && (
+                    <Badge variant="outline" className="border-red-300 text-red-600">
+                      Corte en proceso
+                    </Badge>
+                  )}
+                </div>
               </div>
             ))}
           </CardContent>
         </Card>
+
       </div>
     </div>
-  );
+  )
 }
