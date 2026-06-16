@@ -26,39 +26,33 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
 
   async function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
-    setLoading(true);
-    setError('');
+  e.preventDefault()
+  setLoading(true)
+  setError('')
 
-    try {
-      const { data, error: signInError } = await authClient.signIn.email({
-        email,
-        password,
-      });
+  try {
+    const { error: signInError } = await authClient.signIn.email({ email, password })
 
-      if (signInError) {
-        setError(signInError.message || 'Correo o contraseña incorrectos');
-        setLoading(false);
-        return;
-      }
-
-      const rol = (data?.user as any)?.role;
-
-      // Redirección según el rol
-      if (rol === 'admin') {
-        router.push('/admin');
-      } else if (rol === 'representante') {
-        router.push('/representante');
-      } else if (rol === 'operador_pozo' || rol === 'cuadrilla_cortes') {
-        router.push('/trabajador');
-      } else {
-        router.push('/residente');
-      }
-    } catch (err: any) {
-      setError(err.message || 'Error inesperado');
-      setLoading(false);
+    if (signInError) {
+      setError(signInError.message || 'Correo o contraseña incorrectos')
+      setLoading(false)
+      return
     }
+
+    // Obtener sesión actualizada con el rol real de la BD
+    const sessionRes = await authClient.getSession()
+    const rol = (sessionRes?.data?.user as any)?.role
+
+    if (rol === 'admin')                                             router.push('/admin')
+    else if (rol === 'representante')                                router.push('/representante')
+    else if (rol === 'operador_pozo' || rol === 'cuadrilla_cortes') router.push('/trabajador')
+    else                                                             router.push('/residente')
+
+  } catch (err: any) {
+    setError(err.message || 'Error inesperado')
+    setLoading(false)
   }
+}
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-100 via-white to-cyan-100 flex items-center justify-center p-4">
