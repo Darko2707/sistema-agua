@@ -22,21 +22,16 @@ import {
   Home,
 } from 'lucide-react';
 
-type CortePendiente = {
+type ResidentePendiente = {
   id: string;
-  motivo: string;
-  fechaCorte: string;
-  perfil: {
-    id: string;
-    edificio: string;
-    departamento: string;
-    estadoAgua: string;
-    circuito: {
-      nombre: string;
-    };
-    usuario: {
-      name: string;
-    };
+  edificio: string;
+  departamento: string;
+  estadoAgua: string;
+  usuario: {
+    name: string;
+  };
+  circuito: {
+    nombre: string;
   };
 };
 
@@ -57,9 +52,9 @@ export default function TrabajadorPage() {
   const router = useRouter();
   const { data: session, isPending } = useSession();
 
-  const [pendientesCorte, setPendientesCorte] = useState<CortePendiente[]>([]);
-  const [pendientesReconexion, setPendientesReconexion] = useState<CortePendiente[]>([]);
-  const [reconectados, setReconectados] = useState<CortePendiente[]>([]);
+  const [pendientesCorte, setPendientesCorte] = useState<ResidentePendiente[]>([]);
+  const [pendientesReconexion, setPendientesReconexion] = useState<ResidentePendiente[]>([]);
+  const [reconectados, setReconectados] = useState<ResidentePendiente[]>([]);
   const [cargando, setCargando] = useState(true);
   const [procesando, setProcesando] = useState<string | null>(null);
   const [tab, setTab] = useState<'cortes' | 'reconexiones'>('cortes');
@@ -155,7 +150,6 @@ export default function TrabajadorPage() {
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8">
       <div className="mx-auto max-w-6xl space-y-6">
-        {/* Header */}
         <div className="rounded-3xl bg-gradient-to-r from-sky-600 to-cyan-600 p-6 text-white shadow-lg">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
@@ -179,7 +173,6 @@ export default function TrabajadorPage() {
           </div>
         </div>
 
-        {/* Estadísticas */}
         <div className="grid gap-4 md:grid-cols-2">
           <Card>
             <CardContent className="flex items-center justify-between p-5">
@@ -202,7 +195,6 @@ export default function TrabajadorPage() {
           </Card>
         </div>
 
-        {/* Tabs */}
         <div className="flex gap-2">
           <Button
             variant={tab === 'cortes' ? 'default' : 'outline'}
@@ -218,7 +210,6 @@ export default function TrabajadorPage() {
           </Button>
         </div>
 
-        {/* Pendientes de Corte */}
         {tab === 'cortes' && (
           <Card>
             <CardHeader>
@@ -245,21 +236,21 @@ export default function TrabajadorPage() {
                       <AlertTriangle className="h-5 w-5 text-red-600" />
                     </div>
                     <div>
-                      <p className="font-medium">{c.perfil.usuario.name}</p>
+                      <p className="font-medium">{c.usuario.name}</p>
                       <p className="text-sm text-muted-foreground">
-                        {c.perfil.circuito.nombre} · {c.perfil.edificio} · {c.perfil.departamento}
+                        {c.circuito.nombre} · {c.edificio} · {c.departamento}
                       </p>
-                      <p className="text-sm text-red-600">{c.motivo}</p>
+                      <p className="text-sm text-red-600">Falta de pago</p>
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <Badge variant="destructive">Pendiente de corte</Badge>
                     <Button
                       variant="default"
-                      disabled={procesando === c.perfil.id}
-                      onClick={() => handleConfirmarCorte(c.perfil.id)}
+                      disabled={procesando === c.id}
+                      onClick={() => handleConfirmarCorte(c.id)}
                     >
-                      {procesando === c.perfil.id ? 'Procesando...' : 'Confirmar corte'}
+                      {procesando === c.id ? 'Procesando...' : 'Confirmar corte'}
                     </Button>
                   </div>
                 </div>
@@ -268,7 +259,6 @@ export default function TrabajadorPage() {
           </Card>
         )}
 
-        {/* Pendientes de Reconexión */}
         {tab === 'reconexiones' && (
           <Card>
             <CardHeader>
@@ -295,9 +285,9 @@ export default function TrabajadorPage() {
                       <RotateCcw className="h-5 w-5 text-amber-600" />
                     </div>
                     <div>
-                      <p className="font-medium">{c.perfil.usuario.name}</p>
+                      <p className="font-medium">{c.usuario.name}</p>
                       <p className="text-sm text-muted-foreground">
-                        {c.perfil.circuito.nombre} · {c.perfil.edificio} · {c.perfil.departamento}
+                        {c.circuito.nombre} · {c.edificio} · {c.departamento}
                       </p>
                       <p className="text-sm text-amber-600">Pagó reconexión - pendiente de reconexión física</p>
                     </div>
@@ -308,11 +298,11 @@ export default function TrabajadorPage() {
                     </Badge>
                     <Button
                       variant="default"
-                      disabled={procesando === c.perfil.id}
-                      onClick={() => handleConfirmarReconexion(c.perfil.id)}
+                      disabled={procesando === c.id}
+                      onClick={() => handleConfirmarReconexion(c.id)}
                       className="bg-green-600 hover:bg-green-700"
                     >
-                      {procesando === c.perfil.id ? 'Procesando...' : 'Confirmar reconexión'}
+                      {procesando === c.id ? 'Procesando...' : 'Confirmar reconexión'}
                     </Button>
                   </div>
                 </div>
@@ -321,7 +311,6 @@ export default function TrabajadorPage() {
           </Card>
         )}
 
-        {/* Reconectados hoy */}
         {reconectados.length > 0 && (
           <Card>
             <CardHeader>
@@ -337,9 +326,9 @@ export default function TrabajadorPage() {
                   className="flex flex-col gap-4 rounded-xl border p-4 md:flex-row md:items-center md:justify-between"
                 >
                   <div>
-                    <p className="font-medium">{c.perfil.usuario.name}</p>
+                    <p className="font-medium">{c.usuario.name}</p>
                     <p className="text-sm text-muted-foreground">
-                      {c.perfil.circuito.nombre} · {c.perfil.edificio} · {c.perfil.departamento}
+                      {c.circuito.nombre} · {c.edificio} · {c.departamento}
                     </p>
                   </div>
                   <Badge variant="default" className="bg-green-600">Reconectado</Badge>
