@@ -1,6 +1,7 @@
 import { InvalidWebhookSignatureError, WebhookSignatureValidator } from 'mercadopago';
 
-import { paymentClient } from '@/lib/mercadopago';
+import { createMercadoPagoClients } from '@/lib/mercadopago';
+import { db } from '@/db';
 import { registrarPagoAprobado } from '@/server/pagos-service';
 
 function parseExternalReference(value: string | undefined) {
@@ -17,6 +18,18 @@ function parseExternalReference(value: string | undefined) {
     esReconexion: esReconexion === '1',
     monto: Number(monto).toFixed(2),
   };
+}
+
+async function getPaymentClientForReference(reference: ReturnType<typeof parseExternalReference>) {
+  if (!reference) return null;
+
+  const perfil = await db.query.perfilesResidente.findFirst({
+    where: (p, { eq }) => eq(p.id, reference.perfilId),
+    with: { circuito: true },
+  });
+
+  const accessToken = perfil?.circuito?.mercadoPagoAccessToken;
+  return accessToken ? createMercadoPagoClients(accessToken).paymentClient : null;
 }
 
 export async function POST(request: Request) {
@@ -45,13 +58,21 @@ export async function POST(request: Request) {
       return Response.json({ received: true });
     }
 
+    const referenceFromUrl = parseExternalReference(url.searchParams.get('ref') ?? undefined);
+    const paymentClient = await getPaymentClientForReference(referenceFromUrl);
+    if (!paymentClient) {
+      return Response.json({ received: true });
+    }
+
     const payment = await paymentClient.get({ id: paymentId });
-    const reference = parseExternalReference(payment.external_reference);
+    const reference = parseExternalReference(payment.external_reference) ?? referenceFromUrl;
 
     if (payment.status === 'approved' && reference) {
       await registrarPagoAprobado({
         ...reference,
         metodo: `mercado_pago:${payment.id}`,
+        mercadoPagoPaymentId: payment.id ? String(payment.id) : undefined,
+        mercadoPagoCollectorId: payment.collector_id ? String(payment.collector_id) : undefined,
       });
     }
 

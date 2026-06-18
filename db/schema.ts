@@ -79,6 +79,9 @@ export const circuitos = pgTable('circuitos', {
   id:              uuid('id').defaultRandom().primaryKey(),
   nombre:          text('nombre').notNull(),
   representanteId: text('representante_id').references(() => user.id),
+  montoMensual:    decimal('monto_mensual', { precision: 10, scale: 2 }).notNull().default('50.00'),
+  mercadoPagoAccessToken: text('mercado_pago_access_token'),
+  mercadoPagoCollectorId: text('mercado_pago_collector_id'),
 });
 
 // Perfil extendido del residente — 1:1 con user
@@ -102,9 +105,19 @@ export const perfilesResidente = pgTable('perfiles_residente', {
 export const pagos = pgTable('pagos', {
   id:           uuid('id').defaultRandom().primaryKey(),
   perfilId:     uuid('perfil_id').references(() => perfilesResidente.id).notNull(),
+  circuitoId:    uuid('circuito_id').references(() => circuitos.id),
+  representanteId: text('representante_id').references(() => user.id),
   mes:          integer('mes').notNull(),
   anio:         integer('anio').notNull(),
   monto:        decimal('monto', { precision: 10, scale: 2 }).notNull(),
+  montoBase:    decimal('monto_base', { precision: 10, scale: 2 }).default('0.00'),
+  iva:          decimal('iva', { precision: 10, scale: 2 }).default('0.00'),
+  comisionMercadoPago: decimal('comision_mercado_pago', { precision: 10, scale: 2 }).default('0.00'),
+  retencionIsr: decimal('retencion_isr', { precision: 10, scale: 2 }).default('0.00'),
+  retencionIva: decimal('retencion_iva', { precision: 10, scale: 2 }).default('0.00'),
+  montoNetoRepresentante: decimal('monto_neto_representante', { precision: 10, scale: 2 }).default('0.00'),
+  mercadoPagoPaymentId: text('mercado_pago_payment_id'),
+  mercadoPagoCollectorId: text('mercado_pago_collector_id'),
   estado:       estadoPagoEnum('estado').default('pendiente'),
   metodo:       text('metodo'),
   folio:        text('folio').unique(),
@@ -168,6 +181,14 @@ export const pagosRelations = relations(pagos, ({ one }) => ({
   perfil: one(perfilesResidente, {
     fields: [pagos.perfilId],
     references: [perfilesResidente.id],
+  }),
+  circuito: one(circuitos, {
+    fields: [pagos.circuitoId],
+    references: [circuitos.id],
+  }),
+  representante: one(user, {
+    fields: [pagos.representanteId],
+    references: [user.id],
   }),
   ticket: one(tickets, {
     fields: [pagos.id],

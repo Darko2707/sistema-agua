@@ -15,6 +15,13 @@
       "when": 1781611362019,
       "tag": "0001_steady_vivisector",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781818800000,
+      "tag": "0002_circuito_pagos_mercadopago",
+      "breakpoints": true
     }
   ]
 }

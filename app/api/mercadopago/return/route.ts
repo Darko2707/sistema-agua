@@ -1,4 +1,5 @@
-import { paymentClient } from '@/lib/mercadopago';
+import { createMercadoPagoClients } from '@/lib/mercadopago';
+import { db } from '@/db';
 import { registrarPagoAprobado } from '@/server/pagos-service';
 
 function parseExternalReference(value: string | undefined) {
@@ -17,9 +18,22 @@ function parseExternalReference(value: string | undefined) {
   };
 }
 
+async function getPaymentClientForReference(reference: ReturnType<typeof parseExternalReference>) {
+  if (!reference) return null;
+
+  const perfil = await db.query.perfilesResidente.findFirst({
+    where: (p, { eq }) => eq(p.id, reference.perfilId),
+    with: { circuito: true },
+  });
+
+  const accessToken = perfil?.circuito?.mercadoPagoAccessToken;
+  return accessToken ? createMercadoPagoClients(accessToken).paymentClient : null;
+}
+
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const paymentId = url.searchParams.get('payment_id') ?? url.searchParams.get('collection_id');
+  const reference = parseExternalReference(url.searchParams.get('ref') ?? undefined);
   const fallbackUrl = new URL('/residente', url.origin);
 
   if (!paymentId) {
@@ -28,17 +42,25 @@ export async function GET(request: Request) {
   }
 
   try {
-    const payment = await paymentClient.get({ id: paymentId });
-    const reference = parseExternalReference(payment.external_reference);
+    const paymentClient = await getPaymentClientForReference(reference);
+    if (!paymentClient) {
+      fallbackUrl.searchParams.set('payment', 'failure');
+      return Response.redirect(fallbackUrl);
+    }
 
-    if (payment.status !== 'approved' || !reference) {
+    const payment = await paymentClient.get({ id: paymentId });
+    const paymentReference = parseExternalReference(payment.external_reference) ?? reference;
+
+    if (payment.status !== 'approved' || !paymentReference) {
       fallbackUrl.searchParams.set('payment', payment.status === 'pending' ? 'pending' : 'failure');
       return Response.redirect(fallbackUrl);
     }
 
     await registrarPagoAprobado({
-      ...reference,
+      ...paymentReference,
       metodo: `mercado_pago:${payment.id}`,
+      mercadoPagoPaymentId: payment.id ? String(payment.id) : undefined,
+      mercadoPagoCollectorId: payment.collector_id ? String(payment.collector_id) : undefined,
     });
 
     fallbackUrl.searchParams.set('payment', 'success');

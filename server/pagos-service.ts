@@ -4,6 +4,7 @@ import { nanoid } from 'nanoid';
 
 import { db } from '@/db';
 import { cortes, pagos, perfilesResidente, tickets } from '@/db/schema';
+import { calcularDesglosePago } from './payment-calculator';
 
 type RegistrarPagoInput = {
   perfilId: string;
@@ -12,6 +13,8 @@ type RegistrarPagoInput = {
   monto: string;
   metodo: string;
   esReconexion: boolean;
+  mercadoPagoPaymentId?: string;
+  mercadoPagoCollectorId?: string | null;
 };
 
 export async function registrarPagoAprobado(input: RegistrarPagoInput) {
@@ -21,6 +24,14 @@ export async function registrarPagoAprobado(input: RegistrarPagoInput) {
 
   if (!perfil) {
     throw new TRPCError({ code: 'BAD_REQUEST', message: 'Perfil no encontrado' });
+  }
+
+  const circuito = await db.query.circuitos.findFirst({
+    where: (c, { eq }) => eq(c.id, perfil.circuitoId),
+  });
+
+  if (!circuito) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Circuito no encontrado' });
   }
 
   const pagoExistente = await db.query.pagos.findFirst({
@@ -44,16 +55,27 @@ export async function registrarPagoAprobado(input: RegistrarPagoInput) {
   }
 
   const folio = `AGU-${nanoid(10).toUpperCase()}`;
+  const desglose = calcularDesglosePago(Number(input.monto));
 
   const pago = await db.transaction(async (tx) => {
     const [nuevoPago] = await tx
       .insert(pagos)
-      .values({
-        perfilId: input.perfilId,
-        mes: input.mes,
-        anio: input.anio,
-        monto: input.monto,
-        estado: 'pagado',
+        .values({
+          perfilId: input.perfilId,
+          circuitoId: circuito.id,
+          representanteId: circuito.representanteId,
+          mes: input.mes,
+          anio: input.anio,
+          monto: desglose.total,
+          montoBase: desglose.montoBase,
+          iva: desglose.iva,
+          comisionMercadoPago: desglose.comisionMercadoPago,
+          retencionIsr: desglose.retencionIsr,
+          retencionIva: desglose.retencionIva,
+          montoNetoRepresentante: desglose.montoNetoRepresentante,
+          mercadoPagoPaymentId: input.mercadoPagoPaymentId,
+          mercadoPagoCollectorId: input.mercadoPagoCollectorId ?? circuito.mercadoPagoCollectorId,
+          estado: 'pagado',
         metodo: input.metodo,
         folio,
         esReconexion: input.esReconexion,
@@ -90,7 +112,7 @@ export async function registrarPagoAprobado(input: RegistrarPagoInput) {
 
   return {
     folio,
-    monto: input.monto,
+    monto: desglose.total,
     esReconexion: input.esReconexion,
     pago,
     yaRegistrado: false,
