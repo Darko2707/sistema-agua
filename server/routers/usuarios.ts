@@ -1,14 +1,18 @@
+// server/routers/usuarios.ts
+
 import { router, protectedProcedure, roleProcedure } from '../trpc';
 import { z } from 'zod';
 import { db } from '@/db';
-import { perfilesResidente, circuitos, user, cortes } from '@/db/schema';
+import { perfilesResidente, circuitos, user } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import { obtenerPeriodoVigente, esMoroso } from '../utils';
 import { determinarEstadoInicial } from '../utils/fechas';
 
 export const usuariosRouter = router({
-  // El residente recién registrado completa su perfil
+  // ============================================
+  // crearPerfil: El residente recién registrado completa su perfil
+  // ============================================
   crearPerfil: protectedProcedure
     .input(z.object({
       telefono:     z.string().min(10),
@@ -19,6 +23,18 @@ export const usuariosRouter = router({
       departamento: z.string().min(1),
     }))
     .mutation(async ({ ctx, input }) => {
+      // ✅ Verificar que el circuito exista y esté activo
+      const circuito = await db.query.circuitos.findFirst({
+        where: (c, { eq }) => eq(c.id, input.circuitoId),
+      });
+      
+      if (!circuito?.activo) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Este circuito está inhabilitado temporalmente.',
+        });
+      }
+
       const existente = await db.query.perfilesResidente.findFirst({
         where: (p, { eq }) => eq(p.userId, ctx.user.id),
       });
@@ -26,9 +42,8 @@ export const usuariosRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Ya tienes un perfil registrado' });
       }
 
-      // ✅ Calcular estado inicial según fecha
+      // Calcular estado inicial según fecha
       const estadoInicial = determinarEstadoInicial();
-
       console.log(`📝 Nuevo residente: estado inicial = ${estadoInicial}`);
 
       const [perfil] = await db.insert(perfilesResidente).values({
@@ -40,7 +55,9 @@ export const usuariosRouter = router({
       return perfil;
     }),
 
-  // Obtiene mi propio perfil (residente)
+  // ============================================
+  // miPerfil: Obtiene mi propio perfil (residente)
+  // ============================================
   miPerfil: protectedProcedure.query(async ({ ctx }) => {
     return db.query.perfilesResidente.findFirst({
       where: (p, { eq }) => eq(p.userId, ctx.user.id),
@@ -48,12 +65,16 @@ export const usuariosRouter = router({
     });
   }),
 
-  // Lista de circuitos para el formulario de registro
+  // ============================================
+  // listarCircuitos: Lista de circuitos para el formulario de registro
+  // ============================================
   listarCircuitos: protectedProcedure.query(async () => {
     return db.select().from(circuitos);
   }),
 
-  // Admin / Representante: lista residentes con estado de pago del mes
+  // ============================================
+  // listarResidentes: Admin / Representante: lista residentes con estado de pago del mes
+  // ============================================
   listarResidentes: roleProcedure('admin', 'representante').query(async ({ ctx }) => {
     const { mes, anio } = obtenerPeriodoVigente();
     const rol = (ctx.user as any).role;
@@ -117,7 +138,9 @@ export const usuariosRouter = router({
     }));
   }),
 
-  // Admin: cambiar rol de un usuario
+  // ============================================
+  // cambiarRol: Admin: cambiar rol de un usuario
+  // ============================================
   cambiarRol: roleProcedure('admin')
     .input(z.object({
       userId: z.string(),
@@ -140,7 +163,9 @@ export const usuariosRouter = router({
       return { ok: true };
     }),
 
-  // Admin: asignar representante a un circuito
+  // ============================================
+  // asignarRepresentante: Admin: asignar representante a un circuito
+  // ============================================
   asignarRepresentante: roleProcedure('admin')
     .input(z.object({
       circuitoId: z.string().uuid(),
@@ -174,7 +199,9 @@ export const usuariosRouter = router({
       return { ok: true };
     }),
 
-  // Admin: lista de personal (no residentes)
+  // ============================================
+  // listarPersonal: Admin: lista de personal (no residentes)
+  // ============================================
   listarPersonal: roleProcedure('admin').query(async () => {
     return db.query.user.findMany({
       where: (u, { ne }) => ne(u.role, 'residente'),

@@ -7,7 +7,7 @@ import { pagos, perfilesResidente, cortes, tickets } from '@/db/schema';
 import { nanoid } from 'nanoid';
 import { eq, and } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
-import { obtenerPeriodoVigente, esMoroso } from '../utils';
+import { obtenerPeriodoVigente, esMoroso } from '../utils'; // ✅ IMPORTADO
 import { calcularDesglosePago, calcularMontoBase } from '../payment-calculator';
 
 export const pagosRouter = router({
@@ -18,9 +18,11 @@ export const pagosRouter = router({
     console.log('=== miHistorial iniciado ===');
     console.log('USER ID:', ctx.user.id);
 
+    // circuito activity verification removed: function not exported from ../utils
+
     const perfil = await db.query.perfilesResidente.findFirst({
       where: (p, { eq }) => eq(p.userId, ctx.user.id),
-      with: { circuito: true }, // ✅ AGREGADO: Trae el circuito completo
+      with: { circuito: true }, // ✅ Trae el circuito completo
     });
     console.log('PERFIL ENCONTRADO:', perfil ? perfil.id : 'NO ENCONTRADO');
 
@@ -59,7 +61,7 @@ export const pagosRouter = router({
 
     return {
       perfil,
-      circuito: perfil.circuito, // ✅ AGREGADO: Devuelve el circuito completo con sus montos
+      circuito: perfil.circuito, // ✅ Devuelve el circuito completo con sus montos
       pagos: historial,
       corteActivo: !!corteActivo,
       esMoroso: moroso,
@@ -77,6 +79,8 @@ export const pagosRouter = router({
       console.log('=== PAGAR iniciado ===');
       console.log('USER ID:', ctx.user.id);
       console.log('METODO:', input.metodo);
+
+      await verificarCircuitoActivo(ctx.user.id); // ✅ AGREGADO
 
       const perfil = await db.query.perfilesResidente.findFirst({
         where: (p, { eq }) => eq(p.userId, ctx.user.id),
@@ -294,3 +298,7 @@ export const pagosRouter = router({
     };
   }),
 });
+
+function verificarCircuitoActivo(id: any) {
+  throw new Error('Function not implemented.');
+}

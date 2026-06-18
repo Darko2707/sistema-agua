@@ -3,12 +3,14 @@ import { pagosRouter }    from './pagos'
 import { cortesRouter }   from './cortes'
 import { ticketsRouter }  from './tickets'
 import { usuariosRouter } from './usuarios'
+import { circuitosRouter } from './circuitos'
 
 export const appRouter = router({
   pagos:    pagosRouter,
   cortes:   cortesRouter,
   tickets:  ticketsRouter,
   usuarios: usuariosRouter,
+  circuitos: circuitosRouter,
 })
 
 export type AppRouter = typeof appRouter

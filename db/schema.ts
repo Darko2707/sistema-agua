@@ -1,5 +1,5 @@
-import { pgTable, uuid, text, integer, decimal,
-         timestamp, boolean, pgEnum } from 'drizzle-orm/pg-core';
+// db/schema.ts
+import { pgTable, uuid, text, integer, decimal, timestamp, boolean, pgEnum } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 
 export const rolEnum = pgEnum('rol', [
@@ -15,12 +15,12 @@ export const tenenciaEnum   = pgEnum('tenencia', ['propietario', 'inquilino']);
 export const sexoEnum       = pgEnum('sexo', ['masculino', 'femenino', 'otro']);
 
 // ============================================
-// NUEVO: Estado del agua para perfiles
+// Estado del agua para perfiles
 // ============================================
 export const estadoAguaEnum = pgEnum('estado_agua', [
-  'activo',           // pagando al corriente
-  'pendiente_corte',  // debe el mes, cuadrilla debe ir a cortar
-  'cortado',          // ya sin servicio, debe pagar reconexión
+  'activo',             // pagando al corriente
+  'pendiente_corte',    // debe el mes, cuadrilla debe ir a cortar
+  'cortado',            // ya sin servicio, debe pagar reconexión
   'pendiente_reconexion',
 ]);
 
@@ -76,13 +76,14 @@ export const verification = pgTable('verification', {
 // Estructura del fraccionamiento
 // ─────────────────────────────────────────────
 export const circuitos = pgTable('circuitos', {
-  id:              uuid('id').defaultRandom().primaryKey(),
-  nombre:          text('nombre').notNull(),
-  representanteId: text('representante_id').references(() => user.id),
-  montoMensual:    decimal('monto_mensual', { precision: 10, scale: 2 }).notNull().default('50.00'),
-  montoReconexion: decimal('monto_reconexion', { precision: 10, scale: 2 }).notNull().default('300.00'),
+  id:                     uuid('id').defaultRandom().primaryKey(),
+  nombre:                 text('nombre').notNull(),
+  representanteId:        text('representante_id').references(() => user.id),
+  montoMensual:           decimal('monto_mensual', { precision: 10, scale: 2 }).notNull().default('50.00'),
+  montoReconexion:        decimal('monto_reconexion', { precision: 10, scale: 2 }).notNull().default('300.00'),
   mercadoPagoAccessToken: text('mercado_pago_access_token'),
   mercadoPagoCollectorId: text('mercado_pago_collector_id'),
+  activo:                 boolean('activo').notNull().default(true), // ✅ NUEVO CAMPO AGREGADO AQUÍ
 });
 
 // Perfil extendido del residente — 1:1 con user
@@ -95,7 +96,6 @@ export const perfilesResidente = pgTable('perfiles_residente', {
   circuitoId:   uuid('circuito_id').notNull().references(() => circuitos.id),
   edificio:     text('edificio').notNull(),
   departamento: text('departamento').notNull(),
-  // ✅ ACTUALIZADO: usa el nuevo enum
   estadoAgua:   estadoAguaEnum('estado_agua').notNull().default('activo'),
   creadoEn:     timestamp('creado_en').defaultNow(),
 });
@@ -104,27 +104,27 @@ export const perfilesResidente = pgTable('perfiles_residente', {
 // Pagos, cortes y tickets
 // ─────────────────────────────────────────────
 export const pagos = pgTable('pagos', {
-  id:           uuid('id').defaultRandom().primaryKey(),
-  perfilId:     uuid('perfil_id').references(() => perfilesResidente.id).notNull(),
-  circuitoId:    uuid('circuito_id').references(() => circuitos.id),
-  representanteId: text('representante_id').references(() => user.id),
-  mes:          integer('mes').notNull(),
-  anio:         integer('anio').notNull(),
-  monto:        decimal('monto', { precision: 10, scale: 2 }).notNull(),
-  montoBase:    decimal('monto_base', { precision: 10, scale: 2 }).default('0.00'),
-  iva:          decimal('iva', { precision: 10, scale: 2 }).default('0.00'),
-  comisionMercadoPago: decimal('comision_mercado_pago', { precision: 10, scale: 2 }).default('0.00'),
-  retencionIsr: decimal('retencion_isr', { precision: 10, scale: 2 }).default('0.00'),
-  retencionIva: decimal('retencion_iva', { precision: 10, scale: 2 }).default('0.00'),
+  id:                     uuid('id').defaultRandom().primaryKey(),
+  perfilId:               uuid('perfil_id').references(() => perfilesResidente.id).notNull(),
+  circuitoId:             uuid('circuito_id').references(() => circuitos.id),
+  representanteId:        text('representante_id').references(() => user.id),
+  mes:                    integer('mes').notNull(),
+  anio:                   integer('anio').notNull(),
+  monto:                  decimal('monto', { precision: 10, scale: 2 }).notNull(),
+  montoBase:              decimal('monto_base', { precision: 10, scale: 2 }).default('0.00'),
+  iva:                    decimal('iva', { precision: 10, scale: 2 }).default('0.00'),
+  comisionMercadoPago:    decimal('comision_mercado_pago', { precision: 10, scale: 2 }).default('0.00'),
+  retencionIsr:           decimal('retencion_isr', { precision: 10, scale: 2 }).default('0.00'),
+  retencionIva:           decimal('retencion_iva', { precision: 10, scale: 2 }).default('0.00'),
   montoNetoRepresentante: decimal('monto_neto_representante', { precision: 10, scale: 2 }).default('0.00'),
-  mercadoPagoPaymentId: text('mercado_pago_payment_id'),
+  mercadoPagoPaymentId:   text('mercado_pago_payment_id'),
   mercadoPagoCollectorId: text('mercado_pago_collector_id'),
-  estado:       estadoPagoEnum('estado').default('pendiente'),
-  metodo:       text('metodo'),
-  folio:        text('folio').unique(),
-  esReconexion: boolean('es_reconexion').default(false),
-  fechaPago:    timestamp('fecha_pago'),
-  creadoEn:     timestamp('creado_en').defaultNow(),
+  estado:                 estadoPagoEnum('estado').default('pendiente'),
+  metodo:                 text('metodo'),
+  folio:                  text('folio').unique(),
+  esReconexion:           boolean('es_reconexion').default(false),
+  fechaPago:              timestamp('fecha_pago'),
+  creadoEn:               timestamp('creado_en').defaultNow(),
 });
 
 export const cortes = pgTable('cortes', {
