@@ -1,6 +1,6 @@
 'use client';
 
-import { authClient, signIn } from '@/lib/auth-client';
+import { signIn } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Eye, EyeOff, Droplets } from 'lucide-react';
@@ -58,8 +58,8 @@ export default function LoginPage() {
       } else {
         router.push('/residente');
       }
-    } catch (err: any) {
-      setError(err.message || 'Error inesperado');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Error inesperado');
       setLoading(false);
     }
   }
@@ -71,13 +71,14 @@ export default function LoginPage() {
   setResetSent(false);
 
   try {
-    const res = await fetch('/api/forgot-password', {
+    const res = await fetch('/api/auth/request-password-reset', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
   },
   body: JSON.stringify({
     email: resetEmail,
+    redirectTo: '/reset-password',
   }),
 });
 
@@ -92,8 +93,8 @@ export default function LoginPage() {
       const data = await res.json();
       setResetError(data.error || 'Error al enviar el correo de recuperación');
     }
-  } catch (err: any) {
-    setResetError(err.message || 'Error al enviar el correo');
+  } catch (err: unknown) {
+    setResetError(err instanceof Error ? err.message : 'Error al enviar el correo');
   }
   setResetLoading(false);
 }
