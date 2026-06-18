@@ -21,7 +21,6 @@ import {
   Shield,
   Scissors,
   RotateCcw,
-  Home,
 } from 'lucide-react';
 
 const MESES = [
@@ -153,7 +152,6 @@ export default function AdminPage() {
     cargarDatos();
   }, []);
 
-  // ✅ Función corregida: usar llamada directa sin batch
   async function cambiarRol(userId: string, rol: string) {
     if (!userId) {
       setError('No se puede cambiar rol: usuario ID no válido');
@@ -184,35 +182,31 @@ export default function AdminPage() {
   }
 
   async function asignarRepresentante(circuitoId: string, userId: string) {
-  if (!userId) return;
-  setActualizando(circuitoId);
-  
-  try {
-    const res = await fetch('/api/trpc/usuarios.asignarRepresentante', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ circuitoId, userId }),
-    });
+    if (!userId) return;
+    setActualizando(circuitoId);
     
-    if (res.ok) {
-      await cargarDatos();
-    } else {
-      const errorData = await res.json();
-      setError(errorData?.error?.message || 'Error al asignar representante');
+    try {
+      const res = await fetch('/api/trpc/usuarios.asignarRepresentante', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ circuitoId, userId }),
+      });
+      
+      if (res.ok) {
+        await cargarDatos();
+      } else {
+        const errorData = await res.json();
+        setError(errorData?.error?.message || 'Error al asignar representante');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Error al asignar representante');
     }
-  } catch (err: any) {
-    setError(err.message || 'Error al asignar representante');
+    setActualizando(null);
   }
-  setActualizando(null);
-}
 
   async function salir() {
     await authClient.signOut();
     router.push('/login');
-  }
-
-  function irAResidente() {
-    router.push('/residente');
   }
 
   // Filtrar residentes
@@ -245,14 +239,6 @@ export default function AdminPage() {
               </p>
             </div>
             <div className="flex gap-2">
-              <Button
-                variant="secondary"
-                onClick={irAResidente}
-                className="bg-white/20 text-white hover:bg-white/30"
-              >
-                <Home className="mr-2 h-4 w-4" />
-                Mi cuenta
-              </Button>
               <Button variant="secondary" onClick={salir}>
                 <LogOut className="mr-2 h-4 w-4" />
                 Salir
@@ -547,7 +533,7 @@ export default function AdminPage() {
                       )}
                     </div>
 
-                    {/* ✅ Selector de rol para residentes */}
+                    {/* Selector de rol para residentes */}
                     <div className="flex items-center gap-2">
                       <select
                         value={r.usuario?.role || 'residente'}
