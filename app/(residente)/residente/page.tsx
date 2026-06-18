@@ -119,16 +119,13 @@ export default function ResidentePage() {
     try {
       const esReconexion = datos?.perfil?.estadoAgua === 'cortado';
 
-      const res = await fetch('/api/stripe/checkout', {
+      const res = await fetch('/api/mercadopago/checkout', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           esReconexion,
-          monto: montoAPagar,
-          mes: mesActual,
-          anio: anioActual,
         }),
         credentials: 'include',
       });
@@ -344,7 +341,7 @@ export default function ResidentePage() {
                   disabled={pagando}
                 >
                   <CreditCard className="mr-2 h-4 w-4" />
-                  {pagando ? 'Redirigiendo a Stripe...' : `Pagar $${montoAPagar} con Stripe`}
+                  {pagando ? 'Redirigiendo a Mercado Pago...' : `Pagar $${montoAPagar} con Mercado Pago`}
                 </Button>
               )}
 
