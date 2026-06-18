@@ -52,6 +52,7 @@ type Pago = {
 
 type DatosResidente = {
   perfil: any | null;
+  circuito: any | null;
   pagos: Pago[];
   corteActivo: boolean;
   esMoroso: boolean;
@@ -85,10 +86,22 @@ export default function ResidentePage() {
       .catch(() => setMiRol('residente'));
   }, []);
 
+  function normalizeDatos(d: any): DatosResidente | null {
+    if (!d) return null;
+    // Ensure mes/anio are number | undefined, not null
+    const mes = d.mes == null ? undefined : Number(d.mes);
+    const anio = d.anio == null ? undefined : Number(d.anio);
+    return {
+      ...d,
+      mes,
+      anio,
+    } as DatosResidente;
+  }
+
   async function cargarDatos() {
     try {
       const data = await trpc.pagos.miHistorial.query();
-      setDatos(data);
+      setDatos(normalizeDatos(data));
     } catch (e) {
       console.error(e);
     }
@@ -108,8 +121,14 @@ export default function ResidentePage() {
     (p) => p.mes === mesActual && p.anio === anioActual && p.estado === 'pagado'
   );
 
-  // ✅ Monto según estado del agua
-  const montoAPagar = datos?.perfil?.estadoAgua === 'cortado' ? '350.00' : '50.00';
+  // ✅ Monto dinámico según el circuito
+  const montoMensual = Number(datos?.perfil?.circuito?.montoMensual ?? 50);
+  const montoReconexion = Number(datos?.perfil?.circuito?.montoReconexion ?? 300);
+  const montoAPagar = (
+    datos?.perfil?.estadoAgua === 'cortado'
+      ? montoMensual + montoReconexion
+      : montoMensual
+  ).toFixed(2);
 
   async function handlePagar() {
     setPagando(true);
@@ -268,7 +287,7 @@ export default function ResidentePage() {
                   Tu servicio está suspendido
                 </p>
                 <p className="mt-1 text-sm text-red-600">
-                  Debes pagar $350.00 MXN ($50 de mensualidad + $300 de reconexión).
+                  Debes pagar ${montoAPagar} MXN ({montoMensual.toFixed(2)} de mensualidad + {montoReconexion.toFixed(2)} de reconexión).
                 </p>
               </div>
             </div>

@@ -1,3 +1,5 @@
+// server/routers/pagos.ts
+
 import { router, protectedProcedure, roleProcedure } from '../trpc';
 import { z } from 'zod';
 import { db } from '@/db';
@@ -18,10 +20,21 @@ export const pagosRouter = router({
 
     const perfil = await db.query.perfilesResidente.findFirst({
       where: (p, { eq }) => eq(p.userId, ctx.user.id),
+      with: { circuito: true }, // ✅ AGREGADO: Trae el circuito completo
     });
     console.log('PERFIL ENCONTRADO:', perfil ? perfil.id : 'NO ENCONTRADO');
 
-    if (!perfil) return { perfil: null, pagos: [], corteActivo: false, esMoroso: false };
+    if (!perfil) {
+      return { 
+        perfil: null, 
+        circuito: null,
+        pagos: [], 
+        corteActivo: false, 
+        esMoroso: false,
+        mes: null,
+        anio: null,
+      };
+    }
 
     const historial = await db.query.pagos.findMany({
       where: (p, { eq }) => eq(p.perfilId, perfil.id),
@@ -46,6 +59,7 @@ export const pagosRouter = router({
 
     return {
       perfil,
+      circuito: perfil.circuito, // ✅ AGREGADO: Devuelve el circuito completo con sus montos
       pagos: historial,
       corteActivo: !!corteActivo,
       esMoroso: moroso,
@@ -96,7 +110,7 @@ export const pagosRouter = router({
       }
       console.log('VERIFICACION OK - NO HABIA PAGADO');
 
-      // ✅ NUEVO: Monto según estado del agua
+      // ✅ Monto según estado del agua
       const esReconexion = perfil.estadoAgua === 'cortado';
       const montoBase = calcularMontoBase(
         perfil.circuito.montoMensual,
@@ -141,7 +155,7 @@ export const pagosRouter = router({
             .returning();
           console.log('PAGO INSERTADO, ID:', pago.id);
 
-          // ✅ NUEVO: Si estaba cortado, pasa a 'pendiente_reconexion'
+          // ✅ Si estaba cortado, pasa a 'pendiente_reconexion'
           if (esReconexion) {
             console.log('ACTUALIZANDO ESTADO A pendiente_reconexion...');
             await tx
