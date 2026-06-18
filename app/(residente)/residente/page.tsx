@@ -88,7 +88,6 @@ export default function ResidentePage() {
 
   function normalizeDatos(d: any): DatosResidente | null {
     if (!d) return null;
-    // Ensure mes/anio are number | undefined, not null
     const mes = d.mes == null ? undefined : Number(d.mes);
     const anio = d.anio == null ? undefined : Number(d.anio);
     return {
@@ -311,6 +310,25 @@ export default function ResidentePage() {
           </div>
         )}
 
+        {/* ✅ AVISO DE PENDIENTE DE CORTE (para nuevos registros después del día 5) */}
+        {datos.perfil?.estadoAgua === 'pendiente_corte' && !datos.corteActivo && !datos.esMoroso && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-6 w-6 text-amber-600" />
+              <div>
+                <p className="font-semibold text-amber-700">
+                  ⚠ Te registraste después del día 5 del mes
+                </p>
+                <p className="mt-1 text-sm text-amber-600">
+                  Debes pagar ${montoAPagar} MXN para activar tu servicio.
+                  <br />
+                  <span className="text-xs">Si no pagas, la cuadrilla irá a cortar físicamente el servicio.</span>
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ✅ AVISO DE PENDIENTE DE RECONEXIÓN */}
         {datos.perfil?.estadoAgua === 'pendiente_reconexion' && (
           <div className="rounded-2xl border border-blue-200 bg-blue-50 p-5">
@@ -427,6 +445,7 @@ export default function ResidentePage() {
                   >
                     {datos.corteActivo ? 'Suspendido' :
                      datos.perfil?.estadoAgua === 'pendiente_reconexion' ? 'Pendiente de reconexión' :
+                     datos.perfil?.estadoAgua === 'pendiente_corte' ? 'Pendiente de corte' :
                      'Activo'}
                   </p>
                 </div>

@@ -5,6 +5,7 @@ import { perfilesResidente, circuitos, user, cortes } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import { obtenerPeriodoVigente, esMoroso } from '../utils';
+import { determinarEstadoInicial } from '../utils/fechas';
 
 export const usuariosRouter = router({
   // El residente recién registrado completa su perfil
@@ -25,9 +26,15 @@ export const usuariosRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Ya tienes un perfil registrado' });
       }
 
+      // ✅ Calcular estado inicial según fecha
+      const estadoInicial = determinarEstadoInicial();
+
+      console.log(`📝 Nuevo residente: estado inicial = ${estadoInicial}`);
+
       const [perfil] = await db.insert(perfilesResidente).values({
         userId: ctx.user.id,
         ...input,
+        estadoAgua: estadoInicial,
       }).returning();
 
       return perfil;
@@ -133,7 +140,7 @@ export const usuariosRouter = router({
       return { ok: true };
     }),
 
-  // ✅ NUEVO: Admin: asignar representante a un circuito
+  // Admin: asignar representante a un circuito
   asignarRepresentante: roleProcedure('admin')
     .input(z.object({
       circuitoId: z.string().uuid(),
@@ -142,7 +149,6 @@ export const usuariosRouter = router({
     .mutation(async ({ input }) => {
       console.log('📝 Asignando representante:', input);
       
-      // Verificar que el usuario existe
       const usuario = await db.query.user.findFirst({
         where: (u, { eq }) => eq(u.id, input.userId),
       });
@@ -150,7 +156,6 @@ export const usuariosRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
       }
 
-      // Verificar que el circuito existe
       const circuito = await db.query.circuitos.findFirst({
         where: (c, { eq }) => eq(c.id, input.circuitoId),
       });
@@ -158,12 +163,10 @@ export const usuariosRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Circuito no encontrado' });
       }
 
-      // Asignar representante al circuito
       await db.update(circuitos)
         .set({ representanteId: input.userId })
         .where(eq(circuitos.id, input.circuitoId));
       
-      // Actualizar el rol del usuario a representante
       await db.update(user)
         .set({ role: 'representante' })
         .where(eq(user.id, input.userId));
