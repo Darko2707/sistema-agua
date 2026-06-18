@@ -1,12 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Save } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import {
   Table,
   TableBody,
@@ -35,8 +34,6 @@ type Pago = {
 type MercadoPagoConfig = {
   id: string;
   nombre: string;
-  mercadoPagoAccessToken: string | null;
-  mercadoPagoCollectorId: string | null;
 };
 
 function moneda(valor: string | number | null) {
@@ -50,15 +47,12 @@ export default function RepresentanteReportesPage() {
   const router = useRouter();
   const [pagos, setPagos] = useState<Pago[]>([]);
   const [circuito, setCircuito] = useState<MercadoPagoConfig | null>(null);
-  const [accessToken, setAccessToken] = useState('');
-  const [collectorId, setCollectorId] = useState('');
   const [cargando, setCargando] = useState(true);
-  const [guardando, setGuardando] = useState(false);
-  const [mensaje, setMensaje] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function cargar() {
     setCargando(true);
+    setError(null);
     const [pagosRes, mpRes] = await Promise.all([
       fetch('/api/representante/pagos'),
       fetch('/api/representante/mercadopago'),
@@ -67,12 +61,13 @@ export default function RepresentanteReportesPage() {
     if (pagosRes.ok) {
       const data = await pagosRes.json();
       setPagos(data.pagos ?? []);
+    } else {
+      setError('No se pudieron cargar los pagos');
     }
 
     if (mpRes.ok) {
       const data = await mpRes.json();
       setCircuito(data.circuito);
-      setCollectorId(data.circuito?.mercadoPagoCollectorId ?? '');
     }
 
     setCargando(false);
@@ -97,32 +92,6 @@ export default function RepresentanteReportesPage() {
       ),
     [pagos]
   );
-
-  async function guardarMercadoPago() {
-    setGuardando(true);
-    setMensaje(null);
-    setError(null);
-
-    const res = await fetch('/api/representante/mercadopago', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        mercadoPagoAccessToken: accessToken,
-        mercadoPagoCollectorId: collectorId,
-      }),
-    });
-
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error ?? 'No se pudo guardar Mercado Pago');
-    } else {
-      setMensaje('Mercado Pago actualizado');
-      setAccessToken('');
-      await cargar();
-    }
-
-    setGuardando(false);
-  }
 
   if (cargando) {
     return (
@@ -149,32 +118,6 @@ export default function RepresentanteReportesPage() {
         </div>
 
         {error && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">{error}</div>}
-        {mensaje && <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">{mensaje}</div>}
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Mercado Pago</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
-            <div>
-              <label className="mb-2 block text-sm font-medium">Access token</label>
-              <Input
-                type="password"
-                value={accessToken}
-                placeholder={circuito?.mercadoPagoAccessToken ?? 'APP_USR...'}
-                onChange={(e) => setAccessToken(e.target.value)}
-              />
-            </div>
-            <div>
-              <label className="mb-2 block text-sm font-medium">Collector ID</label>
-              <Input value={collectorId} onChange={(e) => setCollectorId(e.target.value)} />
-            </div>
-            <Button disabled={guardando || !accessToken || !collectorId} onClick={guardarMercadoPago}>
-              <Save className="mr-2 h-4 w-4" />
-              Guardar
-            </Button>
-          </CardContent>
-        </Card>
 
         <div className="grid gap-4 md:grid-cols-3">
           <Card>

@@ -42,6 +42,10 @@ export function calcularDesglosePago(montoBase: number): DesglosePago {
   };
 }
 
-export function calcularMontoBase(montoMensual: string | number, esReconexion: boolean) {
-  return Number(montoMensual) + (esReconexion ? MONTO_RECONEXION : 0);
+export function calcularMontoBase(
+  montoMensual: string | number,
+  esReconexion: boolean,
+  montoReconexion: string | number = MONTO_RECONEXION
+) {
+  return Number(montoMensual) + (esReconexion ? Number(montoReconexion) : 0);
 }

@@ -3,14 +3,13 @@ import { z } from 'zod';
 
 import { db } from '@/db';
 import { circuitos } from '@/db/schema';
-import { requireAdmin, unauthorized } from '../../_lib';
+import { requireAdmin, unauthorized } from '../../../_lib';
 
 export const dynamic = 'force-dynamic';
 
-const circuitoSchema = z.object({
-  montoMensual: z.number().positive().max(999999.99),
-  montoReconexion: z.number().nonnegative().max(999999.99),
-  representanteId: z.string().min(1).nullable().optional(),
+const mpSchema = z.object({
+  mercadoPagoAccessToken: z.string().trim().min(1),
+  mercadoPagoCollectorId: z.string().trim().min(1),
 });
 
 export async function PUT(
@@ -18,12 +17,10 @@ export async function PUT(
   ctx: { params: Promise<{ id: string }> }
 ) {
   const admin = await requireAdmin();
-  if (!admin) {
-    return unauthorized();
-  }
+  if (!admin) return unauthorized();
 
   const { id } = await ctx.params;
-  const body = circuitoSchema.safeParse(await request.json().catch(() => null));
+  const body = mpSchema.safeParse(await request.json().catch(() => null));
   if (!body.success) {
     return Response.json({ error: 'Solicitud invalida' }, { status: 400 });
   }
@@ -31,17 +28,13 @@ export async function PUT(
   const [actualizado] = await db
     .update(circuitos)
     .set({
-      montoMensual: body.data.montoMensual.toFixed(2),
-      montoReconexion: body.data.montoReconexion.toFixed(2),
-      representanteId: body.data.representanteId ?? null,
+      mercadoPagoAccessToken: body.data.mercadoPagoAccessToken,
+      mercadoPagoCollectorId: body.data.mercadoPagoCollectorId,
     })
     .where(eq(circuitos.id, id))
     .returning({
       id: circuitos.id,
       nombre: circuitos.nombre,
-      montoMensual: circuitos.montoMensual,
-      montoReconexion: circuitos.montoReconexion,
-      representanteId: circuitos.representanteId,
       mercadoPagoCollectorId: circuitos.mercadoPagoCollectorId,
     });
 

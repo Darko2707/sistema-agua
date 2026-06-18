@@ -59,7 +59,11 @@ export async function POST(request: Request) {
   }
 
   const esReconexion = perfil.estadoAgua === 'cortado';
-  const montoBase = calcularMontoBase(perfil.circuito.montoMensual, esReconexion);
+  const montoBase = calcularMontoBase(
+    perfil.circuito.montoMensual,
+    esReconexion,
+    perfil.circuito.montoReconexion
+  );
   const desglose = calcularDesglosePago(montoBase);
   const externalReference = [
     'agua',

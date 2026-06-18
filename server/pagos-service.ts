@@ -55,7 +55,10 @@ export async function registrarPagoAprobado(input: RegistrarPagoInput) {
   }
 
   const folio = `AGU-${nanoid(10).toUpperCase()}`;
-  const desglose = calcularDesglosePago(Number(input.monto));
+  const montoBase = input.esReconexion
+    ? Number(circuito.montoMensual) + Number(circuito.montoReconexion)
+    : Number(input.monto);
+  const desglose = calcularDesglosePago(montoBase);
 
   const pago = await db.transaction(async (tx) => {
     const [nuevoPago] = await tx

@@ -80,6 +80,7 @@ export const circuitos = pgTable('circuitos', {
   nombre:          text('nombre').notNull(),
   representanteId: text('representante_id').references(() => user.id),
   montoMensual:    decimal('monto_mensual', { precision: 10, scale: 2 }).notNull().default('50.00'),
+  montoReconexion: decimal('monto_reconexion', { precision: 10, scale: 2 }).notNull().default('300.00'),
   mercadoPagoAccessToken: text('mercado_pago_access_token'),
   mercadoPagoCollectorId: text('mercado_pago_collector_id'),
 });

@@ -1,14 +1,12 @@
 import { router, protectedProcedure, roleProcedure } from '../trpc';
 import { z } from 'zod';
 import { db } from '@/db';
-import { pagos, perfilesResidente, cortes, tickets, circuitos } from '@/db/schema';
+import { pagos, perfilesResidente, cortes, tickets } from '@/db/schema';
 import { nanoid } from 'nanoid';
 import { eq, and } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import { obtenerPeriodoVigente, esMoroso } from '../utils';
-
-const MONTO_MENSUAL = '50.00';
-const MONTO_RECONEXION = '300.00';
+import { calcularDesglosePago, calcularMontoBase } from '../payment-calculator';
 
 export const pagosRouter = router({
   // ============================================
@@ -68,11 +66,16 @@ export const pagosRouter = router({
 
       const perfil = await db.query.perfilesResidente.findFirst({
         where: (p, { eq }) => eq(p.userId, ctx.user.id),
+        with: { circuito: true },
       });
       console.log('PERFIL ENCONTRADO:', perfil ? perfil.id : 'NO ENCONTRADO');
 
       if (!perfil) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Completa tu perfil primero' });
+      }
+
+      if (!perfil.circuito) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Circuito no encontrado' });
       }
 
       const ahora = new Date();
@@ -95,9 +98,13 @@ export const pagosRouter = router({
 
       // ✅ NUEVO: Monto según estado del agua
       const esReconexion = perfil.estadoAgua === 'cortado';
-      const monto = esReconexion
-        ? (parseFloat(MONTO_MENSUAL) + parseFloat(MONTO_RECONEXION)).toFixed(2)
-        : MONTO_MENSUAL;
+      const montoBase = calcularMontoBase(
+        perfil.circuito.montoMensual,
+        esReconexion,
+        perfil.circuito.montoReconexion
+      );
+      const desglose = calcularDesglosePago(montoBase);
+      const monto = desglose.total;
       console.log(`MONTO: ${monto}, ES_RECONEXION: ${esReconexion}`);
 
       const folio = `AGU-${nanoid(10).toUpperCase()}`;
@@ -113,9 +120,18 @@ export const pagosRouter = router({
             .insert(pagos)
             .values({
               perfilId: perfil.id,
+              circuitoId: perfil.circuito.id,
+              representanteId: perfil.circuito.representanteId,
               mes,
               anio,
               monto,
+              montoBase: desglose.montoBase,
+              iva: desglose.iva,
+              comisionMercadoPago: desglose.comisionMercadoPago,
+              retencionIsr: desglose.retencionIsr,
+              retencionIva: desglose.retencionIva,
+              montoNetoRepresentante: desglose.montoNetoRepresentante,
+              mercadoPagoCollectorId: perfil.circuito.mercadoPagoCollectorId,
               estado: 'pagado',
               metodo: input.metodo,
               folio,
@@ -130,7 +146,7 @@ export const pagosRouter = router({
             console.log('ACTUALIZANDO ESTADO A pendiente_reconexion...');
             await tx
               .update(perfilesResidente)
-              .set({ estadoAgua: 'pendiente_reconexion' as any })
+              .set({ estadoAgua: 'pendiente_reconexion' })
               .where(eq(perfilesResidente.id, perfil.id));
             console.log('ESTADO ACTUALIZADO A pendiente_reconexion');
 
@@ -205,10 +221,10 @@ export const pagosRouter = router({
   // ============================================
   resumenMes: roleProcedure('admin', 'representante').query(async ({ ctx }) => {
     console.log('=== resumenMes iniciado ===');
-    console.log('ROL:', (ctx.user as any).role);
+    console.log('ROL:', (ctx.user as { role?: string }).role);
 
     const { mes, anio } = obtenerPeriodoVigente();
-    const rol = (ctx.user as any).role;
+    const rol = (ctx.user as { role?: string }).role;
     console.log(`PERIODO PARA RESUMEN: ${mes}/${anio}`);
 
     let perfiles;

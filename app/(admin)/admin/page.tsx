@@ -324,6 +324,12 @@ export default function AdminPage() {
           <Button variant={tab === 'pendientes' ? 'default' : 'outline'} onClick={() => setTab('pendientes')}>
             Pendientes
           </Button>
+          <Button variant="outline" onClick={() => router.push('/admin/circuitos')}>
+            Circuitos
+          </Button>
+          <Button variant="outline" onClick={() => router.push('/admin/representantes')}>
+            Representantes
+          </Button>
         </div>
 
         {/* Resumen */}
