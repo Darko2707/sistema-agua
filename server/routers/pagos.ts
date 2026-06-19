@@ -7,7 +7,7 @@ import { pagos, perfilesResidente, cortes, tickets } from '@/db/schema';
 import { nanoid } from 'nanoid';
 import { eq, and } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
-import { obtenerPeriodoVigente, esMoroso, verificarCircuitoActivo } from '../utils'; // ✅ IMPORTADO
+import { obtenerPeriodoVigente, esMoroso, verificarCircuitoActivo } from '../utils';
 import { calcularDesglosePago, calcularMontoBase } from '../payment-calculator';
 
 export const pagosRouter = router({
@@ -18,11 +18,9 @@ export const pagosRouter = router({
     console.log('=== miHistorial iniciado ===');
     console.log('USER ID:', ctx.user.id);
 
-    // circuito activity verification removed: function not exported from ../utils
-
     const perfil = await db.query.perfilesResidente.findFirst({
       where: (p, { eq }) => eq(p.userId, ctx.user.id),
-      with: { circuito: true }, // ✅ Trae el circuito completo
+      with: { circuito: true },
     });
     console.log('PERFIL ENCONTRADO:', perfil ? perfil.id : 'NO ENCONTRADO');
 
@@ -61,7 +59,7 @@ export const pagosRouter = router({
 
     return {
       perfil,
-      circuito: perfil.circuito, // ✅ Devuelve el circuito completo con sus montos
+      circuito: perfil.circuito,
       pagos: historial,
       corteActivo: !!corteActivo,
       esMoroso: moroso,
@@ -80,7 +78,7 @@ export const pagosRouter = router({
       console.log('USER ID:', ctx.user.id);
       console.log('METODO:', input.metodo);
 
-      await verificarCircuitoActivo(ctx.user.id); // ✅ AGREGADO
+      await verificarCircuitoActivo(ctx.user.id);
 
       const perfil = await db.query.perfilesResidente.findFirst({
         where: (p, { eq }) => eq(p.userId, ctx.user.id),
@@ -114,16 +112,22 @@ export const pagosRouter = router({
       }
       console.log('VERIFICACION OK - NO HABIA PAGADO');
 
-      // ✅ Monto según estado del agua
+      // ✅ Detectar si está pendiente de corte o cortado
+      const esPendienteCorte = perfil.estadoAgua === 'pendiente_corte';
       const esReconexion = perfil.estadoAgua === 'cortado';
+      
+      // Si está pendiente de corte, NO es reconexión (es un pago normal)
+      // Si está cortado, SÍ es reconexión
+      const requiereReconexion = esReconexion;
+      
       const montoBase = calcularMontoBase(
         perfil.circuito.montoMensual,
-        esReconexion,
+        requiereReconexion,
         perfil.circuito.montoReconexion
       );
       const desglose = calcularDesglosePago(montoBase);
       const monto = desglose.total;
-      console.log(`MONTO: ${monto}, ES_RECONEXION: ${esReconexion}`);
+      console.log(`MONTO: ${monto}, ES_RECONEXION: ${requiereReconexion}`);
 
       const folio = `AGU-${nanoid(10).toUpperCase()}`;
       console.log('FOLIO GENERADO:', folio);
@@ -153,15 +157,24 @@ export const pagosRouter = router({
               estado: 'pagado',
               metodo: input.metodo,
               folio,
-              esReconexion,
+              esReconexion: requiereReconexion,
               fechaPago: new Date(),
             })
             .returning();
           console.log('PAGO INSERTADO, ID:', pago.id);
 
-          // ✅ Si estaba cortado, pasa a 'pendiente_reconexion'
-          if (esReconexion) {
-            console.log('ACTUALIZANDO ESTADO A pendiente_reconexion...');
+          // ✅ ACTUALIZAR ESTADO SEGÚN EL CASO
+          if (esPendienteCorte) {
+            // CASO 1: Estaba pendiente de corte → pasa a activo
+            console.log('✅ PENDIENTE DE CORTE - Actualizando a activo...');
+            await tx
+              .update(perfilesResidente)
+              .set({ estadoAgua: 'activo' })
+              .where(eq(perfilesResidente.id, perfil.id));
+            console.log('ESTADO ACTUALIZADO A activo');
+          } else if (esReconexion) {
+            // CASO 2: Estaba cortado → pasa a pendiente_reconexion
+            console.log('✅ CORTADO - Actualizando a pendiente_reconexion...');
             await tx
               .update(perfilesResidente)
               .set({ estadoAgua: 'pendiente_reconexion' })
@@ -180,6 +193,9 @@ export const pagosRouter = router({
                 .where(eq(cortes.id, corteActivo.id));
               console.log('CORTE DESACTIVADO');
             }
+          } else {
+            // CASO 3: Estaba activo → sigue activo
+            console.log('✅ ACTIVO - Sin cambios en estado');
           }
 
           return pago;
@@ -213,7 +229,7 @@ export const pagosRouter = router({
       }
 
       console.log('=== 🎉 PAGO COMPLETADO EXITOSAMENTE ===');
-      return { folio, monto, esReconexion };
+      return { folio, monto, esReconexion: requiereReconexion };
     }),
 
   // ============================================
@@ -234,6 +250,9 @@ export const pagosRouter = router({
       return result;
     }),
 
+  // ============================================
+  // registrarManual: Representante registra pago en efectivo
+  // ============================================
   registrarManual: roleProcedure('representante')
     .input(z.object({
       perfilId: z.string().uuid(),
@@ -274,12 +293,18 @@ export const pagosRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Este residente ya tiene pago registrado este mes' });
       }
 
+      // ✅ Detectar si está pendiente de corte o cortado
+      const esPendienteCorte = perfil.estadoAgua === 'pendiente_corte';
       const esReconexion = perfil.estadoAgua === 'cortado';
+      const requiereReconexion = esReconexion;
+
       const montoBase = calcularMontoBase(
         miCircuito.montoMensual,
-        esReconexion,
+        requiereReconexion,
         miCircuito.montoReconexion,
-      ).toFixed(2);
+      );
+      const desglose = calcularDesglosePago(montoBase);
+      const monto = desglose.total;
       const folio = `AGU-${nanoid(10).toUpperCase()}`;
 
       const pago = await db.transaction(async (tx) => {
@@ -291,23 +316,34 @@ export const pagosRouter = router({
             representanteId: ctx.user.id,
             mes,
             anio,
-            monto: montoBase,
-            montoBase,
-            iva: '0.00',
-            comisionMercadoPago: '0.00',
-            retencionIsr: '0.00',
-            retencionIva: '0.00',
-            montoNetoRepresentante: montoBase,
+            monto,
+            montoBase: desglose.montoBase,
+            iva: desglose.iva,
+            comisionMercadoPago: desglose.comisionMercadoPago,
+            retencionIsr: desglose.retencionIsr,
+            retencionIva: desglose.retencionIva,
+            montoNetoRepresentante: desglose.montoNetoRepresentante,
             mercadoPagoCollectorId: miCircuito.mercadoPagoCollectorId,
             estado: 'pagado',
             metodo: input.metodo,
             folio,
-            esReconexion,
+            esReconexion: requiereReconexion,
             fechaPago: new Date(),
           })
           .returning();
 
-        if (esReconexion) {
+        // ✅ ACTUALIZAR ESTADO SEGÚN EL CASO
+        if (esPendienteCorte) {
+          // CASO 1: Estaba pendiente de corte → pasa a activo
+          console.log('✅ PENDIENTE DE CORTE - Actualizando a activo...');
+          await tx
+            .update(perfilesResidente)
+            .set({ estadoAgua: 'activo' })
+            .where(eq(perfilesResidente.id, perfil.id));
+          console.log('ESTADO ACTUALIZADO A activo');
+        } else if (esReconexion) {
+          // CASO 2: Estaba cortado → pasa a pendiente_reconexion
+          console.log('✅ CORTADO - Actualizando a pendiente_reconexion...');
           await tx
             .update(perfilesResidente)
             .set({ estadoAgua: 'pendiente_reconexion' })
@@ -322,6 +358,9 @@ export const pagosRouter = router({
               .set({ activo: false, fechaReconexion: new Date() })
               .where(eq(cortes.id, corteActivo.id));
           }
+        } else {
+          // CASO 3: Estaba activo → sigue activo
+          console.log('✅ ACTIVO - Sin cambios en estado');
         }
 
         await tx.insert(tickets).values({
@@ -335,6 +374,45 @@ export const pagosRouter = router({
 
       return { folio, monto: pago.monto, metodo: input.metodo };
     }),
+
+  // ============================================
+  // listarFolios: Folios del residente autenticado
+  // ============================================
+  listarFolios: protectedProcedure.query(async ({ ctx }) => {
+    const perfil = await db.query.perfilesResidente.findFirst({
+      where: (p, { eq }) => eq(p.userId, ctx.user.id),
+    });
+
+    if (!perfil) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Perfil no encontrado' });
+    }
+
+    const pagosList = await db.query.pagos.findMany({
+      where: (p, { eq }) => eq(p.perfilId, perfil.id),
+      with: {
+        perfil: {
+          with: {
+            usuario: true,
+            circuito: true,
+          },
+        },
+      },
+      orderBy: (p, { desc }) => [desc(p.anio), desc(p.mes)],
+    });
+
+    return pagosList.map((p) => ({
+      id: p.id,
+      folio: p.folio,
+      mes: p.mes,
+      anio: p.anio,
+      monto: p.monto,
+      estado: p.estado,
+      esReconexion: p.esReconexion,
+      fechaPago: p.fechaPago,
+      circuito: p.perfil?.circuito?.nombre || 'Sin circuito',
+      residente: p.perfil?.usuario?.name || 'Sin nombre',
+    }));
+  }),
 
   // ============================================
   // resumenMes: Resumen para dashboards (admin / representante)
@@ -400,4 +478,3 @@ export const pagosRouter = router({
     };
   }),
 });
-
