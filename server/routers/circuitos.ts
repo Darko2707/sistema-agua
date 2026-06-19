@@ -1,19 +1,24 @@
-// server/routers/circuitos.ts (CREAR si no existe)
+// server/routers/circuitos.ts
 import { router, roleProcedure } from '../trpc';
 import { z } from 'zod';
 import { db } from '@/db';
 import { circuitos } from '@/db/schema';
 import { eq } from 'drizzle-orm';
+import { TRPCError } from '@trpc/server';
 
 export const circuitosRouter = router({
-  // Listar todos los circuitos
+  // ============================================
+  // listar: Listar todos los circuitos (Admin)
+  // ============================================
   listar: roleProcedure('admin').query(async () => {
     return db.query.circuitos.findMany({
       orderBy: (c, { asc }) => [asc(c.nombre)],
     });
   }),
 
-  // ✅ NUEVO: Toggle activo/inactivo
+  // ============================================
+  // toggleActivo: Activar/Inactivar circuito (Admin)
+  // ============================================
   toggleActivo: roleProcedure('admin')
     .input(z.object({
       circuitoId: z.string().uuid(),
@@ -27,7 +32,9 @@ export const circuitosRouter = router({
       return { ok: true };
     }),
 
-  // Actualizar montos
+  // ============================================
+  // actualizarMontos: Modificar costos mensuales y reconexión (Admin)
+  // ============================================
   actualizarMontos: roleProcedure('admin')
     .input(z.object({
       circuitoId: z.string().uuid(),
@@ -44,4 +51,31 @@ export const circuitosRouter = router({
       
       return { ok: true };
     }),
+
+  // ============================================
+  // miCircuito: Obtener el circuito del representante autenticado
+  // ============================================
+  miCircuito: roleProcedure('representante').query(async ({ ctx }) => {
+    const circuito = await db.query.circuitos.findFirst({
+      where: (c, { eq }) => eq(c.representanteId, ctx.user.id),
+      with: {
+        representante: {
+          columns: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    if (!circuito) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'No tienes un circuito asignado',
+      });
+    }
+
+    return circuito;
+  }),
 });
