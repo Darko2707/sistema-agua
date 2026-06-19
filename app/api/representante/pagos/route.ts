@@ -32,6 +32,13 @@ export async function GET() {
     return Response.json({ pagos: [], circuito: null });
   }
 
+  if (usuario.role === 'representante' && !circuito.activo) {
+    return Response.json(
+      { error: 'Tu circuito esta inhabilitado. Contacta al administrador.' },
+      { status: 403 },
+    );
+  }
+
   const data = await db
     .select({
       id: pagos.id,

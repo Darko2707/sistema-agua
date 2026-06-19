@@ -36,6 +36,13 @@ export async function GET() {
     return Response.json({ circuito: null }, { status: 404 });
   }
 
+  if (usuario.role === 'representante' && !circuito.activo) {
+    return Response.json(
+      { error: 'Tu circuito esta inhabilitado. Contacta al administrador.' },
+      { status: 403 },
+    );
+  }
+
   return Response.json({
     circuito: {
       id: circuito.id,

@@ -34,3 +34,26 @@ export async function verificarCircuitoActivo(userId: string) {
 
   return perfil
 }
+
+export async function verificarAccesoPorCircuito(userId: string, role?: string | null) {
+  if (role === 'residente') {
+    return verificarCircuitoActivo(userId)
+  }
+
+  if (role === 'representante') {
+    const circuito = await db.query.circuitos.findFirst({
+      where: (c, { eq }) => eq(c.representanteId, userId),
+    })
+
+    if (circuito && !circuito.activo) {
+      throw new TRPCError({
+        code: 'FORBIDDEN',
+        message: 'Tu circuito esta inhabilitado. Contacta al administrador.',
+      })
+    }
+
+    return circuito
+  }
+
+  return null
+}

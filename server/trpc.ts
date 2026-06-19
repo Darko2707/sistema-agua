@@ -1,7 +1,7 @@
 import { initTRPC, TRPCError } from '@trpc/server';
 import { auth } from '@/lib/auth';
 import { db } from '@/db';
-import { verificarCircuitoActivo } from './utils';
+import { verificarAccesoPorCircuito } from './utils';
 
 export const createTRPCContext = async (opts: { headers: Headers }) => {
   const session = await auth.api.getSession({ headers: opts.headers });
@@ -28,9 +28,7 @@ export const publicProcedure = t.procedure;
 
 export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
   if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
-  if ((ctx.user as any).role === 'residente') {
-    await verificarCircuitoActivo(ctx.user.id);
-  }
+  await verificarAccesoPorCircuito(ctx.user.id, (ctx.user as any).role);
   return next({ ctx: { user: ctx.user } });
 });
 
