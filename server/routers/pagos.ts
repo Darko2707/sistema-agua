@@ -421,12 +421,26 @@ export const pagosRouter = router({
       .filter((p) => perfiles.some((perf) => perf.id === p.perfilId))
       .reduce((acc, p) => acc + parseFloat(p.monto), 0);
 
-    const porCircuitoMap = new Map<string, { nombre: string; total: number; pagados: number }>();
+    // ✅ Construir porCircuito con recaudado
+    const porCircuitoMap = new Map<string, { nombre: string; total: number; pagados: number; recaudado: number }>();
+    
     for (const perfil of perfiles) {
       const nombre = perfil.circuito?.nombre ?? 'Sin circuito';
-      const entry = porCircuitoMap.get(nombre) ?? { nombre, total: 0, pagados: 0 };
+      const entry = porCircuitoMap.get(nombre) ?? { 
+        nombre, 
+        total: 0, 
+        pagados: 0, 
+        recaudado: 0 
+      };
       entry.total += 1;
-      if (idsPagados.has(perfil.id)) entry.pagados += 1;
+      if (idsPagados.has(perfil.id)) {
+        entry.pagados += 1;
+        // ✅ Sumar el monto del pago al recaudado del circuito
+        const pago = pagosDelMes.find((p) => p.perfilId === perfil.id);
+        if (pago) {
+          entry.recaudado += parseFloat(pago.monto);
+        }
+      }
       porCircuitoMap.set(nombre, entry);
     }
 
@@ -445,7 +459,7 @@ export const pagosRouter = router({
   // ============================================
   pagosPorCircuito: roleProcedure('representante', 'admin')
     .input(z.object({
-      circuitoId: z.string().uuid().optional(), // Lo volvemos opcional para delegarlo al rol del Representante
+      circuitoId: z.string().uuid().optional(),
       mes: z.number().optional(),
       anio: z.number().optional(),
     }))

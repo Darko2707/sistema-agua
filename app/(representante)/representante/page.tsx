@@ -20,6 +20,7 @@ import {
   Banknote,
   Search,
   Loader2,
+  DollarSign,
 } from 'lucide-react';
 
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
@@ -174,6 +175,9 @@ export default function RepresentantePage() {
   const porcentaje = resumen && resumen.totalDeptos > 0
     ? Math.round((resumen.pagados / resumen.totalDeptos) * 100)
     : 0;
+  
+  // ✅ RECAUDADO DEL CIRCUITO (del resumen general)
+  const recaudadoCircuito = resumen?.recaudado ?? 0;
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8">
@@ -209,14 +213,23 @@ export default function RepresentantePage() {
         </div>
 
         {/* Tarjetas de Métricas */}
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-4">
+          <Card>
+            <CardContent className="flex items-center justify-between p-5">
+              <div>
+                <p className="text-sm text-muted-foreground font-medium">Departamentos</p>
+                <p className="text-3xl font-bold">{resumen?.totalDeptos ?? 0}</p>
+              </div>
+              <Users className="h-8 w-8 text-primary" />
+            </CardContent>
+          </Card>
           <Card>
             <CardContent className="flex items-center justify-between p-5">
               <div>
                 <p className="text-sm text-muted-foreground font-medium">Pagados</p>
                 <p className="text-3xl font-bold text-green-600">{resumen?.pagados ?? 0}</p>
               </div>
-              <Users className="h-8 w-8 text-green-600" />
+              <TrendingUp className="h-8 w-8 text-green-600" />
             </CardContent>
           </Card>
           <Card>
@@ -231,10 +244,12 @@ export default function RepresentantePage() {
           <Card>
             <CardContent className="flex items-center justify-between p-5">
               <div>
-                <p className="text-sm text-muted-foreground font-medium">Cobranza</p>
-                <p className="text-3xl font-bold text-primary">{porcentaje}%</p>
+                <p className="text-sm text-muted-foreground font-medium">Recaudado</p>
+                <p className="text-3xl font-bold text-amber-600">
+                  ${recaudadoCircuito.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                </p>
               </div>
-              <TrendingUp className="h-8 w-8 text-primary" />
+              <DollarSign className="h-8 w-8 text-amber-600" />
             </CardContent>
           </Card>
         </div>
@@ -258,6 +273,11 @@ export default function RepresentantePage() {
                   style={{ width: `${porcentaje}%` }}
                 />
               </div>
+              <p className="text-xs text-muted-foreground text-right mt-2">
+                Recaudado: <span className="font-semibold text-green-700">
+                  ${recaudadoCircuito.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                </span>
+              </p>
             </CardContent>
           </Card>
 
@@ -273,6 +293,12 @@ export default function RepresentantePage() {
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Reconexión:</span>
                 <span className="font-bold text-red-600">${circuito?.montoReconexion || '0.00'}</span>
+              </div>
+              <div className="flex justify-between border-t pt-2 mt-2">
+                <span className="text-muted-foreground font-medium">Total recaudado:</span>
+                <span className="font-bold text-amber-600">
+                  ${recaudadoCircuito.toLocaleString('es-MX', { minimumFractionDigits: 2 })}
+                </span>
               </div>
             </CardContent>
           </Card>
