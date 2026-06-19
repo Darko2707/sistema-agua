@@ -3,12 +3,14 @@
 import { useEffect, useState } from 'react';
 import { authClient, useSession } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
+import { trpc } from '@/lib/trpc-client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
 import {
   LogOut, Users, AlertTriangle,
-  TrendingUp, Droplets, Home,
+  TrendingUp, Droplets, Home, Banknote, Search,
 } from 'lucide-react';
 
 const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
@@ -60,8 +62,13 @@ export default function RepresentantePage() {
   const [residentes, setResidentes] = useState<Residente[]>([]);
   const [cargando, setCargando] = useState(true);
   const [tab, setTab] = useState<'todos' | 'morosos'>('todos');
+  const [busqueda, setBusqueda] = useState('');
+  const [registrando, setRegistrando] = useState<string | null>(null);
+  const [mensaje, setMensaje] = useState('');
+  const [error, setError] = useState('');
 
   async function cargar() {
+    setError('');
     const [resR, resL] = await Promise.all([
       fetch(trpcQueryUrl('pagos.resumenMes')),
       fetch(trpcQueryUrl('usuarios.listarResidentes')),
@@ -78,6 +85,22 @@ export default function RepresentantePage() {
     router.push('/login');
   }
 
+  async function registrarPagoManual(perfilId: string, metodo: 'efectivo' | 'transferencia') {
+    setRegistrando(`${perfilId}:${metodo}`);
+    setMensaje('');
+    setError('');
+
+    try {
+      const result = await trpc.pagos.registrarManual.mutate({ perfilId, metodo });
+      setMensaje(`Pago registrado con folio ${result.folio}`);
+      await cargar();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'No se pudo registrar el pago');
+    } finally {
+      setRegistrando(null);
+    }
+  }
+
   if (isPending || cargando) return (
     <div className="min-h-screen flex items-center justify-center">
       <p className="text-muted-foreground">Cargando...</p>
@@ -88,9 +111,17 @@ export default function RepresentantePage() {
   const porcentaje = resumen && resumen.totalDeptos > 0
     ? Math.round((resumen.pagados / resumen.totalDeptos) * 100) : 0;
 
-  const listaMostrar = tab === 'morosos'
-    ? residentes.filter(r => !r.pagoEsteMes)
+  const normalizada = busqueda.trim().toLowerCase();
+  const residentesFiltrados = normalizada
+    ? residentes.filter((r) => {
+        const texto = `${r.usuario.name} ${r.usuario.email} ${r.edificio} ${r.departamento}`.toLowerCase();
+        return texto.includes(normalizada);
+      })
     : residentes;
+
+  const listaMostrar = tab === 'morosos'
+    ? residentesFiltrados.filter(r => !r.pagoEsteMes)
+    : residentesFiltrados;
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8">
@@ -175,11 +206,30 @@ export default function RepresentantePage() {
           </Button>
         </div>
 
+        {(mensaje || error) && (
+          <div className={`rounded-xl border p-4 text-sm ${
+            error ? 'border-red-200 bg-red-50 text-red-600' : 'border-green-200 bg-green-50 text-green-700'
+          }`}>
+            {error || mensaje}
+          </div>
+        )}
+
         <Card>
-          <CardHeader>
-            <CardTitle>
-              {tab === 'morosos' ? 'Residentes morosos' : 'Todos los residentes'}
-            </CardTitle>
+          <CardHeader className="space-y-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <CardTitle>
+                {tab === 'morosos' ? 'Residentes morosos' : 'Todos los residentes'}
+              </CardTitle>
+              <div className="relative md:w-80">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={busqueda}
+                  onChange={(e) => setBusqueda(e.target.value)}
+                  placeholder="Buscar residente, correo o vivienda"
+                  className="pl-9"
+                />
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="space-y-3">
             {listaMostrar.length === 0 && (
@@ -216,6 +266,27 @@ export default function RepresentantePage() {
                       <Badge variant="outline" className="border-red-300 text-red-600">
                         Corte automático
                       </Badge>
+                    )}
+                    {!r.pagoEsteMes && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => registrarPagoManual(r.id, 'efectivo')}
+                          disabled={!!registrando}
+                        >
+                          <Banknote className="mr-2 h-4 w-4" />
+                          {registrando === `${r.id}:efectivo` ? 'Guardando...' : 'Efectivo'}
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => registrarPagoManual(r.id, 'transferencia')}
+                          disabled={!!registrando}
+                        >
+                          <Banknote className="mr-2 h-4 w-4" />
+                          {registrando === `${r.id}:transferencia` ? 'Guardando...' : 'Transferencia'}
+                        </Button>
+                      </>
                     )}
                   </div>
                 </div>

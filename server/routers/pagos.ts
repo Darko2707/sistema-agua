@@ -234,6 +234,108 @@ export const pagosRouter = router({
       return result;
     }),
 
+  registrarManual: roleProcedure('representante')
+    .input(z.object({
+      perfilId: z.string().uuid(),
+      metodo: z.enum(['efectivo', 'transferencia']),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { mes, anio } = obtenerPeriodoVigente();
+
+      const miCircuito = await db.query.circuitos.findFirst({
+        where: (c, { eq }) => eq(c.representanteId, ctx.user.id),
+      });
+      if (!miCircuito) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes circuito asignado' });
+      }
+      if (!miCircuito.activo) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Tu circuito esta inhabilitado' });
+      }
+
+      const perfil = await db.query.perfilesResidente.findFirst({
+        where: (p, { eq, and }) =>
+          and(eq(p.id, input.perfilId), eq(p.circuitoId, miCircuito.id)),
+        with: { circuito: true },
+      });
+      if (!perfil) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Residente no encontrado en tu circuito' });
+      }
+
+      const yaPago = await db.query.pagos.findFirst({
+        where: (p, { eq, and }) =>
+          and(
+            eq(p.perfilId, perfil.id),
+            eq(p.mes, mes),
+            eq(p.anio, anio),
+            eq(p.estado, 'pagado'),
+          ),
+      });
+      if (yaPago) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Este residente ya tiene pago registrado este mes' });
+      }
+
+      const esReconexion = perfil.estadoAgua === 'cortado';
+      const montoBase = calcularMontoBase(
+        miCircuito.montoMensual,
+        esReconexion,
+        miCircuito.montoReconexion,
+      ).toFixed(2);
+      const folio = `AGU-${nanoid(10).toUpperCase()}`;
+
+      const pago = await db.transaction(async (tx) => {
+        const [nuevoPago] = await tx
+          .insert(pagos)
+          .values({
+            perfilId: perfil.id,
+            circuitoId: miCircuito.id,
+            representanteId: ctx.user.id,
+            mes,
+            anio,
+            monto: montoBase,
+            montoBase,
+            iva: '0.00',
+            comisionMercadoPago: '0.00',
+            retencionIsr: '0.00',
+            retencionIva: '0.00',
+            montoNetoRepresentante: montoBase,
+            mercadoPagoCollectorId: miCircuito.mercadoPagoCollectorId,
+            estado: 'pagado',
+            metodo: input.metodo,
+            folio,
+            esReconexion,
+            fechaPago: new Date(),
+          })
+          .returning();
+
+        if (esReconexion) {
+          await tx
+            .update(perfilesResidente)
+            .set({ estadoAgua: 'pendiente_reconexion' })
+            .where(eq(perfilesResidente.id, perfil.id));
+
+          const corteActivo = await tx.query.cortes.findFirst({
+            where: (c, { eq, and }) => and(eq(c.perfilId, perfil.id), eq(c.activo, true)),
+          });
+          if (corteActivo) {
+            await tx
+              .update(cortes)
+              .set({ activo: false, fechaReconexion: new Date() })
+              .where(eq(cortes.id, corteActivo.id));
+          }
+        }
+
+        await tx.insert(tickets).values({
+          pagoId: nuevoPago.id,
+          folio,
+          pdfUrl: null,
+        });
+
+        return nuevoPago;
+      });
+
+      return { folio, monto: pago.monto, metodo: input.metodo };
+    }),
+
   // ============================================
   // resumenMes: Resumen para dashboards (admin / representante)
   // ============================================
