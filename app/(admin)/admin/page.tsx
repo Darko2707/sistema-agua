@@ -19,13 +19,29 @@ import {
   AlertTriangle,
   LogOut,
   Shield,
-  Loader2,
+  Scissors,
+  RotateCcw,
+  UserCog,
 } from 'lucide-react';
 
-const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+const MESES = [
+  'Ene',
+  'Feb',
+  'Mar',
+  'Abr',
+  'May',
+  'Jun',
+  'Jul',
+  'Ago',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dic',
+];
+
 const ahora = new Date();
 
-interface Resumen {
+type Resumen = {
   totalDeptos: number;
   pagados: number;
   recaudado: number;
@@ -33,18 +49,17 @@ interface Resumen {
     nombre: string;
     total: number;
     pagados: number;
-    recaudado: number;
   }[];
-}
+};
 
-interface Personal {
+type Personal = {
   id: string;
   name: string;
   email: string;
   role: string;
-}
+};
 
-interface ResidenteCompleto {
+type ResidenteCompleto = {
   id: string;
   edificio: string;
   departamento: string;
@@ -59,13 +74,13 @@ interface ResidenteCompleto {
     role: string;
   };
   circuito?: { id: string; nombre: string } | null;
-}
+};
 
-interface Circuito {
+type Circuito = {
   id: string;
   nombre: string;
   representanteId: string | null;
-}
+};
 
 const ROLES = [
   { value: 'admin', label: 'Administrador' },
@@ -93,7 +108,7 @@ function getEstadoAguaLabel(estado: string): { label: string; variant: 'default'
     case 'pendiente_reconexion':
       return { label: 'Pendiente reconexión', variant: 'outline' };
     default:
-      return { label: estado || 'Desconocido', variant: 'outline' };
+      return { label: estado, variant: 'outline' };
   }
 }
 
@@ -115,28 +130,23 @@ export default function AdminPage() {
   const [error, setError] = useState<string | null>(null);
 
   async function cargarDatos() {
-    try {
-      const [resR, resP, resL, resC, resPC, resPR] = await Promise.all([
-        fetch(trpcQueryUrl('pagos.resumenMes')),
-        fetch(trpcQueryUrl('usuarios.listarPersonal')),
-        fetch(trpcQueryUrl('usuarios.listarResidentes')),
-        fetch(trpcQueryUrl('usuarios.listarCircuitos')),
-        fetch(trpcQueryUrl('cortes.pendientesDeCorte')),
-        fetch(trpcQueryUrl('cortes.pendientesDeReconexion')),
-      ]);
+    const [resR, resP, resL, resC, resPC, resPR] = await Promise.all([
+      fetch(trpcQueryUrl('pagos.resumenMes')),
+      fetch(trpcQueryUrl('usuarios.listarPersonal')),
+      fetch(trpcQueryUrl('usuarios.listarResidentes')),
+      fetch(trpcQueryUrl('usuarios.listarCircuitos')),
+      fetch(trpcQueryUrl('cortes.pendientesDeCorte')),
+      fetch(trpcQueryUrl('cortes.pendientesDeReconexion')),
+    ]);
 
-      if (resR.ok) setResumen((await resR.json())?.[0]?.result?.data ?? null);
-      if (resP.ok) setPersonal((await resP.json())?.[0]?.result?.data ?? []);
-      if (resL.ok) setResidentes((await resL.json())?.[0]?.result?.data ?? []);
-      if (resC.ok) setCircuitos((await resC.json())?.[0]?.result?.data ?? []);
-      if (resPC.ok) setPendientesCorte((await resPC.json())?.[0]?.result?.data ?? []);
-      if (resPR.ok) setPendientesReconexion((await resPR.json())?.[0]?.result?.data ?? []);
-    } catch (err) {
-      console.error(err);
-      setError('Error al sincronizar datos con el servidor');
-    } finally {
-      setCargando(false);
-    }
+    if (resR.ok) setResumen((await resR.json())?.[0]?.result?.data ?? null);
+    if (resP.ok) setPersonal((await resP.json())?.[0]?.result?.data ?? []);
+    if (resL.ok) setResidentes((await resL.json())?.[0]?.result?.data ?? []);
+    if (resC.ok) setCircuitos((await resC.json())?.[0]?.result?.data ?? []);
+    if (resPC.ok) setPendientesCorte((await resPC.json())?.[0]?.result?.data ?? []);
+    if (resPR.ok) setPendientesReconexion((await resPR.json())?.[0]?.result?.data ?? []);
+
+    setCargando(false);
   }
 
   useEffect(() => {
@@ -160,39 +170,39 @@ export default function AdminPage() {
       });
       
       const data = await res.json();
+      
       if (!res.ok) {
         throw new Error(data?.error?.message || 'Error al cambiar rol');
       }
+      
       await cargarDatos();
     } catch (err: any) {
       setError(err.message || 'Error al cambiar rol');
-    } finally {
-      setActualizando(null);
     }
+    setActualizando(null);
   }
 
   async function asignarRepresentante(circuitoId: string, userId: string) {
+    if (!userId) return;
     setActualizando(circuitoId);
-    setError(null);
     
     try {
       const res = await fetch('/api/trpc/usuarios.asignarRepresentante', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ circuitoId, userId: userId || null }),
+        body: JSON.stringify({ circuitoId, userId }),
       });
       
       if (res.ok) {
         await cargarDatos();
       } else {
         const errorData = await res.json();
-        throw new Error(errorData?.error?.message || 'Error al asignar representante');
+        setError(errorData?.error?.message || 'Error al asignar representante');
       }
     } catch (err: any) {
       setError(err.message || 'Error al asignar representante');
-    } finally {
-      setActualizando(null);
     }
+    setActualizando(null);
   }
 
   async function salir() {
@@ -200,6 +210,7 @@ export default function AdminPage() {
     router.push('/login');
   }
 
+  // Filtrar residentes
   const residentesFiltrados = residentes.filter((r) => {
     const porCircuito = filtroCircuito === 'todos' || r.circuito?.id === filtroCircuito;
     const porEstado = filtroEstado === 'todos' || r.estadoAgua === filtroEstado;
@@ -209,17 +220,16 @@ export default function AdminPage() {
   if (isPending || cargando) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="text-muted-foreground">Cargando...</p>
       </div>
     );
   }
 
-  const morosos = resumen ? Math.max(0, resumen.totalDeptos - resumen.pagados) : 0;
+  const morosos = resumen ? resumen.totalDeptos - resumen.pagados : 0;
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8">
       <div className="mx-auto max-w-7xl space-y-6">
-        
         {/* Header */}
         <div className="rounded-3xl bg-gradient-to-r from-sky-600 to-cyan-600 p-6 text-white shadow-lg">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -230,7 +240,7 @@ export default function AdminPage() {
               </p>
             </div>
             <div className="flex gap-2">
-              <Button variant="secondary" onClick={salir} className="border-0">
+              <Button variant="secondary" onClick={salir}>
                 <LogOut className="mr-2 h-4 w-4" />
                 Salir
               </Button>
@@ -271,11 +281,11 @@ export default function AdminPage() {
             <CardContent className="flex items-center justify-between p-5">
               <div>
                 <p className="text-sm text-muted-foreground">Recaudado</p>
-                <p className="text-3xl font-bold text-sky-600">
-                  ${(resumen?.recaudado ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                <p className="text-3xl font-bold">
+                  ${(resumen?.recaudado ?? 0).toLocaleString()}
                 </p>
               </div>
-              <Users className="h-8 w-8 text-sky-600" />
+              <Users className="h-8 w-8 text-primary" />
             </CardContent>
           </Card>
         </div>
@@ -287,7 +297,7 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* Navigation Tabs */}
+        {/* Tabs */}
         <div className="flex flex-wrap gap-2">
           <Button variant={tab === 'resumen' ? 'default' : 'outline'} onClick={() => setTab('resumen')}>
             Resumen
@@ -299,41 +309,40 @@ export default function AdminPage() {
             Residentes
           </Button>
           <Button variant={tab === 'pendientes' ? 'default' : 'outline'} onClick={() => setTab('pendientes')}>
-            Pendientes ({pendientesCorte.length + pendientesReconexion.length})
+            Pendientes
           </Button>
           <Button variant="outline" onClick={() => router.push('/admin/circuitos')}>
-            Configurar Circuitos
+            Circuitos
+          </Button>
+          <Button variant="outline" onClick={() => router.push('/admin/representantes')} className="flex items-center gap-2">
+            <UserCog className="h-4 w-4" />
+            Representantes
           </Button>
         </div>
 
-        {/* Tab content: RESUMEN */}
+        {/* Resumen */}
         {tab === 'resumen' && (
           <Card>
             <CardHeader>
-              <CardTitle>Estado de Cobranza por Circuito</CardTitle>
+              <CardTitle>Estado por circuito</CardTitle>
             </CardHeader>
             <CardContent className="space-y-5">
               {(resumen?.porCircuito ?? []).map((c) => {
                 const pct = c.total > 0 ? Math.round((c.pagados / c.total) * 100) : 0;
                 return (
                   <div key={c.nombre} className="space-y-2">
-                    <div className="flex justify-between text-sm">
+                    <div className="flex justify-between">
                       <span className="font-medium">{c.nombre}</span>
-                      <span className="text-muted-foreground font-semibold">
-                        {c.pagados} / {c.total} cubiertos ({pct}%)
+                      <span className="text-muted-foreground">
+                        {c.pagados}/{c.total}
                       </span>
                     </div>
-                    <div className="h-3 overflow-hidden rounded-full bg-slate-100 border border-slate-200">
+                    <div className="h-3 overflow-hidden rounded-full bg-muted">
                       <div
                         className="h-full rounded-full bg-green-500 transition-all"
                         style={{ width: `${pct}%` }}
                       />
                     </div>
-                    <p className="text-xs text-muted-foreground text-right">
-                      Recaudado: <span className="font-semibold text-green-700">
-                        ${(c.recaudado ?? 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}
-                      </span>
-                    </p>
                   </div>
                 );
               })}
@@ -341,38 +350,45 @@ export default function AdminPage() {
           </Card>
         )}
 
-        {/* Tab content: PERSONAL */}
+        {/* Personal - Gestión de roles */}
         {tab === 'personal' && (
           <div className="space-y-6">
             <Card>
               <CardHeader>
                 <CardTitle>Personal del sistema</CardTitle>
-                <p className="text-sm text-muted-foreground">Modifica privilegios y accesos del personal en tiempo real</p>
+                <p className="text-sm text-muted-foreground">Cambia el rol de los usuarios desde el selector</p>
               </CardHeader>
               <CardContent className="space-y-3">
                 {personal.length === 0 && (
-                  <p className="py-10 text-center text-muted-foreground">Sin personal asignado en la base de datos.</p>
+                  <p className="py-10 text-center text-muted-foreground">Sin personal registrado.</p>
                 )}
                 {personal.map((p) => (
                   <div
                     key={p.id}
-                    className="flex flex-col gap-4 rounded-xl border p-4 md:flex-row md:items-center md:justify-between bg-white"
+                    className="flex flex-col gap-4 rounded-xl border p-4 md:flex-row md:items-center md:justify-between"
                   >
                     <div>
                       <div className="flex items-center gap-2">
                         <Shield className="h-4 w-4 text-primary" />
-                        <p className="font-medium">{p.name || 'Usuario sin nombre'}</p>
+                        <p className="font-medium">{p.name}</p>
                       </div>
                       <p className="text-sm text-muted-foreground">{p.email}</p>
-                      <Badge variant="outline" className="mt-1 capitalize">
+                      <Badge variant="outline" className="mt-1">
                         {ROLES.find(r => r.value === p.role)?.label || p.role}
                       </Badge>
                     </div>
                     <select
                       value={p.role}
                       disabled={actualizando === p.id}
-                      onChange={(e) => cambiarRol(p.id, e.target.value)}
-                      className="h-10 rounded-lg border bg-background px-3 md:w-72 text-sm font-medium shadow-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                      onChange={(e) => {
+                        const userId = p.id;
+                        if (!userId) {
+                          setError('No se puede cambiar rol: usuario ID no válido');
+                          return;
+                        }
+                        cambiarRol(userId, e.target.value);
+                      }}
+                      className="h-10 rounded-lg border bg-background px-3 md:w-72"
                     >
                       {ROLES.map((r) => (
                         <option key={r.value} value={r.value}>
@@ -387,38 +403,40 @@ export default function AdminPage() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Asignación de Circuitos</CardTitle>
-                <p className="text-sm text-muted-foreground font-normal">Vincula un Representante o Administrador responsable por sector</p>
+                <CardTitle>Circuitos y representantes</CardTitle>
+                <p className="text-sm text-muted-foreground">Asigna un representante a cada circuito</p>
               </CardHeader>
               <CardContent className="space-y-3">
                 {circuitos.map((c) => (
                   <div
                     key={c.id}
-                    className="flex flex-col gap-4 rounded-xl border p-4 md:flex-row md:items-center md:justify-between bg-white"
+                    className="flex flex-col gap-4 rounded-xl border p-4 md:flex-row md:items-center md:justify-between"
                   >
                     <div>
-                      <p className="font-semibold text-base">{c.nombre}</p>
+                      <p className="font-medium">{c.nombre}</p>
                       <p className="text-sm text-muted-foreground">
                         {c.representanteId 
-                          ? `Responsable: ${personal.find(p => p.id === c.representanteId)?.name || 'Cargando...'}` 
+                          ? `Representante: ${personal.find(p => p.id === c.representanteId)?.name || 'Asignado'}` 
                           : 'Sin representante asignado'}
                       </p>
                     </div>
-                    <select
-                      onChange={(e) => asignarRepresentante(c.id, e.target.value)}
-                      disabled={actualizando === c.id}
-                      className="h-10 rounded-lg border bg-background px-3 md:w-72 text-sm shadow-sm focus:outline-none"
-                      defaultValue={c.representanteId || ''}
-                    >
-                      <option value="">Dejar sin representante</option>
-                      {personal
-                        .filter((p) => p.role === 'representante' || p.role === 'admin')
-                        .map((p) => (
-                          <option key={p.id} value={p.id}>
-                            {p.name} ({p.email})
-                          </option>
-                        ))}
-                    </select>
+                    <div className="flex gap-2">
+                      <select
+                        onChange={(e) => asignarRepresentante(c.id, e.target.value)}
+                        disabled={actualizando === c.id}
+                        className="h-10 rounded-lg border bg-background px-3 md:w-64"
+                        defaultValue={c.representanteId || ''}
+                      >
+                        <option value="">Sin representante</option>
+                        {personal
+                          .filter((p) => p.role === 'representante' || p.role === 'admin')
+                          .map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name} ({p.email})
+                            </option>
+                          ))}
+                      </select>
+                    </div>
                   </div>
                 ))}
               </CardContent>
@@ -426,34 +444,38 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* Tab content: RESIDENTES */}
+        {/* Residentes con filtros y cambio de rol */}
         {tab === 'residentes' && (
           <Card>
             <CardHeader>
-              <CardTitle>Padrón General de Residentes</CardTitle>
-              <div className="flex flex-wrap gap-4 mt-3">
+              <CardTitle>Todos los residentes</CardTitle>
+              <div className="flex flex-wrap gap-4 mt-2">
+                {/* Filtro por circuito */}
                 <div className="flex items-center gap-2">
-                  <label className="text-xs font-bold uppercase text-muted-foreground">Circuito:</label>
+                  <label className="text-sm text-muted-foreground">Circuito:</label>
                   <select
                     value={filtroCircuito}
                     onChange={(e) => setFiltroCircuito(e.target.value)}
-                    className="h-9 rounded-lg border bg-white px-3 text-sm focus:outline-none"
+                    className="h-9 rounded-lg border bg-background px-3 text-sm"
                   >
-                    <option value="todos">Todos los circuitos</option>
+                    <option value="todos">Todos</option>
                     {circuitos.map((c) => (
-                      <option key={c.id} value={c.id}>{c.nombre}</option>
+                      <option key={c.id} value={c.id}>
+                        {c.nombre}
+                      </option>
                     ))}
                   </select>
                 </div>
 
+                {/* Filtro por estado */}
                 <div className="flex items-center gap-2">
-                  <label className="text-xs font-bold uppercase text-muted-foreground">Estado:</label>
+                  <label className="text-sm text-muted-foreground">Estado:</label>
                   <select
                     value={filtroEstado}
                     onChange={(e) => setFiltroEstado(e.target.value)}
-                    className="h-9 rounded-lg border bg-white px-3 text-sm focus:outline-none"
+                    className="h-9 rounded-lg border bg-background px-3 text-sm"
                   >
-                    <option value="todos font-medium">Todos los estados</option>
+                    <option value="todos">Todos</option>
                     <option value="activo">Activo</option>
                     <option value="pendiente_corte">Pendiente corte</option>
                     <option value="cortado">Cortado</option>
@@ -461,114 +483,157 @@ export default function AdminPage() {
                   </select>
                 </div>
 
-                {(filtroCircuito !== 'todos' || filtroEstado !== 'todos') && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setFiltroCircuito('todos');
-                      setFiltroEstado('todos');
-                    }}
-                    className="text-red-500 hover:text-red-600 hover:bg-red-50"
-                  >
-                    Limpiar filtros
-                  </Button>
-                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setFiltroCircuito('todos');
+                    setFiltroEstado('todos');
+                  }}
+                >
+                  Limpiar filtros
+                </Button>
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
-              {residentesFiltrados.length === 0 ? (
-                <p className="py-10 text-center text-muted-foreground">Ningún residente coincide con los criterios de búsqueda.</p>
-              ) : (
-                residentesFiltrados.map((r) => {
-                  const badgeInfo = getEstadoAguaLabel(r.estadoAgua);
-                  return (
-                    <div
-                      key={r.id}
-                      className="flex flex-col gap-4 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between bg-white"
-                    >
-                      <div>
-                        <p className="font-semibold text-slate-800">{r.usuario?.name || 'Residente no registrado'}</p>
-                        <p className="text-xs text-muted-foreground">{r.usuario?.email}</p>
-                        <div className="flex flex-wrap items-center gap-2 mt-1.5 text-sm">
-                          <span className="font-medium text-slate-600">
-                            Edificio {r.edificio} - Depto {r.departamento}
-                          </span>
-                          <span className="text-slate-300">•</span>
-                          <span className="text-muted-foreground text-xs">{r.circuito?.nombre || 'Sin Sector'}</span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3 justify-between sm:justify-end border-t sm:border-0 pt-2 sm:pt-0">
-                        <Badge variant={r.pagoEsteMes ? 'default' : 'outline'} className={r.pagoEsteMes ? 'bg-green-600 hover:bg-green-600' : ''}>
-                          {r.pagoEsteMes ? 'Pagado' : 'Adeudo'}
-                        </Badge>
-                        <Badge variant={badgeInfo.variant}>
-                          {badgeInfo.label}
-                        </Badge>
-                      </div>
-                    </div>
-                  );
-                })
+              {residentesFiltrados.length === 0 && (
+                <p className="py-10 text-center text-muted-foreground">
+                  No hay residentes que coincidan con los filtros.
+                </p>
               )}
+              {residentesFiltrados.map((r) => {
+                const estadoInfo = getEstadoAguaLabel(r.estadoAgua);
+                const usuarioId = r.usuario?.id || r.id;
+                
+                return (
+                  <div
+                    key={r.id}
+                    className="flex flex-col gap-4 rounded-xl border p-4 md:flex-row md:items-center md:justify-between"
+                  >
+                    <div className="flex-1">
+                      <p className="font-medium">{r.usuario?.name || 'Sin nombre'}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {r.circuito?.nombre || 'Sin circuito'} · {r.edificio} · {r.departamento}
+                      </p>
+                      <p className="text-xs text-muted-foreground">{r.usuario?.email || 'Sin email'}</p>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge variant={r.pagoEsteMes ? 'default' : 'destructive'}>
+                        {r.pagoEsteMes ? 'Pagado' : 'Sin pago'}
+                      </Badge>
+                      <Badge variant={estadoInfo.variant}>{estadoInfo.label}</Badge>
+                      {r.esMoroso && !r.corteActivo && (
+                        <Badge variant="outline" className="border-amber-300 text-amber-600">
+                          Moroso
+                        </Badge>
+                      )}
+                      {r.corteActivo && (
+                        <Badge variant="outline" className="border-red-300 text-red-600">
+                          Corte activo
+                        </Badge>
+                      )}
+                    </div>
+
+                    {/* Selector de rol para residentes */}
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={r.usuario?.role || 'residente'}
+                        disabled={actualizando === r.id}
+                        onChange={(e) => {
+                          if (!usuarioId) {
+                            setError('No se puede cambiar rol: usuario ID no válido');
+                            return;
+                          }
+                          cambiarRol(usuarioId, e.target.value);
+                        }}
+                        className="h-9 rounded-lg border bg-background px-2 text-sm md:w-40"
+                      >
+                        {ROLES.map((role) => (
+                          <option key={role.value} value={role.value}>
+                            {role.label}
+                          </option>
+                        ))}
+                      </select>
+                      {actualizando === r.id && (
+                        <span className="text-xs text-muted-foreground">Guardando...</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </CardContent>
           </Card>
         )}
 
-        {/* Tab content: PENDIENTES */}
+        {/* Pendientes */}
         {tab === 'pendientes' && (
-          <div className="grid gap-6 md:grid-cols-2">
-            {/* Cortes pendientes */}
+          <div className="space-y-6">
             <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-red-600 font-bold flex items-center gap-2">
-                  <AlertTriangle className="h-5 w-5" />
-                  Pendientes de Corte ({pendientesCorte.length})
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <Scissors className="h-5 w-5 text-red-600" />
+                  Pendientes de corte
                 </CardTitle>
+                <Badge variant="destructive">{pendientesCorte.length}</Badge>
               </CardHeader>
               <CardContent className="space-y-3">
-                {pendientesCorte.length === 0 ? (
-                  <p className="text-sm text-muted-foreground py-4 text-center">No hay órdenes de corte en cola.</p>
-                ) : (
-                  pendientesCorte.map((p) => (
-                    <div key={p.id} className="p-3 border rounded-xl bg-white flex justify-between items-center text-sm">
-                      <div>
-                        <p className="font-medium">{p.usuario?.name}</p>
-                        <p className="text-xs text-muted-foreground">Edificio {p.edificio} - Depto {p.departamento}</p>
-                      </div>
-                      <Badge variant="destructive">Corte</Badge>
-                    </div>
-                  ))
+                {pendientesCorte.length === 0 && (
+                  <p className="py-4 text-center text-muted-foreground">Sin pendientes de corte</p>
                 )}
+                {pendientesCorte.map((r) => (
+                  <div
+                    key={r.id}
+                    className="flex flex-col gap-4 rounded-xl border p-4 md:flex-row md:items-center md:justify-between"
+                  >
+                    <div>
+                      <p className="font-medium">{r.usuario?.name || 'Sin nombre'}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {r.circuito?.nombre || 'Sin circuito'} · {r.edificio} · {r.departamento}
+                      </p>
+                      <Badge variant="destructive">Pendiente de corte</Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">Debe el mes - esperando cuadrilla</p>
+                  </div>
+                ))}
               </CardContent>
             </Card>
 
-            {/* Reconexiones pendientes */}
             <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-green-600 font-bold flex items-center gap-2">
-                  <Users className="h-5 w-5" />
-                  Pendientes de Reconexión ({pendientesReconexion.length})
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="flex items-center gap-2">
+                  <RotateCcw className="h-5 w-5 text-amber-600" />
+                  Pendientes de reconexión
                 </CardTitle>
+                <Badge variant="outline" className="border-amber-300 text-amber-600">
+                  {pendientesReconexion.length}
+                </Badge>
               </CardHeader>
               <CardContent className="space-y-3">
-                {pendientesReconexion.length === 0 ? (
-                  <p className="text-sm text-muted-foreground py-4 text-center">No hay órdenes de reconexión pendientes.</p>
-                ) : (
-                  pendientesReconexion.map((p) => (
-                    <div key={p.id} className="p-3 border rounded-xl bg-white flex justify-between items-center text-sm">
-                      <div>
-                        <p className="font-medium">{p.usuario?.name}</p>
-                        <p className="text-xs text-muted-foreground">Edificio {p.edificio} - Depto {p.departamento}</p>
-                      </div>
-                      <Badge variant="outline" className="border-green-500 text-green-600 bg-green-50">Reconectar</Badge>
-                    </div>
-                  ))
+                {pendientesReconexion.length === 0 && (
+                  <p className="py-4 text-center text-muted-foreground">Sin reconexiones pendientes</p>
                 )}
+                {pendientesReconexion.map((r) => (
+                  <div
+                    key={r.id}
+                    className="flex flex-col gap-4 rounded-xl border p-4 md:flex-row md:items-center md:justify-between"
+                  >
+                    <div>
+                      <p className="font-medium">{r.usuario?.name || 'Sin nombre'}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {r.circuito?.nombre || 'Sin circuito'} · {r.edificio} · {r.departamento}
+                      </p>
+                      <Badge variant="outline" className="border-amber-300 text-amber-600">
+                        Pendiente reconexión
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">Pagó reconexión - esperando cuadrilla</p>
+                  </div>
+                ))}
               </CardContent>
             </Card>
           </div>
         )}
-
       </div>
     </div>
   );
