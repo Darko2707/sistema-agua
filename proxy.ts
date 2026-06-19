@@ -18,10 +18,6 @@ export function proxy(req: NextRequest) {
   }
 
   // Si el usuario tiene sesión e intenta entrar a /login, redirigir a /residente
-  if (session && path === '/login') {
-    return NextResponse.redirect(new URL('/residente', req.url));
-  }
-
   return NextResponse.next();
 }
 
