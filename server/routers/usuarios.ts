@@ -174,18 +174,26 @@ export const usuariosRouter = router({
     .mutation(async ({ input }) => {
       console.log('📝 Asignando representante:', input);
       
-      const usuario = await db.query.user.findFirst({
-        where: (u, { eq }) => eq(u.id, input.userId),
-      });
-      if (!usuario) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
-      }
-
       const circuito = await db.query.circuitos.findFirst({
         where: (c, { eq }) => eq(c.id, input.circuitoId),
       });
       if (!circuito) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Circuito no encontrado' });
+      }
+
+      if (!input.userId) {
+        await db.update(circuitos)
+          .set({ representanteId: null })
+          .where(eq(circuitos.id, input.circuitoId));
+
+        return { ok: true };
+      }
+
+      const usuario = await db.query.user.findFirst({
+        where: (u, { eq }) => eq(u.id, input.userId),
+      });
+      if (!usuario) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
       }
 
       await db.update(circuitos)

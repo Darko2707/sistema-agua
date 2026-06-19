@@ -7,7 +7,7 @@ import { pagos, perfilesResidente, cortes, tickets } from '@/db/schema';
 import { nanoid } from 'nanoid';
 import { eq, and } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
-import { obtenerPeriodoVigente, esMoroso } from '../utils'; // ✅ IMPORTADO
+import { obtenerPeriodoVigente, esMoroso, verificarCircuitoActivo } from '../utils'; // ✅ IMPORTADO
 import { calcularDesglosePago, calcularMontoBase } from '../payment-calculator';
 
 export const pagosRouter = router({
@@ -299,6 +299,3 @@ export const pagosRouter = router({
   }),
 });
 
-function verificarCircuitoActivo(id: any) {
-  throw new Error('Function not implemented.');
-}

@@ -20,6 +20,7 @@ export async function GET() {
       nombre: c.nombre,
       representanteId: c.representanteId,
       montoReconexion: c.montoReconexion,
+      activo: c.activo,
       representante: c.representante
         ? { id: c.representante.id, name: c.representante.name, email: c.representante.email }
         : null,

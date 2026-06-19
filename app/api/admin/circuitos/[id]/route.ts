@@ -10,6 +10,7 @@ export const dynamic = 'force-dynamic';
 const circuitoSchema = z.object({
   montoMensual: z.number().positive().max(999999.99),
   montoReconexion: z.number().nonnegative().max(999999.99),
+  activo: z.boolean().optional(),
   representanteId: z.string().min(1).nullable().optional(),
 });
 
@@ -33,6 +34,7 @@ export async function PUT(
     .set({
       montoMensual: body.data.montoMensual.toFixed(2),
       montoReconexion: body.data.montoReconexion.toFixed(2),
+      ...(typeof body.data.activo === 'boolean' ? { activo: body.data.activo } : {}),
       representanteId: body.data.representanteId ?? null,
     })
     .where(eq(circuitos.id, id))
@@ -41,6 +43,7 @@ export async function PUT(
       nombre: circuitos.nombre,
       montoMensual: circuitos.montoMensual,
       montoReconexion: circuitos.montoReconexion,
+      activo: circuitos.activo,
       representanteId: circuitos.representanteId,
       mercadoPagoCollectorId: circuitos.mercadoPagoCollectorId,
     });
