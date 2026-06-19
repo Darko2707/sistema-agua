@@ -35,6 +35,18 @@ export const ticketsRouter = router({
 
     return db.query.tickets.findMany({
       where: (t, { inArray }) => inArray(t.pagoId, ids),
+      with: {
+        pago: {
+          with: {
+            circuito: true,
+            perfil: {
+              with: {
+                usuario: true,
+              },
+            },
+          },
+        },
+      },
       orderBy: (t, { desc }) => [desc(t.emitidoEn)],
     });
   }),

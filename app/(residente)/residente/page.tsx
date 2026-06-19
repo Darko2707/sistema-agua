@@ -23,6 +23,7 @@ import {
   AlertTriangle,
   UserCog,
   Shield,
+  FileText,
 } from 'lucide-react';
 
 const MESES = [
@@ -268,6 +269,14 @@ export default function ResidentePage() {
                   Trabajador
                 </Button>
               )}
+              <Button
+                variant="secondary"
+                onClick={() => router.push('/residente/folios')}
+                className="bg-white/20 text-white hover:bg-white/30"
+              >
+                <FileText className="mr-2 h-4 w-4" />
+                Folios
+              </Button>
               <Button variant="secondary" onClick={salir}>
                 <LogOut className="mr-2 h-4 w-4" />
                 Salir
