@@ -174,11 +174,11 @@ export function RepresentanteDashboard() {
                     <div className="flex gap-1.5">
                       <Button size="sm" variant="outline" onClick={() => registrarPagoManual(r.id, 'efectivo')} disabled={!!registrando} className="h-9 border-red-300 text-red-700">
                         {registrando === `${r.id}:efectivo` ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Banknote className="mr-2 h-4 w-4" />}
-                        {registrando === `${r.id}:efectivo` ? 'Guardando...' : 'Efectivo + reconexión'}
+                        {registrando === `${r.id}:efectivo` ? 'Guardando...' : 'Efectivo'}
                       </Button>
                       <Button size="sm" onClick={() => registrarPagoManual(r.id, 'transferencia')} disabled={!!registrando} className="h-9 bg-red-600 hover:bg-red-700">
                         {registrando === `${r.id}:transferencia` ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Banknote className="mr-2 h-4 w-4" />}
-                        {registrando === `${r.id}:transferencia` ? 'Guardando...' : 'Transf. + reconexión'}
+                        {registrando === `${r.id}:transferencia` ? 'Guardando...' : 'Transf.'}
                       </Button>
                     </div>
                   </div>

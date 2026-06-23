@@ -65,7 +65,7 @@ export function ResidenteDashboard() {
     );
   }
 
-  const { perfil, pagos, corteActivo, esMoroso } = historial;
+  const { perfil, pagos, esMoroso } = historial;
   const yaPagoEsteMes = pagos.some(p => p.mes === mesActual && p.anio === anioActual && p.estado === 'pagado');
   const montoMensual  = Number(perfil.circuito?.montoMensual ?? 50);
   const montoReconexion = Number(perfil.circuito?.montoReconexion ?? 300);
@@ -103,7 +103,7 @@ export function ResidenteDashboard() {
           </div>
         </div>
 
-        {corteActivo && (
+        {perfil.estadoAgua === 'cortado' && (
           <div className="rounded-2xl border border-red-200 bg-red-50 p-5">
             <div className="flex items-start gap-3">
               <AlertTriangle className="h-6 w-6 text-red-600" />
@@ -115,7 +115,7 @@ export function ResidenteDashboard() {
           </div>
         )}
 
-        {esMoroso && !corteActivo && (
+        {esMoroso && perfil.estadoAgua === 'pendiente_corte' && (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
             <div className="flex items-start gap-3">
               <AlertTriangle className="h-6 w-6 text-amber-600" />
@@ -170,13 +170,27 @@ export function ResidenteDashboard() {
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-center gap-4">
-                <div className={`flex h-14 w-14 items-center justify-center rounded-2xl ${corteActivo ? 'bg-red-100' : perfil.estadoAgua === 'pendiente_reconexion' ? 'bg-blue-100' : 'bg-green-100'}`}>
-                  <Droplets className={`h-7 w-7 ${corteActivo ? 'text-red-600' : perfil.estadoAgua === 'pendiente_reconexion' ? 'text-blue-600' : 'text-green-600'}`} />
+                <div className={`flex h-14 w-14 items-center justify-center rounded-2xl ${
+                  perfil.estadoAgua === 'cortado' ? 'bg-red-100' :
+                  perfil.estadoAgua === 'pendiente_reconexion' ? 'bg-blue-100' :
+                  'bg-green-100'
+                }`}>
+                  <Droplets className={`h-7 w-7 ${
+                    perfil.estadoAgua === 'cortado' ? 'text-red-600' :
+                    perfil.estadoAgua === 'pendiente_reconexion' ? 'text-blue-600' :
+                    'text-green-600'
+                  }`} />
                 </div>
                 <div>
                   <p className="font-semibold">Servicio de agua</p>
-                  <p className={`text-sm ${corteActivo ? 'text-red-600' : perfil.estadoAgua === 'pendiente_reconexion' ? 'text-blue-600' : 'text-green-600'}`}>
-                    {corteActivo ? 'Suspendido' : perfil.estadoAgua === 'pendiente_reconexion' ? 'Pendiente de reconexión' : perfil.estadoAgua === 'pendiente_corte' ? 'Pendiente de corte' : 'Activo'}
+                  <p className={`text-sm ${
+                    perfil.estadoAgua === 'cortado' ? 'text-red-600' :
+                    perfil.estadoAgua === 'pendiente_reconexion' ? 'text-blue-600' :
+                    'text-green-600'
+                  }`}>
+                    {perfil.estadoAgua === 'cortado' ? 'Suspendido' :
+                     perfil.estadoAgua === 'pendiente_reconexion' ? 'Pendiente de reconexión' :
+                     perfil.estadoAgua === 'pendiente_corte' ? 'Pendiente de corte' : 'Activo'}
                   </p>
                 </div>
               </div>
