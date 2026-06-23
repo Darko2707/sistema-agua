@@ -8,6 +8,9 @@ import { HistorialPagosHandler } from '@/src/application/pagos/queries/historial
 import { ResumenMesHandler } from '@/src/application/pagos/queries/resumen-mes.handler';
 import { db } from '@/db';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
+import { calcularDesglosePagoManual, calcularMontoBase } from '@/src/domain/pagos/calculator';
+import { FolioVO } from '@/src/domain/pagos/folio.vo';
+import { logger } from '@/lib/logger';
 
 const registrarPagoManualHandler = new RegistrarPagoManualHandler({ residenteRepo, pagoRepo, circuitoRepo });
 const historialPagosHandler = new HistorialPagosHandler({ pagoRepo, residenteRepo });
@@ -123,5 +126,51 @@ export const pagosRouter = router({
         with: { perfil: { with: { usuario: true } } },
         orderBy: (p, { desc }) => [desc(p.fechaPago)],
       });
+    }),
+
+  registrarRetroactivo: roleProcedure('admin')
+    .input(z.object({
+      perfilId: z.uuid(),
+      mes:      z.number().int().min(1).max(12),
+      anio:     z.number().int().min(2020).max(2100),
+      metodo:   z.enum(['efectivo', 'transferencia']),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const perfil = await residenteRepo.findById(input.perfilId);
+      if (!perfil) throw new TRPCError({ code: 'NOT_FOUND', message: 'Residente no encontrado' });
+      if (!perfil.circuitoId) throw new TRPCError({ code: 'BAD_REQUEST', message: 'El residente no tiene circuito asignado' });
+
+      const circuito = await circuitoRepo.findById(perfil.circuitoId);
+      if (!circuito) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Circuito no encontrado' });
+
+      const montoBase = calcularMontoBase(circuito.montoMensual, false, circuito.montoReconexion);
+      const desglose  = calcularDesglosePagoManual(montoBase);
+      const folio     = FolioVO.generate().toString();
+
+      await pagoRepo.createWithLock(perfil.id, {
+        perfilId:               perfil.id,
+        circuitoId:             circuito.id,
+        representanteId:        circuito.representanteId ?? null,
+        mes:                    input.mes,
+        anio:                   input.anio,
+        monto:                  desglose.total,
+        montoBase:              desglose.montoBase,
+        iva:                    desglose.iva,
+        comisionMercadoPago:    desglose.comisionMercadoPago,
+        retencionIsr:           desglose.retencionIsr,
+        retencionIva:           desglose.retencionIva,
+        montoNetoRepresentante: desglose.montoNetoRepresentante,
+        mercadoPagoCollectorId: circuito.mercadoPagoCollectorId,
+        estado:                 'pagado',
+        metodo:                 input.metodo,
+        folio,
+        esReconexion:           false,
+        fechaPago:              new Date(),
+      });
+
+      logger.info('pago.retroactivo.admin', {
+        folio, perfilId: perfil.id, adminId: ctx.user.id, mes: input.mes, anio: input.anio,
+      });
+      return { folio, monto: desglose.total };
     }),
 });

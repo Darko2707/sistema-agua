@@ -127,6 +127,11 @@ export function useAdmin() {
     setActualizando(null);
   }
 
+  async function registrarPagoRetroactivo(perfilId: string, mes: number, anio: number, metodo: 'efectivo' | 'transferencia'): Promise<string> {
+    const result = await trpc.pagos.registrarRetroactivo.mutate({ perfilId, mes, anio, metodo });
+    return result.folio;
+  }
+
   async function salir() {
     await authClient.signOut();
     router.push('/login');
@@ -157,6 +162,7 @@ export function useAdmin() {
     cargarDatos,
     cambiarRol,
     asignarRepresentante,
+    registrarPagoRetroactivo,
     salir,
   };
 }

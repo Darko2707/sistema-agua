@@ -42,6 +42,7 @@ export function AdminDashboard() {
     morosos,
     cambiarRol,
     asignarRepresentante,
+    registrarPagoRetroactivo,
     salir,
   } = useAdmin();
 
@@ -170,6 +171,7 @@ export function AdminDashboard() {
             setFiltroEstado={setFiltroEstado}
             actualizando={actualizando}
             onCambiarRol={cambiarRol}
+            onRegistrarPagoRetroactivo={registrarPagoRetroactivo}
             onLimpiarFiltros={() => {
               setFiltroCircuito('todos');
               setFiltroEstado('todos');
