@@ -219,6 +219,12 @@ export interface GastoReporte {
   fecha: Date;
 }
 
+export interface IngresoAdicionalReporte {
+  concepto: string;
+  monto: string | number;
+  fecha: Date;
+}
+
 export interface EdificioFinanciero {
   edificio: string;
   totalPagado: number;
@@ -233,6 +239,8 @@ export async function generarReporteFinancieroExcel(params: {
   anio: number;
   generadoEn: Date;
   totalRecaudado: number;
+  totalPagos?: number;
+  totalIngresosAdicionales?: number;
   totalResidentes: number;
   totalPagaron: number;
   totalMorosos: number;
@@ -241,6 +249,7 @@ export async function generarReporteFinancieroExcel(params: {
   totalGastos: number;
   porEdificio: EdificioFinanciero[];
   gastos: GastoReporte[];
+  ingresos?: IngresoAdicionalReporte[];
 }): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'SIS4S';
@@ -271,13 +280,15 @@ export async function generarReporteFinancieroExcel(params: {
   wsR.addRow([]);
 
   const kpis: [string, string | number, string][] = [
-    ['Total Recaudado',    params.totalRecaudado,    '"$"#,##0.00'],
-    ['Total Gastos',       params.totalGastos,       '"$"#,##0.00'],
-    ['Saldo',             params.saldo,              '"$"#,##0.00'],
-    ['% Cobranza',        params.porcentajeCobranza, '0.0"%"'],
-    ['Total Residentes',  params.totalResidentes,    '0'],
-    ['Pagaron',           params.totalPagaron,       '0'],
-    ['Morosos',           params.totalMorosos,       '0'],
+    ['Total Recaudado',         params.totalRecaudado,                     '"$"#,##0.00'],
+    ['  · Pagos registrados',   params.totalPagos ?? params.totalRecaudado, '"$"#,##0.00'],
+    ['  · Ingresos adicionales', params.totalIngresosAdicionales ?? 0,     '"$"#,##0.00'],
+    ['Total Gastos',            params.totalGastos,                        '"$"#,##0.00'],
+    ['Saldo',                   params.saldo,                              '"$"#,##0.00'],
+    ['% Cobranza',              params.porcentajeCobranza,                 '0.0"%"'],
+    ['Total Residentes',        params.totalResidentes,                    '0'],
+    ['Pagaron',                 params.totalPagaron,                       '0'],
+    ['Morosos',                 params.totalMorosos,                       '0'],
   ];
 
   const kpiHeader = wsR.addRow(['Indicador', 'Valor']);
@@ -301,10 +312,11 @@ export async function generarReporteFinancieroExcel(params: {
     row.getCell(2).numFmt    = fmt;
     row.getCell(2).border    = border();
     row.getCell(2).alignment = { horizontal: 'center', vertical: 'middle' };
-    if (label === 'Saldo')           row.getCell(2).font = { bold: true, color: { argb: params.saldo >= 0 ? 'FF065F46' : 'FF991B1B' }, size: 10 };
-    else if (label === 'Total Recaudado') row.getCell(2).font = { bold: true, color: { argb: 'FF065F46' }, size: 10 };
-    else if (label === 'Total Gastos')    row.getCell(2).font = { bold: true, color: { argb: 'FF991B1B' }, size: 10 };
-    else if (label === 'Morosos')         row.getCell(2).font = { bold: true, color: { argb: params.totalMorosos > 0 ? 'FF991B1B' : 'FF374151' }, size: 10 };
+    if (label === 'Saldo')                 row.getCell(2).font = { bold: true, color: { argb: params.saldo >= 0 ? 'FF065F46' : 'FF991B1B' }, size: 10 };
+    else if (label === 'Total Recaudado')  row.getCell(2).font = { bold: true, color: { argb: 'FF065F46' }, size: 10 };
+    else if (label === 'Total Gastos')     row.getCell(2).font = { bold: true, color: { argb: 'FF991B1B' }, size: 10 };
+    else if (label === 'Morosos')          row.getCell(2).font = { bold: true, color: { argb: params.totalMorosos > 0 ? 'FF991B1B' : 'FF374151' }, size: 10 };
+    else if (label.startsWith('  ·'))     { row.getCell(1).font = { size: 9, italic: true }; row.getCell(2).font = { size: 9, italic: true }; }
   });
 
   wsR.getColumn(1).width = 22;
@@ -424,6 +436,67 @@ export async function generarReporteFinancieroExcel(params: {
   wsG.getColumn(2).width = 16;
   wsG.getColumn(3).width = 14;
   wsG.getColumn(4).width = 14;
+
+  // ════════════════════════════════════════════
+  // Hoja 4: Ingresos Adicionales  (3 columnas)
+  // ════════════════════════════════════════════
+  const wsI = wb.addWorksheet('Ingresos Adicionales');
+  agregarLogo(wb, wsI, 3); // logo en col D (índice 3)
+
+  wsI.mergeCells('A1:D1');
+  const ti = wsI.getCell('A1');
+  ti.value = `Ingresos Adicionales — ${mesNombre} ${params.anio}`;
+  ti.font  = { bold: true, size: 14, color: { argb: 'FF' + COLOR_HEADER } };
+  ti.alignment = { horizontal: 'center', vertical: 'middle' };
+  wsI.getRow(1).height = 36;
+  wsI.addRow([]);
+
+  const ihRow = wsI.addRow(['Concepto', 'Fecha', 'Monto']);
+  ihRow.height = 20;
+  ihRow.eachCell(cell => {
+    cell.fill      = headerFill(COLOR_HEADER);
+    cell.font      = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.border    = border();
+  });
+
+  const ingresos = params.ingresos ?? [];
+  if (ingresos.length === 0) {
+    const emptyRow = wsI.addRow(['Sin ingresos adicionales para este período', '', '']);
+    wsI.mergeCells(emptyRow.number, 1, emptyRow.number, 3);
+    emptyRow.getCell(1).alignment = { horizontal: 'center' };
+    emptyRow.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' } };
+  } else {
+    ingresos.forEach((ing, i) => {
+      const row = wsI.addRow([ing.concepto, new Date(ing.fecha).toLocaleDateString('es-MX'), Number(ing.monto)]);
+      row.height = 18;
+      const isAlt = i % 2 === 1;
+      row.eachCell({ includeEmpty: true }, (cell, colNum) => {
+        cell.fill      = headerFill(isAlt ? COLOR_ROW_ALT : COLOR_WHITE);
+        cell.border    = border();
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.font      = { size: 10 };
+        if (colNum === 1) cell.alignment.horizontal = 'left';
+        if (colNum === 3) { cell.numFmt = '"$"#,##0.00'; cell.font = { bold: true, color: { argb: 'FF065F46' }, size: 10 }; }
+      });
+    });
+
+    const totalIngresos = ingresos.reduce((s, i) => s + Number(i.monto), 0);
+    const iTotalRow = wsI.addRow(['TOTAL INGRESOS ADICIONALES', '', totalIngresos]);
+    iTotalRow.height = 20;
+    iTotalRow.eachCell({ includeEmpty: true }, (cell, colNum) => {
+      cell.fill      = headerFill('D1FAE5');
+      cell.font      = { bold: true, size: 10, color: { argb: 'FF065F46' } };
+      cell.border    = border();
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      if (colNum === 1) cell.alignment.horizontal = 'left';
+      if (colNum === 3) cell.numFmt = '"$"#,##0.00';
+    });
+  }
+
+  wsI.getColumn(1).width = 35;
+  wsI.getColumn(2).width = 14;
+  wsI.getColumn(3).width = 16;
 
   return Buffer.from(await wb.xlsx.writeBuffer() as ArrayBuffer);
 }

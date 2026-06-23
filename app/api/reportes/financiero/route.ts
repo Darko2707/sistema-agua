@@ -1,6 +1,7 @@
 import { auth } from '@/lib/auth';
 import { db } from '@/db';
 import { generarReporteFinancieroExcel } from '@/server/services/excel-reportes';
+import type { IngresoAdicionalReporte } from '@/server/services/excel-reportes';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,7 +25,7 @@ export async function GET(req: Request) {
 
   if (isNaN(mes) || isNaN(anio)) return new Response('Parámetros inválidos', { status: 400 });
 
-  const [residentes, pagosPeriodo, gastosPeriodo] = await Promise.all([
+  const [residentes, pagosPeriodo, gastosPeriodo, ingresosPeriodo] = await Promise.all([
     db.query.perfilesResidente.findMany({
       where: (p, { eq }) => eq(p.circuitoId, circuito.id),
     }),
@@ -36,10 +37,16 @@ export async function GET(req: Request) {
       where: (g, { eq, and }) => and(eq(g.circuitoId, circuito.id), eq(g.mes, mes), eq(g.anio, anio)),
       orderBy: (g, { asc }) => [asc(g.fecha)],
     }),
+    db.query.ingresosAdicionales.findMany({
+      where: (i, { eq, and }) => and(eq(i.circuitoId, circuito.id), eq(i.mes, mes), eq(i.anio, anio)),
+      orderBy: (i, { asc }) => [asc(i.fecha)],
+    }),
   ]);
 
-  const totalRecaudado = pagosPeriodo.reduce((s, p) => s + Number(p.monto), 0);
-  const totalGastos    = gastosPeriodo.reduce((s, g) => s + Number(g.monto), 0);
+  const totalPagos               = pagosPeriodo.reduce((s, p) => s + Number(p.monto), 0);
+  const totalIngresosAdicionales = ingresosPeriodo.reduce((s, i) => s + Number(i.monto), 0);
+  const totalRecaudado           = totalPagos + totalIngresosAdicionales;
+  const totalGastos              = gastosPeriodo.reduce((s, g) => s + Number(g.monto), 0);
   const montoMensual   = Number(circuito.montoMensual);
   const totalEsperado  = residentes.length * montoMensual;
   const porcentajeCobranza = totalEsperado > 0
@@ -73,12 +80,17 @@ export async function GET(req: Request) {
     saldo:              totalRecaudado - totalGastos,
     totalGastos,
     porEdificio,
-    gastos:             gastosPeriodo.map(g => ({
+    gastos:   gastosPeriodo.map(g => ({
       concepto:  g.concepto,
       monto:     g.monto,
       categoria: g.categoria,
       fecha:     g.fecha ?? new Date(),
     })),
+    ingresos: ingresosPeriodo.map(i => ({
+      concepto: i.concepto,
+      monto:    i.monto,
+      fecha:    i.fecha ?? new Date(),
+    }) satisfies IngresoAdicionalReporte),
   });
 
   return new Response(new Uint8Array(xlsxBuffer), {

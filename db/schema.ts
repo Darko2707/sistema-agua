@@ -171,6 +171,20 @@ export const tickets = pgTable('tickets', {
   emitidoEn: timestamp('emitido_en').defaultNow(),
 });
 
+export const ingresosAdicionales = pgTable('ingresos_adicionales', {
+  id:              uuid('id').defaultRandom().primaryKey(),
+  circuitoId:      uuid('circuito_id').notNull().references(() => circuitos.id, { onDelete: 'cascade' }),
+  representanteId: text('representante_id').notNull().references(() => user.id),
+  concepto:        text('concepto').notNull(),
+  monto:           decimal('monto', { precision: 10, scale: 2 }).notNull(),
+  fecha:           timestamp('fecha').notNull().defaultNow(),
+  mes:             integer('mes').notNull(),
+  anio:            integer('anio').notNull(),
+  creadoEn:        timestamp('creado_en').defaultNow(),
+}, (t) => [
+  index('idx_ingresos_circuito_periodo').on(t.circuitoId, t.mes, t.anio),
+]);
+
 export const gastosCircuito = pgTable('gastos_circuito', {
   id:              uuid('id').defaultRandom().primaryKey(),
   circuitoId:      uuid('circuito_id').notNull().references(() => circuitos.id, { onDelete: 'cascade' }),
@@ -196,9 +210,17 @@ export const userRelations = relations(user, ({ one, many }) => ({
   circuitoRepresentado: many(circuitos),
 }));
 
+export const ingresosAdicionalesRelations = relations(ingresosAdicionales, ({ one }) => ({
+  circuito: one(circuitos, {
+    fields: [ingresosAdicionales.circuitoId],
+    references: [circuitos.id],
+  }),
+}));
+
 export const circuitosRelations = relations(circuitos, ({ many, one }) => ({
-  perfiles: many(perfilesResidente),
-  gastos:   many(gastosCircuito),
+  perfiles:  many(perfilesResidente),
+  gastos:    many(gastosCircuito),
+  ingresos:  many(ingresosAdicionales),
   representante: one(user, {
     fields: [circuitos.representanteId],
     references: [user.id],

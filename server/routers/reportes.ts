@@ -4,7 +4,7 @@ import { eq, and, inArray } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 
 import { db } from '@/db';
-import { gastosCircuito } from '@/db/schema';
+import { gastosCircuito, ingresosAdicionales } from '@/db/schema';
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 
@@ -175,7 +175,7 @@ export const reportesRouter = router({
     .query(async ({ ctx, input }) => {
       const circuito = await getCircuitoDelRepresentante(ctx.user.id);
 
-      const [residentes, pagosPeriodo, gastosPeriodo] = await Promise.all([
+      const [residentes, pagosPeriodo, gastosPeriodo, ingresosPeriodo] = await Promise.all([
         db.query.perfilesResidente.findMany({
           where: (p, { eq }) => eq(p.circuitoId, circuito.id),
         }),
@@ -198,10 +198,21 @@ export const reportesRouter = router({
             ),
           orderBy: (g, { asc }) => [asc(g.fecha)],
         }),
+        db.query.ingresosAdicionales.findMany({
+          where: (i, { eq, and }) =>
+            and(
+              eq(i.circuitoId, circuito.id),
+              eq(i.mes, input.mes),
+              eq(i.anio, input.anio),
+            ),
+          orderBy: (i, { asc }) => [asc(i.fecha)],
+        }),
       ]);
 
-      const totalRecaudado = pagosPeriodo.reduce((s, p) => s + Number(p.monto), 0);
-      const totalGastos    = gastosPeriodo.reduce((s, g) => s + Number(g.monto), 0);
+      const totalPagos             = pagosPeriodo.reduce((s, p) => s + Number(p.monto), 0);
+      const totalIngresosAdicionales = ingresosPeriodo.reduce((s, i) => s + Number(i.monto), 0);
+      const totalRecaudado         = totalPagos + totalIngresosAdicionales;
+      const totalGastos            = gastosPeriodo.reduce((s, g) => s + Number(g.monto), 0);
       const montoMensual   = Number(circuito.montoMensual);
       const totalEsperado  = residentes.length * montoMensual;
       const porcentajeCobranza = totalEsperado > 0
@@ -224,18 +235,21 @@ export const reportesRouter = router({
       });
 
       return {
-        circuito:            { id: circuito.id, nombre: circuito.nombre, montoMensual },
-        mes:                 input.mes,
-        anio:                input.anio,
+        circuito:                { id: circuito.id, nombre: circuito.nombre, montoMensual },
+        mes:                     input.mes,
+        anio:                    input.anio,
         totalRecaudado,
-        totalResidentes:     residentes.length,
-        totalPagaron:        pagosPeriodo.length,
-        totalMorosos:        residentes.length - pagosPeriodo.length,
+        totalPagos,
+        totalIngresosAdicionales,
+        totalResidentes:         residentes.length,
+        totalPagaron:            pagosPeriodo.length,
+        totalMorosos:            residentes.length - pagosPeriodo.length,
         porcentajeCobranza,
         totalGastos,
-        saldo:               totalRecaudado - totalGastos,
+        saldo:                   totalRecaudado - totalGastos,
         porEdificio,
-        gastos:              gastosPeriodo,
+        gastos:                  gastosPeriodo,
+        ingresos:                ingresosPeriodo,
       };
     }),
 
@@ -307,6 +321,69 @@ export const reportesRouter = router({
       if (gasto.circuitoId !== circuito.id) throw new TRPCError({ code: 'FORBIDDEN' });
 
       await db.delete(gastosCircuito).where(eq(gastosCircuito.id, input.id));
+      return { ok: true };
+    }),
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // CRUD INGRESOS ADICIONALES
+  // ══════════════════════════════════════════════════════════════════════════
+  agregarIngreso: roleProcedure('representante')
+    .input(z.object({
+      concepto: z.string().min(1, 'Concepto requerido'),
+      monto:    z.number().positive('El monto debe ser positivo'),
+      fecha:    z.string().datetime({ offset: true }).or(z.string().date()),
+      mes:      z.number().int().min(1).max(12),
+      anio:     z.number().int().min(2020).max(2099),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const circuito = await getCircuitoDelRepresentante(ctx.user.id);
+      const [ingreso] = await db.insert(ingresosAdicionales).values({
+        circuitoId:      circuito.id,
+        representanteId: ctx.user.id,
+        concepto:        input.concepto,
+        monto:           String(input.monto),
+        fecha:           new Date(input.fecha),
+        mes:             input.mes,
+        anio:            input.anio,
+      }).returning();
+      return ingreso;
+    }),
+
+  editarIngreso: roleProcedure('representante')
+    .input(z.object({
+      id:       z.string().uuid(),
+      concepto: z.string().min(1).optional(),
+      monto:    z.number().positive().optional(),
+      fecha:    z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const circuito = await getCircuitoDelRepresentante(ctx.user.id);
+      const ingreso = await db.query.ingresosAdicionales.findFirst({
+        where: (i, { eq }) => eq(i.id, input.id),
+      });
+      if (!ingreso)                            throw new TRPCError({ code: 'NOT_FOUND' });
+      if (ingreso.circuitoId !== circuito.id)  throw new TRPCError({ code: 'FORBIDDEN' });
+
+      const updates: Partial<typeof ingresosAdicionales.$inferInsert> = {};
+      if (input.concepto) updates.concepto = input.concepto;
+      if (input.monto)    updates.monto    = String(input.monto);
+      if (input.fecha)    updates.fecha    = new Date(input.fecha);
+
+      await db.update(ingresosAdicionales).set(updates).where(eq(ingresosAdicionales.id, input.id));
+      return { ok: true };
+    }),
+
+  eliminarIngreso: roleProcedure('representante')
+    .input(z.object({ id: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const circuito = await getCircuitoDelRepresentante(ctx.user.id);
+      const ingreso = await db.query.ingresosAdicionales.findFirst({
+        where: (i, { eq }) => eq(i.id, input.id),
+      });
+      if (!ingreso)                            throw new TRPCError({ code: 'NOT_FOUND' });
+      if (ingreso.circuitoId !== circuito.id)  throw new TRPCError({ code: 'FORBIDDEN' });
+
+      await db.delete(ingresosAdicionales).where(eq(ingresosAdicionales.id, input.id));
       return { ok: true };
     }),
 });

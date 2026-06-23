@@ -20,6 +20,8 @@ import {
 
 type CatGasto = 'mantenimiento' | 'administracion' | 'servicios' | 'otros';
 
+type IngresoEditing = { id: string; concepto: string; monto: number; fecha: string } | null;
+
 const CAT_LABEL: Record<CatGasto, string> = {
   mantenimiento: 'Mantenimiento',
   administracion: 'Administración',
@@ -194,6 +196,80 @@ function GastoModal({ open, onClose, titulo, inicial, mes, anio, onGuardar }: Ga
   );
 }
 
+// ─── Modal de ingresos adicionales ───────────────────────────────────────────
+
+interface IngresoModalProps {
+  open: boolean;
+  onClose: () => void;
+  titulo: string;
+  inicial?: { id?: string; concepto: string; monto: number; fecha: string };
+  mes: number;
+  anio: number;
+  onGuardar: (d: { concepto: string; monto: number; fecha: string }) => Promise<void>;
+}
+
+function IngresoModal({ open, onClose, titulo, inicial, mes, anio, onGuardar }: IngresoModalProps) {
+  const hoy = new Date().toISOString().split('T')[0];
+  const [concepto,  setConcepto]  = useState(inicial?.concepto ?? '');
+  const [monto,     setMonto]     = useState(inicial?.monto    ?? 0);
+  const [fecha,     setFecha]     = useState(inicial?.fecha    ?? hoy);
+  const [guardando, setGuardando] = useState(false);
+  const [errMsg,    setErrMsg]    = useState('');
+
+  if (!open) return null;
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!concepto.trim()) { setErrMsg('El concepto es requerido'); return; }
+    if (monto <= 0)        { setErrMsg('El monto debe ser mayor a 0'); return; }
+    setGuardando(true);
+    setErrMsg('');
+    try {
+      await onGuardar({ concepto: concepto.trim(), monto, fecha });
+      onClose();
+    } catch (err: unknown) {
+      setErrMsg(err instanceof Error ? err.message : 'Error al guardar');
+    } finally {
+      setGuardando(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="bg-background rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
+        <h2 className="text-lg font-semibold">{titulo}</h2>
+        <p className="text-sm text-muted-foreground">{['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][mes - 1]} {anio}</p>
+
+        {errMsg && (
+          <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">{errMsg}</div>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1">
+            <Label htmlFor="ing-concepto">Concepto *</Label>
+            <Input id="ing-concepto" placeholder="Ej. Cuotas cobradas antes del sistema" value={concepto} onChange={e => setConcepto(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="ing-monto">Monto (MXN) *</Label>
+            <Input id="ing-monto" type="number" min="0.01" step="0.01" placeholder="0.00" value={monto || ''} onChange={e => setMonto(parseFloat(e.target.value) || 0)} />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="ing-fecha">Fecha *</Label>
+            <Input id="ing-fecha" type="date" value={fecha} onChange={e => setFecha(e.target.value)} />
+          </div>
+          <div className="flex gap-2 justify-end pt-2">
+            <Button type="button" variant="outline" onClick={onClose} disabled={guardando}>Cancelar</Button>
+            <Button type="submit" disabled={guardando} className="gap-2 bg-green-600 hover:bg-green-700">
+              {guardando && <Loader2 className="h-4 w-4 animate-spin" />}
+              Guardar
+            </Button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ─── Notificación toast simple ────────────────────────────────────────────────
 
 function useToast() {
@@ -212,12 +288,15 @@ export function ReporteFinanciero() {
   const [mes,  setMes]  = useState(hoy.getMonth() + 1);
   const [anio, setAnio] = useState(hoy.getFullYear());
 
-  const [modalAbierto,      setModalAbierto]      = useState(false);
-  const [gastoEditando,     setGastoEditando]      = useState<null | {
+  const [modalAbierto,       setModalAbierto]       = useState(false);
+  const [gastoEditando,      setGastoEditando]       = useState<null | {
     id: string; concepto: string; monto: number; categoria: CatGasto; fecha: string;
   }>(null);
-  const [descargando,       setDescargando]        = useState(false);
-  const [eliminandoId,      setEliminandoId]       = useState<string | null>(null);
+  const [ingresoModalAbierto, setIngresoModalAbierto] = useState(false);
+  const [ingresoEditando,     setIngresoEditando]     = useState<IngresoEditing>(null);
+  const [descargando,         setDescargando]         = useState(false);
+  const [eliminandoId,        setEliminandoId]        = useState<string | null>(null);
+  const [eliminandoIngresoId, setEliminandoIngresoId] = useState<string | null>(null);
   const { toast, mostrar } = useToast();
 
   const utils = trpcReact.useUtils();
@@ -236,6 +315,19 @@ export function ReporteFinanciero() {
 
   const eliminarMutation = trpcReact.reportes.eliminarGasto.useMutation({
     onSuccess: () => { utils.reportes.reporteFinanciero.invalidate(); mostrar('Gasto eliminado'); },
+    onError:   (e) => mostrar(e.message, 'error'),
+  });
+
+  const agregarIngresoMutation  = trpcReact.reportes.agregarIngreso.useMutation({
+    onSuccess: () => { utils.reportes.reporteFinanciero.invalidate(); mostrar('Ingreso registrado correctamente'); },
+    onError:   (e) => mostrar(e.message, 'error'),
+  });
+  const editarIngresoMutation   = trpcReact.reportes.editarIngreso.useMutation({
+    onSuccess: () => { utils.reportes.reporteFinanciero.invalidate(); mostrar('Ingreso actualizado correctamente'); },
+    onError:   (e) => mostrar(e.message, 'error'),
+  });
+  const eliminarIngresoMutation = trpcReact.reportes.eliminarIngreso.useMutation({
+    onSuccess: () => { utils.reportes.reporteFinanciero.invalidate(); mostrar('Ingreso eliminado'); },
     onError:   (e) => mostrar(e.message, 'error'),
   });
 
@@ -262,6 +354,23 @@ export function ReporteFinanciero() {
       await eliminarMutation.mutateAsync({ id });
     } finally {
       setEliminandoId(null);
+    }
+  }
+
+  async function handleAgregarIngreso(d: { concepto: string; monto: number; fecha: string }) {
+    await agregarIngresoMutation.mutateAsync({ ...d, mes, anio });
+  }
+  async function handleEditarIngreso(d: { concepto: string; monto: number; fecha: string }) {
+    if (!ingresoEditando) return;
+    await editarIngresoMutation.mutateAsync({ id: ingresoEditando.id, ...d });
+  }
+  async function handleEliminarIngreso(id: string) {
+    if (!confirm('¿Eliminar este ingreso? Esta acción no se puede deshacer.')) return;
+    setEliminandoIngresoId(id);
+    try {
+      await eliminarIngresoMutation.mutateAsync({ id });
+    } finally {
+      setEliminandoIngresoId(null);
     }
   }
 
@@ -367,12 +476,14 @@ export function ReporteFinanciero() {
           {/* Saldo */}
           <Card className={reporte.saldo >= 0 ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}>
             <CardContent className="pt-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
+                <div className="flex items-center gap-2 flex-wrap">
                   <Wallet className="h-5 w-5 text-muted-foreground" />
                   <span className="font-medium">Saldo del período</span>
                   <span className="text-xs text-muted-foreground">
-                    ({mxn(reporte.totalRecaudado)} recaudado − {mxn(reporte.totalGastos)} gastos)
+                    (pagos {mxn(reporte.totalPagos ?? reporte.totalRecaudado)}
+                    {(reporte.totalIngresosAdicionales ?? 0) > 0 ? ` + extras ${mxn(reporte.totalIngresosAdicionales ?? 0)}` : ''}
+                    {' '}− gastos {mxn(reporte.totalGastos)})
                   </span>
                 </div>
                 <span className={`text-2xl font-bold ${reporte.saldo >= 0 ? 'text-green-700' : 'text-red-700'}`}>
@@ -528,6 +639,96 @@ export function ReporteFinanciero() {
               )}
             </CardContent>
           </Card>
+
+          {/* Ingresos adicionales */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Ingresos adicionales</CardTitle>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Ingresos cobrados fuera del sistema (cuotas históricas, pagos en efectivo previos, etc.)
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  className="gap-2 bg-green-600 hover:bg-green-700"
+                  onClick={() => { setIngresoEditando(null); setIngresoModalAbierto(true); }}
+                >
+                  <Plus className="h-4 w-4" />
+                  Agregar ingreso
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Concepto</TableHead>
+                    <TableHead>Fecha</TableHead>
+                    <TableHead className="text-right">Monto</TableHead>
+                    <TableHead className="w-20" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {(reporte.ingresos ?? []).length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={4} className="py-10 text-center text-muted-foreground">
+                        Sin ingresos adicionales para {['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][mes - 1]} {anio}.
+                        <br />
+                        <Button variant="link" size="sm" className="mt-1" onClick={() => { setIngresoEditando(null); setIngresoModalAbierto(true); }}>
+                          Registrar primer ingreso adicional
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {(reporte.ingresos ?? []).map(ing => (
+                    <TableRow key={ing.id}>
+                      <TableCell className="font-medium">{ing.concepto}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {new Date(ing.fecha!).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </TableCell>
+                      <TableCell className="text-right font-medium text-green-700">
+                        {mxn(Number(ing.monto))}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-1 justify-end">
+                          <Button
+                            variant="ghost" size="sm" className="h-7 w-7 p-0"
+                            onClick={() => {
+                              setIngresoEditando({
+                                id:       ing.id,
+                                concepto: ing.concepto,
+                                monto:    Number(ing.monto),
+                                fecha:    ing.fecha ? new Date(ing.fecha).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                              });
+                              setIngresoModalAbierto(true);
+                            }}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                          <Button
+                            variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
+                            disabled={eliminandoIngresoId === ing.id}
+                            onClick={() => handleEliminarIngreso(ing.id)}
+                          >
+                            {eliminandoIngresoId === ing.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+
+              {(reporte.ingresos ?? []).length > 0 && (
+                <div className="flex justify-end items-center gap-2 border-t px-4 py-3">
+                  <span className="text-sm text-muted-foreground">Total ingresos adicionales:</span>
+                  <span className="font-bold text-green-700 text-lg">{mxn(reporte.totalIngresosAdicionales ?? 0)}</span>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </>
       ) : null}
 
@@ -540,6 +741,17 @@ export function ReporteFinanciero() {
         mes={mes}
         anio={anio}
         onGuardar={gastoEditando ? handleEditarGasto : handleAgregarGasto}
+      />
+
+      {/* Modal agregar/editar ingreso adicional */}
+      <IngresoModal
+        open={ingresoModalAbierto}
+        onClose={() => { setIngresoModalAbierto(false); setIngresoEditando(null); }}
+        titulo={ingresoEditando ? 'Editar ingreso adicional' : 'Agregar ingreso adicional'}
+        inicial={ingresoEditando ?? undefined}
+        mes={mes}
+        anio={anio}
+        onGuardar={ingresoEditando ? handleEditarIngreso : handleAgregarIngreso}
       />
     </div>
   );
