@@ -75,25 +75,25 @@ export function ReporteResidentes() {
   // Calcular los periodos desde el primer residente (todos comparten los mismos 12 meses)
   const periodos = useMemo(() => residentes[0]?.pagosAnio ?? [], [residentes]);
 
-  async function exportarPDF() {
+  async function exportarExcel() {
     setDescargando(true);
     try {
       const params = new URLSearchParams();
-      if (estadoFiltro)  params.set('estadoAgua', estadoFiltro);
+      if (estadoFiltro)   params.set('estadoAgua', estadoFiltro);
       if (edificioFiltro) params.set('edificio', edificioFiltro);
       params.set('orden', orden);
 
       const res  = await fetch(`/api/reportes/residentes?${params}`);
-      if (!res.ok) throw new Error('Error al generar PDF');
+      if (!res.ok) throw new Error('Error al generar Excel');
       const blob = await res.blob();
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement('a');
       a.href     = url;
-      a.download = 'reporte-residentes.pdf';
+      a.download = 'reporte-residentes.xlsx';
       a.click();
       URL.revokeObjectURL(url);
     } catch {
-      alert('No se pudo generar el PDF. Intenta nuevamente.');
+      alert('No se pudo generar el Excel. Intenta nuevamente.');
     } finally {
       setDescargando(false);
     }
@@ -151,9 +151,9 @@ export function ReporteResidentes() {
             </select>
 
             {/* Exportar */}
-            <Button onClick={exportarPDF} disabled={descargando || cargando} variant="outline" className="gap-2">
+            <Button onClick={exportarExcel} disabled={descargando || cargando} variant="outline" className="gap-2">
               {descargando ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
-              Exportar PDF
+              Exportar Excel
             </Button>
           </div>
         </CardContent>

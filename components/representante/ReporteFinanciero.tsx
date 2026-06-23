@@ -265,20 +265,20 @@ export function ReporteFinanciero() {
     }
   }
 
-  async function exportarPDF() {
+  async function exportarExcel() {
     setDescargando(true);
     try {
       const res  = await fetch(`/api/reportes/financiero?mes=${mes}&anio=${anio}`);
-      if (!res.ok) throw new Error('Error al generar PDF');
+      if (!res.ok) throw new Error('Error al generar Excel');
       const blob = await res.blob();
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement('a');
       a.href     = url;
-      a.download = `reporte-financiero-${mes}-${anio}.pdf`;
+      a.download = `reporte-financiero-${mes}-${anio}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
     } catch {
-      mostrar('No se pudo generar el PDF. Intenta nuevamente.', 'error');
+      mostrar('No se pudo generar el Excel. Intenta nuevamente.', 'error');
     } finally {
       setDescargando(false);
     }
@@ -323,9 +323,9 @@ export function ReporteFinanciero() {
             </div>
 
             <div className="md:ml-auto">
-              <Button onClick={exportarPDF} disabled={descargando || cargando} variant="outline" className="gap-2">
+              <Button onClick={exportarExcel} disabled={descargando || cargando} variant="outline" className="gap-2">
                 {descargando ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
-                Exportar PDF
+                Exportar Excel
               </Button>
             </div>
           </div>

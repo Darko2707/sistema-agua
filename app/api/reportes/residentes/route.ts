@@ -1,6 +1,6 @@
 import { auth } from '@/lib/auth';
 import { db } from '@/db';
-import { generarReporteResidentesPDF } from '@/server/services/pdf-reportes';
+import { generarReporteResidentesExcel } from '@/server/services/excel-reportes';
 
 function parsarDepto(depto: string) {
   const m = depto.match(/^(\d+)([a-zA-Z]?)$/);
@@ -37,20 +37,20 @@ export async function GET(req: Request) {
 
   const url    = new URL(req.url);
   const orden  = (url.searchParams.get('orden') ?? 'edificio') as 'edificio' | 'nombre' | 'estado';
-  const estadoFiltro = url.searchParams.get('estadoAgua') as 'activo' | 'pendiente_corte' | 'cortado' | 'pendiente_reconexion' | null;
+  const estadoFiltro   = url.searchParams.get('estadoAgua') as 'activo' | 'pendiente_corte' | 'cortado' | 'pendiente_reconexion' | null;
   const edificioFiltro = url.searchParams.get('edificio') ?? undefined;
 
   const residentes = await db.query.perfilesResidente.findMany({
     where: (p, { eq, and }) => {
       const conds = [eq(p.circuitoId, circuito.id)];
-      if (estadoFiltro)    conds.push(eq(p.estadoAgua, estadoFiltro));
-      if (edificioFiltro)  conds.push(eq(p.edificio, edificioFiltro));
+      if (estadoFiltro)   conds.push(eq(p.estadoAgua, estadoFiltro));
+      if (edificioFiltro) conds.push(eq(p.edificio, edificioFiltro));
       return and(...conds as [ReturnType<typeof eq>]);
     },
     with: { usuario: true },
   });
 
-  // Ultimos 12 meses
+  // Últimos 12 meses
   const hoy = new Date();
   const periodos: { mes: number; anio: number }[] = [];
   for (let i = 11; i >= 0; i--) {
@@ -100,16 +100,17 @@ export async function GET(req: Request) {
     ordenados = sortPorEdificio(residentesData);
   }
 
-  const pdfBytes = await generarReporteResidentesPDF({
+  const xlsxBuffer = await generarReporteResidentesExcel({
     circuito:   circuito.nombre,
     generadoEn: new Date(),
     residentes: ordenados,
   });
 
-  return new Response(pdfBytes, {
+  const nombre = circuito.nombre.replace(/\s+/g, '-');
+  return new Response(new Uint8Array(xlsxBuffer), {
     headers: {
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="reporte-residentes-${circuito.nombre.replace(/\s+/g, '-')}.pdf"`,
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="reporte-residentes-${nombre}.xlsx"`,
     },
   });
 }

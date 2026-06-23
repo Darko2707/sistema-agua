@@ -1,6 +1,6 @@
 import { auth } from '@/lib/auth';
 import { db } from '@/db';
-import { generarReporteFinancieroPDF } from '@/server/services/pdf-reportes';
+import { generarReporteFinancieroExcel } from '@/server/services/excel-reportes';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,7 +60,7 @@ export async function GET(req: Request) {
     };
   });
 
-  const pdfBytes = await generarReporteFinancieroPDF({
+  const xlsxBuffer = await generarReporteFinancieroExcel({
     circuito:           circuito.nombre,
     mes,
     anio,
@@ -81,10 +81,10 @@ export async function GET(req: Request) {
     })),
   });
 
-  return new Response(pdfBytes, {
+  return new Response(new Uint8Array(xlsxBuffer), {
     headers: {
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="reporte-financiero-${mes}-${anio}.pdf"`,
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="reporte-financiero-${mes}-${anio}.xlsx"`,
     },
   });
 }
