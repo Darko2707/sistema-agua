@@ -36,10 +36,10 @@ describe('aplicarTransicion — transiciones válidas', () => {
     }
   });
 
-  it('cortado → pendiente_reconexion (PAGAR_RECONEXION) genera efecto cerrar_corte', () => {
+  it('cortado → pendiente_reconexion (PAGAR_RECONEXION) sin efectos', () => {
     const r = aplicarTransicion(ESTADOS.CORTADO, ACCIONES.PAGAR_RECONEXION, ctx);
     expect(r.nuevoEstado).toBe(ESTADOS.PENDIENTE_RECONEXION);
-    expect(r.efectos[0].tipo).toBe('cerrar_corte');
+    expect(r.efectos).toHaveLength(0);
   });
 
   it('cortado → activo (RECONEXION_DIRECTA) genera efecto cerrar_corte', () => {

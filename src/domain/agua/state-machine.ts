@@ -93,7 +93,7 @@ const TRANSICIONES: MapaTransiciones = {
   [ESTADOS.CORTADO]: {
     [ACCIONES.PAGAR_RECONEXION]: {
       destino: ESTADOS.PENDIENTE_RECONEXION,
-      efectos: (ctx) => [{ tipo: 'cerrar_corte', fecha: ctx.fecha }],
+      efectos: () => [],
     },
     [ACCIONES.RECONEXION_DIRECTA]: {
       destino: ESTADOS.ACTIVO,

@@ -67,13 +67,9 @@ export class DrizzlePagoRepository implements PagoRepository {
         if (perfil?.estadoAgua === 'pendiente_corte' && !input.esReconexion) {
           await tx.update(perfilesResidente).set({ estadoAgua: 'activo' }).where(eq(perfilesResidente.id, perfilId));
         } else if (perfil?.estadoAgua === 'cortado' && input.esReconexion) {
+          // Transición a pendiente_reconexion: el pago cubre mes + reconexión.
+          // El corte físico permanece abierto hasta que la cuadrilla confirme la reconexión.
           await tx.update(perfilesResidente).set({ estadoAgua: 'pendiente_reconexion' }).where(eq(perfilesResidente.id, perfilId));
-          const corteActivo = await tx.query.cortes.findFirst({
-            where: (c, { eq, and }) => and(eq(c.perfilId, perfilId), eq(c.activo, true)),
-          });
-          if (corteActivo) {
-            await tx.update(cortes).set({ activo: false, fechaReconexion: new Date() }).where(eq(cortes.id, corteActivo.id));
-          }
         }
 
         await tx.insert(tickets).values({ pagoId: pago.id, folio: input.folio, pdfUrl: null });

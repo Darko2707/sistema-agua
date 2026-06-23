@@ -166,7 +166,23 @@ export function RepresentanteDashboard() {
                   {r.estadoAgua === 'activo' && r.pagoEsteMes && <Badge variant="default" className="font-medium bg-green-600">Pagado</Badge>}
                   {r.estadoAgua === 'activo' && r.esMoroso && !r.pagoEsteMes && <Badge variant="outline" className="border-amber-300 text-amber-600 font-medium">Moroso</Badge>}
                 </div>
-                {!r.pagoEsteMes && (
+                {r.estadoAgua === 'cortado' ? (
+                  <div className="flex flex-col gap-1.5 ml-2 items-end">
+                    <p className="text-xs text-red-600 font-medium">
+                      Reconexión: ${Number(circuito?.montoReconexion ?? 0).toFixed(2)} + mes: ${Number(circuito?.montoMensual ?? 0).toFixed(2)}
+                    </p>
+                    <div className="flex gap-1.5">
+                      <Button size="sm" variant="outline" onClick={() => registrarPagoManual(r.id, 'efectivo')} disabled={!!registrando} className="h-9 border-red-300 text-red-700">
+                        {registrando === `${r.id}:efectivo` ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Banknote className="mr-2 h-4 w-4" />}
+                        {registrando === `${r.id}:efectivo` ? 'Guardando...' : 'Efectivo + reconexión'}
+                      </Button>
+                      <Button size="sm" onClick={() => registrarPagoManual(r.id, 'transferencia')} disabled={!!registrando} className="h-9 bg-red-600 hover:bg-red-700">
+                        {registrando === `${r.id}:transferencia` ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Banknote className="mr-2 h-4 w-4" />}
+                        {registrando === `${r.id}:transferencia` ? 'Guardando...' : 'Transf. + reconexión'}
+                      </Button>
+                    </div>
+                  </div>
+                ) : !r.pagoEsteMes ? (
                   <div className="flex gap-1.5 ml-2">
                     <Button size="sm" variant="outline" onClick={() => registrarPagoManual(r.id, 'efectivo')} disabled={!!registrando} className="h-9">
                       {registrando === `${r.id}:efectivo` ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Banknote className="mr-2 h-4 w-4 text-emerald-600" />}
@@ -177,7 +193,7 @@ export function RepresentanteDashboard() {
                       {registrando === `${r.id}:transferencia` ? 'Guardando...' : 'Transferencia'}
                     </Button>
                   </div>
-                )}
+                ) : null}
               </div>
             ))}
           </CardContent>
