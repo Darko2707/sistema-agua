@@ -418,8 +418,8 @@ export const pagosRouter = router({
     const idsPagados = new Set(pagosDelMes.map((p) => p.perfilId));
     const pagados = perfiles.filter((p) => idsPagados.has(p.id)).length;
     const recaudado = pagosDelMes
-      .filter((p) => perfiles.some((perf) => perf.id === p.perfilId))
-      .reduce((acc, p) => acc + parseFloat(p.monto), 0);
+  .filter((p) => perfiles.some((perf) => perf.id === p.perfilId))
+  .reduce((acc, p) => acc + parseFloat(p.montoNetoRepresentante ?? '0'), 0);
 
     // ✅ Construir porCircuito con recaudado
     const porCircuitoMap = new Map<string, { nombre: string; total: number; pagados: number; recaudado: number }>();
@@ -438,7 +438,7 @@ export const pagosRouter = router({
         // ✅ Sumar el monto del pago al recaudado del circuito
         const pago = pagosDelMes.find((p) => p.perfilId === perfil.id);
         if (pago) {
-          entry.recaudado += parseFloat(pago.monto);
+          entry.recaudado += parseFloat(pago.montoNetoRepresentante ?? '0');
         }
       }
       porCircuitoMap.set(nombre, entry);
