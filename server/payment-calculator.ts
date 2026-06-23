@@ -41,7 +41,19 @@ export function calcularDesglosePago(montoBase: number): DesglosePago {
     total: money(subtotal),
   };
 }
-
+export function calcularDesglosePagoManual(montoBase: number): DesglosePago {
+  const base = roundMoney(montoBase);
+  return {
+    montoBase: money(base),
+    iva: '0.00',
+    subtotal: money(base),
+    comisionMercadoPago: '0.00',
+    retencionIsr: '0.00',
+    retencionIva: '0.00',
+    montoNetoRepresentante: money(base),
+    total: money(base),
+  };
+}
 export function calcularMontoBase(
   montoMensual: string | number,
   esReconexion: boolean,

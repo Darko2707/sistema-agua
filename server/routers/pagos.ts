@@ -8,7 +8,8 @@ import { nanoid } from 'nanoid';
 import { eq, and } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import { obtenerPeriodoVigente, esMoroso, verificarCircuitoActivo } from '../utils';
-import { calcularDesglosePago, calcularMontoBase } from '../payment-calculator';
+import { calcularDesglosePago, calcularDesglosePagoManual, calcularMontoBase } from '../payment-calculator';
+
 
 export const pagosRouter = router({
   // ============================================
@@ -122,7 +123,7 @@ export const pagosRouter = router({
         requiereReconexion,
         perfil.circuito.montoReconexion
       );
-      const desglose = calcularDesglosePago(montoBase);
+      const desglose = calcularDesglosePagoManual(montoBase);
       const monto = desglose.total;
       console.log(`MONTO: ${monto}, ES_RECONEXION: ${requiereReconexion}`);
 
