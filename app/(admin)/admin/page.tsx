@@ -517,19 +517,24 @@ export default function AdminPage() {
                       <p className="text-xs text-muted-foreground">{r.usuario?.email || 'Sin email'}</p>
                     </div>
 
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <Badge variant={r.pagoEsteMes ? 'default' : 'destructive'}>
-                        {r.pagoEsteMes ? 'Pagado' : 'Sin pago'}
+                    {/* ✅ NUEVO BLOQUE DE BADGES - Una sola fuente de verdad */}
+                    <div className="flex items-center gap-2 flex-wrap justify-end">
+                      {/* Solo estado del agua — una sola fuente de verdad */}
+                      <Badge variant={estadoInfo.variant} className="font-medium">
+                        {estadoInfo.label}
                       </Badge>
-                      <Badge variant={estadoInfo.variant}>{estadoInfo.label}</Badge>
-                      {r.esMoroso && !r.corteActivo && (
-                        <Badge variant="outline" className="border-amber-300 text-amber-600">
-                          Moroso
+
+                      {/* Pago solo si está activo y ya pagó (positivo, no redundante) */}
+                      {r.estadoAgua === 'activo' && r.pagoEsteMes && (
+                        <Badge variant="default" className="font-medium bg-green-600">
+                          Pagado
                         </Badge>
                       )}
-                      {r.corteActivo && (
-                        <Badge variant="outline" className="border-red-300 text-red-600">
-                          Corte activo
+
+                      {/* Moroso solo si está activo pero no pagó después del día 5 */}
+                      {r.estadoAgua === 'activo' && r.esMoroso && !r.pagoEsteMes && (
+                        <Badge variant="outline" className="border-amber-300 text-amber-600 font-medium">
+                          Moroso
                         </Badge>
                       )}
                     </div>

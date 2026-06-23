@@ -377,51 +377,59 @@ export default function RepresentantePage() {
                     </div>
                   </div>
 
+                  {/* ✅ NUEVO BLOQUE DE BADGES - Una sola fuente de verdad */}
                   <div className="flex items-center gap-2 flex-wrap justify-end">
-                    <Badge variant={r.pagoEsteMes ? 'default' : 'destructive'} className="font-medium">
-                      {r.pagoEsteMes ? 'Pagado' : 'Sin pago'}
-                    </Badge>
+                    {/* Solo estado del agua — una sola fuente de verdad */}
                     <Badge variant={estadoInfo.variant} className="font-medium">
                       {estadoInfo.label}
                     </Badge>
-                    {r.corteActivo && (
-                      <Badge variant="outline" className="border-red-200 bg-red-50/50 text-red-600 font-medium">
-                        Corte automático
+
+                    {/* Pago solo si está activo y ya pagó (positivo, no redundante) */}
+                    {r.estadoAgua === 'activo' && r.pagoEsteMes && (
+                      <Badge variant="default" className="font-medium bg-green-600">
+                        Pagado
                       </Badge>
                     )}
 
-                    {!r.pagoEsteMes && (
-                      <div className="flex gap-1.5 ml-2">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => registrarPagoManual(r.id, 'efectivo')}
-                          disabled={!!registrando}
-                          className="h-9"
-                        >
-                          {isEfectivoLoading ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          ) : (
-                            <Banknote className="mr-2 h-4 w-4 text-emerald-600" />
-                          )}
-                          {isEfectivoLoading ? 'Guardando...' : 'Efectivo'}
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={() => registrarPagoManual(r.id, 'transferencia')}
-                          disabled={!!registrando}
-                          className="h-9"
-                        >
-                          {isTransLoading ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          ) : (
-                            <Banknote className="mr-2 h-4 w-4" />
-                          )}
-                          {isTransLoading ? 'Guardando...' : 'Transferencia'}
-                        </Button>
-                      </div>
+                    {/* Moroso solo si está activo pero no pagó después del día 5 */}
+                    {r.estadoAgua === 'activo' && r.esMoroso && !r.pagoEsteMes && (
+                      <Badge variant="outline" className="border-amber-300 text-amber-600 font-medium">
+                        Moroso
+                      </Badge>
                     )}
                   </div>
+
+                  {!r.pagoEsteMes && (
+                    <div className="flex gap-1.5 ml-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => registrarPagoManual(r.id, 'efectivo')}
+                        disabled={!!registrando}
+                        className="h-9"
+                      >
+                        {isEfectivoLoading ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Banknote className="mr-2 h-4 w-4 text-emerald-600" />
+                        )}
+                        {isEfectivoLoading ? 'Guardando...' : 'Efectivo'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => registrarPagoManual(r.id, 'transferencia')}
+                        disabled={!!registrando}
+                        className="h-9"
+                      >
+                        {isTransLoading ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Banknote className="mr-2 h-4 w-4" />
+                        )}
+                        {isTransLoading ? 'Guardando...' : 'Transferencia'}
+                      </Button>
+                    </div>
+                  )}
                 </div>
               );
             })}
