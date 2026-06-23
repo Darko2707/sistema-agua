@@ -66,54 +66,25 @@ export default function RegistroPage() {
       );
   }, []);
 
+  // ✅ Paso 1: Solo guarda los datos en estado local, no crea nada
   async function handleCrearCuenta(
     e: React.FormEvent,
   ) {
     e.preventDefault();
 
     setError('');
-    setLoading(true);
-
-    const {
-      error: signUpError,
-    } =
-      await authClient.signUp.email({
-        email: cuenta.email,
-        password:
-          cuenta.password,
-        name: cuenta.nombre,
-      });
-
-    if (signUpError) {
-      setError(
-        signUpError.message ??
-          'No se pudo crear la cuenta',
-      );
-      setLoading(false);
+    
+    // Validación básica
+    if (cuenta.password.length < 8) {
+      setError('La contraseña debe tener al menos 8 caracteres');
       return;
     }
 
-    const {
-      error: signInError,
-    } =
-      await authClient.signIn.email({
-        email: cuenta.email,
-        password:
-          cuenta.password,
-      });
-
-    if (signInError) {
-      setError(
-        'Cuenta creada, pero no se pudo iniciar sesión automáticamente.',
-      );
-      setLoading(false);
-      return;
-    }
-
-    setLoading(false);
+    // Solo avanza al paso 2, no crea la cuenta todavía
     setPaso(2);
   }
 
+  // ✅ Paso 2: Crea la cuenta, inicia sesión y guarda el perfil
   async function handleCompletarPerfil(
     e: React.FormEvent,
   ) {
@@ -123,6 +94,37 @@ export default function RegistroPage() {
     setLoading(true);
 
     try {
+      // 1. Crear cuenta
+      const { error: signUpError } =
+        await authClient.signUp.email({
+          email: cuenta.email,
+          password: cuenta.password,
+          name: cuenta.nombre,
+        });
+
+      if (signUpError) {
+        // Regresa al paso 1 si el correo ya existe
+        setPaso(1);
+        throw new Error(
+          signUpError.message ??
+            'No se pudo crear la cuenta. El correo podría estar registrado.'
+        );
+      }
+
+      // 2. Iniciar sesión automáticamente
+      const { error: signInError } =
+        await authClient.signIn.email({
+          email: cuenta.email,
+          password: cuenta.password,
+        });
+
+      if (signInError) {
+        throw new Error(
+          'Cuenta creada, pero no se pudo iniciar sesión automáticamente.'
+        );
+      }
+
+      // 3. Guardar perfil
       const res = await fetch(
         '/api/trpc/usuarios.crearPerfil',
         {
@@ -281,7 +283,7 @@ export default function RegistroPage() {
                 disabled={loading}
               >
                 {loading
-                  ? 'Creando...'
+                  ? 'Cargando...'
                   : 'Continuar'}
               </Button>
 

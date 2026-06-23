@@ -46,17 +46,15 @@ export default function TrabajadorPage() {
 
   const [pendientesCorte, setPendientesCorte] = useState<ResidentePendiente[]>([]);
   const [pendientesReconexion, setPendientesReconexion] = useState<ResidentePendiente[]>([]);
-  const [reconectados, setReconectados] = useState<ResidentePendiente[]>([]);
   const [cargando, setCargando] = useState(true);
   const [procesando, setProcesando] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<'cortes' | 'reconexiones'>('cortes');
 
   async function cargarDatos() {
-    const [resPendientesCorte, resPendientesReconexion, resReconectados] = await Promise.all([
+    const [resPendientesCorte, resPendientesReconexion] = await Promise.all([
       fetch(trpcQueryUrl('cortes.pendientesDeCorte')),
       fetch(trpcQueryUrl('cortes.pendientesDeReconexion')),
-      fetch(trpcQueryUrl('cortes.listarCortados')),
     ]);
 
     if (resPendientesCorte.ok) {
@@ -69,11 +67,6 @@ export default function TrabajadorPage() {
       setPendientesReconexion(json?.[0]?.result?.data ?? []);
     }
 
-    if (resReconectados.ok) {
-      const json = await resReconectados.json();
-      setReconectados(json?.[0]?.result?.data ?? []);
-    }
-
     setCargando(false);
   }
 
@@ -81,7 +74,7 @@ export default function TrabajadorPage() {
     cargarDatos();
   }, []);
 
-  // ✅ CORREGIDO: llamada directa sin batch
+  // ✅ CORREGIDO: Formato tRPC batch
   async function handleConfirmarCorte(perfilId: string) {
     setProcesando(perfilId);
     setError(null);
@@ -92,13 +85,13 @@ export default function TrabajadorPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ perfilId }),
+        body: JSON.stringify({ 0: { json: { perfilId } } }),
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data?.error?.json?.message || 'Error al confirmar corte');
+        throw new Error(data?.[0]?.error?.json?.message || 'Error al confirmar corte');
       }
 
       await cargarDatos();
@@ -110,7 +103,7 @@ export default function TrabajadorPage() {
     setProcesando(null);
   }
 
-  // ✅ CORREGIDO: llamada directa sin batch
+  // ✅ CORREGIDO: Formato tRPC batch
   async function handleConfirmarReconexion(perfilId: string) {
     setProcesando(perfilId);
     setError(null);
@@ -121,13 +114,13 @@ export default function TrabajadorPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ perfilId }),
+        body: JSON.stringify({ 0: { json: { perfilId } } }),
       });
 
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data?.error?.json?.message || 'Error al confirmar reconexión');
+        throw new Error(data?.[0]?.error?.json?.message || 'Error al confirmar reconexión');
       }
 
       await cargarDatos();
@@ -326,34 +319,6 @@ export default function TrabajadorPage() {
                       {procesando === c.id ? 'Procesando...' : 'Confirmar reconexión'}
                     </Button>
                   </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Reconectados hoy */}
-        {reconectados.length > 0 && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Reconectados hoy</CardTitle>
-              <p className="text-sm text-muted-foreground">
-                Cortes completados exitosamente
-              </p>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {reconectados.map((c) => (
-                <div
-                  key={c.id}
-                  className="flex flex-col gap-4 rounded-xl border p-4 md:flex-row md:items-center md:justify-between"
-                >
-                  <div>
-                    <p className="font-medium">{c.usuario.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {c.circuito.nombre} · {c.edificio} · {c.departamento}
-                    </p>
-                  </div>
-                  <Badge variant="default" className="bg-green-600">Reconectado</Badge>
                 </div>
               ))}
             </CardContent>
