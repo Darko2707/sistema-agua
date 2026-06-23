@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { trpcReact } from '@/lib/trpc-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,27 +16,6 @@ import {
   TableRow,
 } from '@/components/ui/table';
 
-type Pago = {
-  id: string;
-  folio: string | null;
-  mes: number;
-  anio: number;
-  monto: string;
-  montoBase: string | null;
-  iva: string | null;
-  comisionMercadoPago: string | null;
-  retencionIsr: string | null;
-  retencionIva: string | null;
-  montoNetoRepresentante: string | null;
-  edificio: string;
-  departamento: string;
-};
-
-type MercadoPagoConfig = {
-  id: string;
-  nombre: string;
-};
-
 function moneda(valor: string | number | null) {
   return Number(valor ?? 0).toLocaleString('es-MX', {
     style: 'currency',
@@ -45,48 +25,40 @@ function moneda(valor: string | number | null) {
 
 export default function RepresentanteReportesPage() {
   const router = useRouter();
-  const [pagos, setPagos] = useState<Pago[]>([]);
-  const [circuito, setCircuito] = useState<MercadoPagoConfig | null>(null);
-  const [cargando, setCargando] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  async function cargar() {
-    setCargando(true);
-    setError(null);
-    const [pagosRes, mpRes] = await Promise.all([
-      fetch('/api/representante/pagos'),
-      fetch('/api/representante/mercadopago'),
-    ]);
+  const pagosQuery   = trpcReact.pagos.reportePagos.useQuery();
+  const circuitoQuery = trpcReact.circuitos.miCircuito.useQuery();
 
-    if (pagosRes.ok) {
-      const data = await pagosRes.json();
-      setPagos(data.pagos ?? []);
-    } else {
-      setError('No se pudieron cargar los pagos');
-    }
+  const pagosRaw = pagosQuery.data ?? [];
+  const pagos = pagosRaw.map((p) => ({
+    id:                     p.id,
+    folio:                  p.folio,
+    mes:                    p.mes,
+    anio:                   p.anio,
+    monto:                  p.monto,
+    montoBase:              p.montoBase,
+    iva:                    p.iva,
+    comisionMercadoPago:    p.comisionMercadoPago,
+    retencionIsr:           p.retencionIsr,
+    retencionIva:           p.retencionIva,
+    montoNetoRepresentante: p.montoNetoRepresentante,
+    edificio:               p.perfil?.edificio ?? '',
+    departamento:           p.perfil?.departamento ?? '',
+  }));
 
-    if (mpRes.ok) {
-      const data = await mpRes.json();
-      setCircuito(data.circuito);
-    }
-
-    setCargando(false);
-  }
-
-  useEffect(() => {
-    void Promise.resolve().then(cargar);
-  }, []);
+  const cargando = pagosQuery.isLoading || circuitoQuery.isLoading;
+  const error    = pagosQuery.error?.message ?? circuitoQuery.error?.message ?? null;
 
   const totales = useMemo(
     () =>
       pagos.reduce(
         (acc, pago) => ({
-          base: acc.base + Number(pago.montoBase ?? 0),
-          iva: acc.iva + Number(pago.iva ?? 0),
-          comision: acc.comision + Number(pago.comisionMercadoPago ?? 0),
-          isr: acc.isr + Number(pago.retencionIsr ?? 0),
-          ivaRetenido: acc.ivaRetenido + Number(pago.retencionIva ?? 0),
-          neto: acc.neto + Number(pago.montoNetoRepresentante ?? 0),
+          base:       acc.base       + Number(pago.montoBase              ?? 0),
+          iva:        acc.iva        + Number(pago.iva                    ?? 0),
+          comision:   acc.comision   + Number(pago.comisionMercadoPago    ?? 0),
+          isr:        acc.isr        + Number(pago.retencionIsr           ?? 0),
+          ivaRetenido: acc.ivaRetenido + Number(pago.retencionIva         ?? 0),
+          neto:       acc.neto       + Number(pago.montoNetoRepresentante ?? 0),
         }),
         { base: 0, iva: 0, comision: 0, isr: 0, ivaRetenido: 0, neto: 0 }
       ),
@@ -108,7 +80,7 @@ export default function RepresentanteReportesPage() {
           <div>
             <h1 className="text-3xl font-bold">Reportes de pagos</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              {circuito?.nombre ?? 'Circuito sin asignar'}
+              {circuitoQuery.data?.nombre ?? 'Circuito sin asignar'}
             </p>
           </div>
           <Button variant="outline" onClick={() => router.push('/representante')}>

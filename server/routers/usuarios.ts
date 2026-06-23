@@ -1,4 +1,4 @@
-import { router, protectedProcedure, roleProcedure } from '../trpc';
+import { router, publicProcedure, protectedProcedure, roleProcedure } from '../trpc';
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
@@ -50,7 +50,7 @@ export const usuariosRouter = router({
     return residenteRepo.findByUserId(ctx.user.id);
   }),
 
-  listarCircuitos: protectedProcedure.query(async () => {
+  listarCircuitos: publicProcedure.query(async () => {
     return circuitoRepo.findAll();
   }),
 

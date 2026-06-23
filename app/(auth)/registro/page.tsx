@@ -1,13 +1,11 @@
 'use client';
 
-import {
-  useState,
-  useEffect,
-} from 'react';
+import { useState } from 'react';
 import { authClient } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { trpc } from '@/lib/trpc-client';
+import { trpcReact } from '@/lib/trpc-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -20,11 +18,6 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-
-type Circuito = {
-  id: string;
-  nombre: string;
-};
 
 type PerfilForm = {
   telefono: string;
@@ -40,9 +33,6 @@ export default function RegistroPage() {
 
   const [paso, setPaso] =
     useState<1 | 2>(1);
-
-  const [circuitos, setCircuitos] =
-    useState<Circuito[]>([]);
 
   const [loading, setLoading] =
     useState(false);
@@ -67,14 +57,8 @@ export default function RegistroPage() {
       departamento: '',
     });
 
-  useEffect(() => {
-    fetch('/api/circuitos')
-      .then((r) => r.json())
-      .then(setCircuitos)
-      .catch(() =>
-        setCircuitos([]),
-      );
-  }, []);
+  const circuitosQuery = trpcReact.usuarios.listarCircuitos.useQuery();
+  const circuitos = circuitosQuery.data ?? [];
 
   // ✅ Paso 1: Solo guarda los datos en estado local, no crea nada
   async function handleCrearCuenta(

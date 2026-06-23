@@ -84,6 +84,17 @@ export const pagosRouter = router({
     return resumenMesHandler.execute({ rol, userId: ctx.user.id });
   }),
 
+  reportePagos: roleProcedure('representante').query(async ({ ctx }) => {
+    const miCircuito = await circuitoRepo.findByRepresentante(ctx.user.id);
+    if (!miCircuito) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes un circuito asignado.' });
+
+    return db.query.pagos.findMany({
+      where: (p, { eq, and }) => and(eq(p.circuitoId, miCircuito.id), eq(p.estado, 'pagado')),
+      with: { perfil: true },
+      orderBy: (p, { desc }) => [desc(p.anio), desc(p.mes), desc(p.fechaPago)],
+    });
+  }),
+
   pagosPorCircuito: roleProcedure('representante', 'admin')
     .input(z.object({
       circuitoId: z.uuid().optional(),
