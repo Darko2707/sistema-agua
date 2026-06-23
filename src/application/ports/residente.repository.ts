@@ -7,6 +7,9 @@ export type ResidenteData = {
   edificio: string;
   departamento: string;
   estadoAgua: EstadoAgua;
+  tenencia?: string | null;
+  nombrePropietario?: string | null;
+  telefonoPropietario?: string | null;
   creadoEn: Date | null;
 };
 

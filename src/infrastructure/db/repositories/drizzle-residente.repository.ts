@@ -18,13 +18,16 @@ type WithRelaciones = typeof perfilesResidente.$inferSelect & {
 
 function toData(row: typeof perfilesResidente.$inferSelect): ResidenteData {
   return {
-    id:           row.id,
-    userId:       row.userId,
-    circuitoId:   row.circuitoId,
-    edificio:     row.edificio,
-    departamento: row.departamento,
-    estadoAgua:   row.estadoAgua as EstadoAgua,
-    creadoEn:     row.creadoEn ?? null,
+    id:                  row.id,
+    userId:              row.userId,
+    circuitoId:          row.circuitoId,
+    edificio:            row.edificio,
+    departamento:        row.departamento,
+    estadoAgua:          row.estadoAgua as EstadoAgua,
+    tenencia:            row.tenencia ?? null,
+    nombrePropietario:   row.nombrePropietario ?? null,
+    telefonoPropietario: row.telefonoPropietario ?? null,
+    creadoEn:            row.creadoEn ?? null,
   };
 }
 

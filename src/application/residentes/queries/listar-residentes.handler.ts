@@ -31,10 +31,13 @@ export class ListarResidentesHandler {
     }
 
     return perfiles.map((p) => ({
-      id:           p.id,
-      edificio:     p.edificio,
-      departamento: p.departamento,
-      estadoAgua:   p.estadoAgua,
+      id:                  p.id,
+      edificio:            p.edificio,
+      departamento:        p.departamento,
+      estadoAgua:          p.estadoAgua,
+      tenencia:            p.tenencia ?? null,
+      nombrePropietario:   p.nombrePropietario ?? null,
+      telefonoPropietario: p.telefonoPropietario ?? null,
       usuario: {
         id:    p.usuario?.id,
         name:  p.usuario?.name,

@@ -31,15 +31,18 @@ export type Personal = {
 };
 
 export type ResidenteCompleto = {
-  id:           string;
-  edificio:     string;
-  departamento: string;
-  estadoAgua:   string;
-  pagoEsteMes?: boolean;
-  esMoroso?:    boolean;
-  corteActivo?: boolean;
-  usuario?:     { id?: string; name?: string; email?: string; role?: string } | null;
-  circuito?:    { id: string; nombre: string } | null;
+  id:                   string;
+  edificio:             string;
+  departamento:         string;
+  estadoAgua:           string;
+  tenencia?:            string | null;
+  nombrePropietario?:   string | null;
+  telefonoPropietario?: string | null;
+  pagoEsteMes?:         boolean;
+  esMoroso?:            boolean;
+  corteActivo?:         boolean;
+  usuario?:             { id?: string; name?: string; email?: string; role?: string } | null;
+  circuito?:            { id: string; nombre: string } | null;
 };
 
 export type Circuito = {

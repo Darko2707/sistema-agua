@@ -162,6 +162,12 @@ export function RepresentanteDashboard() {
                     <p className="font-semibold text-slate-800">{r.usuario.name}</p>
                     <p className="text-sm text-muted-foreground">Edificio {r.edificio} · Depto {r.departamento}</p>
                     <p className="text-xs text-slate-400 mt-0.5">{r.usuario.email}</p>
+                    {r.tenencia === 'inquilino' && r.nombrePropietario && (
+                      <p className="text-xs text-amber-700 mt-0.5">
+                        Inquilino · Dueño: {r.nombrePropietario}
+                        {r.telefonoPropietario ? ` · ${r.telefonoPropietario}` : ''}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap justify-end">

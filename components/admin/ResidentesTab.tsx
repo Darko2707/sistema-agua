@@ -85,6 +85,12 @@ export function ResidentesTab({
                   {r.circuito?.nombre || 'Sin circuito'} · {r.edificio} · {r.departamento}
                 </p>
                 <p className="text-xs text-muted-foreground">{r.usuario?.email || 'Sin email'}</p>
+                {r.tenencia === 'inquilino' && r.nombrePropietario && (
+                  <p className="text-xs text-amber-700 mt-0.5">
+                    Inquilino · Dueño: {r.nombrePropietario}
+                    {r.telefonoPropietario ? ` · ${r.telefonoPropietario}` : ''}
+                  </p>
+                )}
               </div>
 
               <div className="flex flex-wrap items-center justify-end gap-2">
