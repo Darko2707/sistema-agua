@@ -1,31 +1,18 @@
 import { createMercadoPagoClients } from '@/lib/mercadopago';
 import { db } from '@/db';
-import { registrarPagoAprobado } from '@/server/pagos-service';
+import { parseExternalReference, type ExternalReference } from '@/src/infrastructure/mercadopago/parser';
+import { residenteRepo, pagoRepo, circuitoRepo } from '@/src/infrastructure/db/repositories';
+import { ProcesarPagoMpHandler } from '@/src/application/pagos/commands/procesar-pago-mp.handler';
+import { logger } from '@/lib/logger';
 
-function parseExternalReference(value: string | undefined) {
-  const [prefix, perfilId, mes, anio, esReconexion, monto] = (value ?? '').split('|');
+const procesarPagoMpHandler = new ProcesarPagoMpHandler({ residenteRepo, pagoRepo, circuitoRepo });
 
-  if (prefix !== 'agua' || !perfilId || !mes || !anio || !monto) {
-    return null;
-  }
-
-  return {
-    perfilId,
-    mes: Number(mes),
-    anio: Number(anio),
-    esReconexion: esReconexion === '1',
-    monto: Number(monto).toFixed(2),
-  };
-}
-
-async function getPaymentClientForReference(reference: ReturnType<typeof parseExternalReference>) {
+async function getPaymentClientForReference(reference: ExternalReference | null) {
   if (!reference) return null;
-
   const perfil = await db.query.perfilesResidente.findFirst({
     where: (p, { eq }) => eq(p.id, reference.perfilId),
     with: { circuito: true },
   });
-
   const accessToken = perfil?.circuito?.mercadoPagoAccessToken;
   return accessToken ? createMercadoPagoClients(accessToken).paymentClient : null;
 }
@@ -56,17 +43,25 @@ export async function GET(request: Request) {
       return Response.redirect(fallbackUrl);
     }
 
-    await registrarPagoAprobado({
+    logger.info('mp.return.pago_aprobado', {
+      paymentId:    String(payment.id),
+      perfilId:     paymentReference.perfilId,
+      mes:          paymentReference.mes,
+      anio:         paymentReference.anio,
+      monto:        paymentReference.monto,
+      esReconexion: paymentReference.esReconexion,
+    });
+    await procesarPagoMpHandler.execute({
       ...paymentReference,
-      metodo: `mercado_pago:${payment.id}`,
-      mercadoPagoPaymentId: payment.id ? String(payment.id) : undefined,
+      metodo:                `mercado_pago:${payment.id}`,
+      mercadoPagoPaymentId:  payment.id ? String(payment.id) : undefined,
       mercadoPagoCollectorId: payment.collector_id ? String(payment.collector_id) : undefined,
     });
 
     fallbackUrl.searchParams.set('payment', 'success');
     return Response.redirect(fallbackUrl);
   } catch (error) {
-    console.error('Error confirmando pago de Mercado Pago:', error);
+    logger.error('mp.return.error', error, { paymentId: paymentId ?? 'unknown' });
     fallbackUrl.searchParams.set('payment', 'failure');
     return Response.redirect(fallbackUrl);
   }

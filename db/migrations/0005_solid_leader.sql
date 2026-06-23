@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "idx_pagos_pagado_por_mes" ON "pagos" USING btree ("perfil_id","mes","anio") WHERE "pagos"."estado" = 'pagado';

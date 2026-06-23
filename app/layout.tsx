@@ -1,12 +1,6 @@
-// app/layout.tsx
 import type { Metadata } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
-// Local fallback Providers component to avoid missing import error
-import React from 'react'
-
-function Providers({ children }: { children: React.ReactNode }) {
-  return <>{children}</>
-}
+import { Providers } from '@/components/providers'
 import './globals.css'
 
 const geistSans = Geist({

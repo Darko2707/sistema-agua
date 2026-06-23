@@ -2,32 +2,19 @@ import { InvalidWebhookSignatureError, WebhookSignatureValidator } from 'mercado
 
 import { createMercadoPagoClients } from '@/lib/mercadopago';
 import { db } from '@/db';
-import { registrarPagoAprobado } from '@/server/pagos-service';
+import { parseExternalReference, type ExternalReference } from '@/src/infrastructure/mercadopago/parser';
+import { residenteRepo, pagoRepo, circuitoRepo } from '@/src/infrastructure/db/repositories';
+import { ProcesarPagoMpHandler } from '@/src/application/pagos/commands/procesar-pago-mp.handler';
+import { logger } from '@/lib/logger';
 
-function parseExternalReference(value: string | undefined) {
-  const [prefix, perfilId, mes, anio, esReconexion, monto] = (value ?? '').split('|');
+const procesarPagoMpHandler = new ProcesarPagoMpHandler({ residenteRepo, pagoRepo, circuitoRepo });
 
-  if (prefix !== 'agua' || !perfilId || !mes || !anio || !monto) {
-    return null;
-  }
-
-  return {
-    perfilId,
-    mes: Number(mes),
-    anio: Number(anio),
-    esReconexion: esReconexion === '1',
-    monto: Number(monto).toFixed(2),
-  };
-}
-
-async function getPaymentClientForReference(reference: ReturnType<typeof parseExternalReference>) {
+async function getPaymentClientForReference(reference: ExternalReference | null) {
   if (!reference) return null;
-
   const perfil = await db.query.perfilesResidente.findFirst({
     where: (p, { eq }) => eq(p.id, reference.perfilId),
     with: { circuito: true },
   });
-
   const accessToken = perfil?.circuito?.mercadoPagoAccessToken;
   return accessToken ? createMercadoPagoClients(accessToken).paymentClient : null;
 }
@@ -39,10 +26,10 @@ export async function POST(request: Request) {
 
     if (webhookSecret) {
       WebhookSignatureValidator.validate({
-        xSignature: request.headers.get('x-signature'),
-        xRequestId: request.headers.get('x-request-id'),
-        dataId: url.searchParams.get('data.id'),
-        secret: webhookSecret,
+        xSignature:       request.headers.get('x-signature'),
+        xRequestId:       request.headers.get('x-request-id'),
+        dataId:           url.searchParams.get('data.id'),
+        secret:           webhookSecret,
         toleranceSeconds: 300,
       });
     }
@@ -54,24 +41,28 @@ export async function POST(request: Request) {
       url.searchParams.get('data.id') ??
       url.searchParams.get('id');
 
-    if (!paymentId) {
-      return Response.json({ received: true });
-    }
+    if (!paymentId) return Response.json({ received: true });
 
     const referenceFromUrl = parseExternalReference(url.searchParams.get('ref') ?? undefined);
     const paymentClient = await getPaymentClientForReference(referenceFromUrl);
-    if (!paymentClient) {
-      return Response.json({ received: true });
-    }
+    if (!paymentClient) return Response.json({ received: true });
 
     const payment = await paymentClient.get({ id: paymentId });
     const reference = parseExternalReference(payment.external_reference) ?? referenceFromUrl;
 
     if (payment.status === 'approved' && reference) {
-      await registrarPagoAprobado({
+      logger.info('mp.webhook.pago_aprobado', {
+        paymentId: String(payment.id),
+        perfilId:  reference.perfilId,
+        mes:       reference.mes,
+        anio:      reference.anio,
+        monto:     reference.monto,
+        esReconexion: reference.esReconexion,
+      });
+      await procesarPagoMpHandler.execute({
         ...reference,
-        metodo: `mercado_pago:${payment.id}`,
-        mercadoPagoPaymentId: payment.id ? String(payment.id) : undefined,
+        metodo:                `mercado_pago:${payment.id}`,
+        mercadoPagoPaymentId:  payment.id ? String(payment.id) : undefined,
         mercadoPagoCollectorId: payment.collector_id ? String(payment.collector_id) : undefined,
       });
     }
@@ -79,11 +70,10 @@ export async function POST(request: Request) {
     return Response.json({ received: true });
   } catch (error) {
     if (error instanceof InvalidWebhookSignatureError) {
-      console.error('Firma invalida de webhook de Mercado Pago:', error.reason);
+      logger.warn('mp.webhook.firma_invalida', { reason: error.reason });
       return Response.json({ error: 'Firma invalida' }, { status: 401 });
     }
-
-    console.error('Error procesando webhook de Mercado Pago:', error);
+    logger.error('mp.webhook.error', error);
     return Response.json({ received: true });
   }
 }

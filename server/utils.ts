@@ -1,12 +1,17 @@
 import { db } from '@/db'
 import { TRPCError } from '@trpc/server'
+import { DIA_CORTE } from '@/domain/pagos/constants'
+
+export function determinarEstadoInicial(): 'activo' | 'pendiente_corte' {
+  return new Date().getDate() > DIA_CORTE ? 'pendiente_corte' : 'activo'
+}
 
 export function obtenerPeriodoVigente() {
   const ahora = new Date()
   const dia   = ahora.getDate()
   const mes   = ahora.getMonth() + 1
   const anio  = ahora.getFullYear()
-  return { mes, anio, vencido: dia > 5 }
+  return { mes, anio, vencido: dia > DIA_CORTE }
 }
 
 export function esMoroso(

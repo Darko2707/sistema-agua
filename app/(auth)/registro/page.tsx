@@ -7,6 +7,7 @@ import {
 import { authClient } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
+import { trpc } from '@/lib/trpc-client';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -23,6 +24,15 @@ import {
 type Circuito = {
   id: string;
   nombre: string;
+};
+
+type PerfilForm = {
+  telefono: string;
+  sexo: 'masculino' | 'femenino' | 'otro';
+  tenencia: 'propietario' | 'inquilino';
+  circuitoId: string;
+  edificio: string;
+  departamento: string;
 };
 
 export default function RegistroPage() {
@@ -48,7 +58,7 @@ export default function RegistroPage() {
     });
 
   const [perfil, setPerfil] =
-    useState({
+    useState<PerfilForm>({
       telefono: '',
       sexo: 'masculino',
       tenencia: 'propietario',
@@ -125,30 +135,7 @@ export default function RegistroPage() {
       }
 
       // 3. Guardar perfil
-      const res = await fetch(
-        '/api/trpc/usuarios.crearPerfil',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type':
-              'application/json',
-          },
-          body: JSON.stringify(
-            perfil,
-          ),
-        },
-      );
-
-      if (!res.ok) {
-        const errorData =
-          await res.json();
-
-        throw new Error(
-          errorData.error
-            ?.message ??
-            'Error al guardar la información',
-        );
-      }
+      await trpc.usuarios.crearPerfil.mutate(perfil);
 
       router.push('/residente');
     } catch (err: any) {
@@ -382,9 +369,7 @@ export default function RegistroPage() {
                     setPerfil(
                       (p) => ({
                         ...p,
-                        sexo:
-                          e.target
-                            .value,
+                        sexo: e.target.value as 'masculino' | 'femenino' | 'otro',
                       }),
                     )
                   }
@@ -417,9 +402,7 @@ export default function RegistroPage() {
                     setPerfil(
                       (p) => ({
                         ...p,
-                        tenencia:
-                          e.target
-                            .value,
+                        tenencia: e.target.value as 'propietario' | 'inquilino',
                       }),
                     )
                   }

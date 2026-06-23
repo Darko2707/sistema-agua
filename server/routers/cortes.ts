@@ -1,106 +1,42 @@
-import { router, protectedProcedure, roleProcedure } from '../trpc';
+import { router, roleProcedure } from '../trpc';
 import { z } from 'zod';
-import { db } from '@/db';
-import { cortes, perfilesResidente } from '@/db/schema';
-import { eq, and } from 'drizzle-orm';
-import { TRPCError } from '@trpc/server';
+
+import { residenteRepo, pagoRepo, circuitoRepo } from '@/src/infrastructure/db/repositories';
+import { ConfirmarCorteHandler } from '@/src/application/cortes/commands/confirmar-corte.handler';
+import { ConfirmarReconexionHandler } from '@/src/application/cortes/commands/confirmar-reconexion.handler';
+import { PendientesCorteHandler } from '@/src/application/cortes/queries/pendientes-corte.handler';
+
+const confirmarCorteHandler     = new ConfirmarCorteHandler({ residenteRepo, pagoRepo });
+const confirmarReconexionHandler = new ConfirmarReconexionHandler({ residenteRepo, pagoRepo });
+const pendientesCorteHandler    = new PendientesCorteHandler({ residenteRepo, circuitoRepo });
 
 export const cortesRouter = router({
-  // Representante y cuadrilla: lista de residentes pendientes de corte de su circuito
   pendientesDeCorte: roleProcedure('representante', 'cuadrilla_cortes', 'admin')
     .query(async ({ ctx }) => {
-      const rol = (ctx.user as any).role;
-      let circuitoId: string | null = null;
-
-      if (rol === 'representante') {
-        const circ = await db.query.circuitos.findFirst({
-          where: (c, { eq }) => eq(c.representanteId, ctx.user.id),
-        });
-        circuitoId = circ?.id ?? null;
-      }
-
-      return db.query.perfilesResidente.findMany({
-        where: (p, { eq, and }) => circuitoId
-          ? and(eq(p.estadoAgua, 'pendiente_corte'), eq(p.circuitoId, circuitoId))
-          : eq(p.estadoAgua, 'pendiente_corte'),
-        with: { usuario: true, circuito: true },
-        orderBy: (p, { desc }) => [desc(p.creadoEn)],
-      });
+      const rol = (ctx.user as { role?: string }).role as 'representante' | 'cuadrilla_cortes' | 'admin';
+      return pendientesCorteHandler.execute({ rol, userId: ctx.user.id, tipo: 'corte' });
     }),
 
-  // Lista de residentes pendientes de reconexión
   pendientesDeReconexion: roleProcedure('cuadrilla_cortes', 'admin')
-    .query(async () => {
-      return db.query.perfilesResidente.findMany({
-        where: (p, { eq }) => eq(p.estadoAgua, 'pendiente_reconexion'),
-        with: { usuario: true, circuito: true },
-        orderBy: (p, { desc }) => [desc(p.creadoEn)],
-      });
+    .query(async ({ ctx }) => {
+      const rol = (ctx.user as { role?: string }).role as 'cuadrilla_cortes' | 'admin';
+      return pendientesCorteHandler.execute({ rol, userId: ctx.user.id, tipo: 'reconexion' });
     }),
 
-  // Cuadrilla: confirma que cortó físicamente el servicio
   confirmarCorte: roleProcedure('cuadrilla_cortes', 'admin')
     .input(z.object({ perfilId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      const perfil = await db.query.perfilesResidente.findFirst({
-        where: (p, { eq }) => eq(p.id, input.perfilId),
-      });
-      if (!perfil) throw new TRPCError({ code: 'NOT_FOUND' });
-      if (perfil.estadoAgua !== 'pendiente_corte') {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'El residente no está pendiente de corte' });
-      }
-
-      const [corte] = await db.insert(cortes).values({
-        perfilId: input.perfilId,
-        trabajadorId: ctx.user.id,
-        motivo: 'falta_pago',
-        activo: true,
-      }).returning();
-
-      await db.update(perfilesResidente)
-        .set({ estadoAgua: 'cortado' })
-        .where(eq(perfilesResidente.id, input.perfilId));
-
-      return corte;
+      return confirmarCorteHandler.execute({ perfilId: input.perfilId, trabajadorId: ctx.user.id });
     }),
 
-  // Lista de cortes activos
-  listarCortados: roleProcedure('cuadrilla_cortes', 'admin').query(async () => {
-    return db.query.perfilesResidente.findMany({
-      where: (p, { eq }) => eq(p.estadoAgua, 'cortado'),
-      with: { usuario: true, circuito: true },
-      orderBy: (p, { desc }) => [desc(p.creadoEn)],
-    });
-  }),
+  listarCortados: roleProcedure('cuadrilla_cortes', 'admin')
+    .query(async () => {
+      return residenteRepo.findByEstado('cortado');
+    }),
 
-  // Confirma reconexión física
   confirmarReconexion: roleProcedure('cuadrilla_cortes', 'admin')
     .input(z.object({ perfilId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      const perfil = await db.query.perfilesResidente.findFirst({
-        where: (p, { eq }) => eq(p.id, input.perfilId),
-      });
-      if (!perfil) throw new TRPCError({ code: 'NOT_FOUND' });
-      if (perfil.estadoAgua !== 'cortado' && perfil.estadoAgua !== 'pendiente_reconexion') {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'El residente no está cortado o pendiente de reconexión' });
-      }
-
-      const corteActivo = await db.query.cortes.findFirst({
-        where: (c, { eq, and }) => and(
-          eq(c.perfilId, input.perfilId),
-          eq(c.activo, true)
-        ),
-      });
-      if (corteActivo) {
-        await db.update(cortes)
-          .set({ activo: false, fechaReconexion: new Date(), reconectadoPor: ctx.user.id })
-          .where(eq(cortes.id, corteActivo.id));
-      }
-
-      await db.update(perfilesResidente)
-        .set({ estadoAgua: 'activo' })
-        .where(eq(perfilesResidente.id, input.perfilId));
-
-      return { ok: true };
+      return confirmarReconexionHandler.execute({ perfilId: input.perfilId, actorId: ctx.user.id });
     }),
 });

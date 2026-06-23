@@ -1,6 +1,6 @@
 // db/schema.ts
-import { pgTable, uuid, text, integer, decimal, timestamp, boolean, pgEnum } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { pgTable, uuid, text, integer, decimal, timestamp, boolean, pgEnum, uniqueIndex, index } from 'drizzle-orm/pg-core';
+import { relations, sql } from 'drizzle-orm';
 
 export const rolEnum = pgEnum('rol', [
   'admin',
@@ -97,7 +97,10 @@ export const perfilesResidente = pgTable('perfiles_residente', {
   departamento: text('departamento').notNull(),
   estadoAgua:   estadoAguaEnum('estado_agua').notNull().default('activo'),
   creadoEn:     timestamp('creado_en').defaultNow(),
-});
+}, (t) => [
+  // Dashboard: listar residentes por circuito; filtrar pendientes de corte/reconexión
+  index('idx_perfiles_circuito_estado').on(t.circuitoId, t.estadoAgua),
+]);
 
 // ─────────────────────────────────────────────
 // Pagos, cortes y tickets
@@ -124,7 +127,20 @@ export const pagos = pgTable('pagos', {
   esReconexion:           boolean('es_reconexion').default(false),
   fechaPago:              timestamp('fecha_pago'),
   creadoEn:               timestamp('creado_en').defaultNow(),
-});
+}, (t) => [
+  // Unicidad: un residente solo puede tener un pago 'pagado' por mes/año.
+  // Índice parcial → no bloquea registros pendientes/vencidos.
+  uniqueIndex('idx_pagos_pagado_por_mes')
+    .on(t.perfilId, t.mes, t.anio)
+    .where(sql`${t.estado} = 'pagado'`),
+
+  // Historial completo de un residente (miHistorial, historialDe).
+  // El índice parcial de arriba no cubre búsquedas sin filtro de estado.
+  index('idx_pagos_perfil_periodo').on(t.perfilId, t.mes, t.anio),
+
+  // Ordenamiento cronológico en listados admin.
+  index('idx_pagos_creado_en').on(t.creadoEn),
+]);
 
 export const cortes = pgTable('cortes', {
   id:              uuid('id').defaultRandom().primaryKey(),
