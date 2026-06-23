@@ -3,7 +3,8 @@
 import { signIn, signOut } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { Eye, EyeOff, Droplets } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
+import Image from 'next/image';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -74,46 +75,53 @@ export default function LoginPage() {
   }
 
   async function handleResetPassword(e: React.FormEvent) {
-  e.preventDefault();
-  setResetLoading(true);
-  setResetError('');
-  setResetSent(false);
+    e.preventDefault();
+    setResetLoading(true);
+    setResetError('');
+    setResetSent(false);
 
-  try {
-    const res = await fetch('/api/auth/request-password-reset', {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json',
-  },
-  body: JSON.stringify({
-    email: resetEmail,
-    redirectTo: '/reset-password',
-  }),
-});
+    try {
+      const res = await fetch('/api/auth/request-password-reset', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: resetEmail,
+          redirectTo: '/reset-password',
+        }),
+      });
 
-    if (res.ok) {
-      setResetSent(true);
-      setResetEmail('');
-      setTimeout(() => {
-        setShowReset(false);
-        setResetSent(false);
-      }, 5000);
-    } else {
-      const data = await res.json();
-      setResetError(data.error || 'Error al enviar el correo de recuperación');
+      if (res.ok) {
+        setResetSent(true);
+        setResetEmail('');
+        setTimeout(() => {
+          setShowReset(false);
+          setResetSent(false);
+        }, 5000);
+      } else {
+        const data = await res.json();
+        setResetError(data.error || 'Error al enviar el correo de recuperación');
+      }
+    } catch (err: unknown) {
+      setResetError(err instanceof Error ? err.message : 'Error al enviar el correo');
     }
-  } catch (err: unknown) {
-    setResetError(err instanceof Error ? err.message : 'Error al enviar el correo');
+    setResetLoading(false);
   }
-  setResetLoading(false);
-}
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-sky-100 via-white to-cyan-100 flex items-center justify-center p-4">
       <Card className="w-full max-w-md shadow-2xl border-0">
         <CardHeader className="space-y-5 text-center">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg">
-            <Droplets className="h-8 w-8" />
+          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg overflow-hidden">
+            <Image
+              src="/logo1SIS4S.png"
+              alt="SIS4S Logo"
+              width={80}
+              height={80}
+              className="object-contain"
+              priority
+            />
           </div>
           <div>
             <CardTitle className="text-3xl">Iniciar sesión</CardTitle>

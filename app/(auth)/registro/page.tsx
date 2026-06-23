@@ -6,7 +6,7 @@ import {
 } from 'react';
 import { authClient } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
-import { Droplets } from 'lucide-react';
+import Image from 'next/image';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -161,8 +161,15 @@ export default function RegistroPage() {
       <div className="min-h-screen bg-gradient-to-br from-sky-100 via-white to-cyan-100 flex items-center justify-center p-4">
         <Card className="w-full max-w-lg shadow-2xl">
           <CardHeader className="text-center space-y-4">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg">
-              <Droplets className="h-8 w-8" />
+            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg overflow-hidden">
+              <Image
+                src="/logo1SIS4S.png"
+                alt="SIS4S Logo"
+                width={80}
+                height={80}
+                className="object-contain"
+                priority
+              />
             </div>
 
             <div>
@@ -303,6 +310,16 @@ export default function RegistroPage() {
     <div className="min-h-screen bg-gradient-to-br from-sky-100 via-white to-cyan-100 flex items-center justify-center p-4">
       <Card className="w-full max-w-2xl shadow-2xl">
         <CardHeader className="space-y-4">
+          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg overflow-hidden">
+            <Image
+              src="/logo1SIS4S.png"
+              alt="SIS4S Logo"
+              width={80}
+              height={80}
+              className="object-contain"
+              priority
+            />
+          </div>
           <CardTitle className="text-3xl text-center">
             Completa tu perfil
           </CardTitle>
