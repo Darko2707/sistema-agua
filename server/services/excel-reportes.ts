@@ -26,6 +26,9 @@ export interface ResidenteReporte {
   edificio: string;
   departamento: string;
   estadoAgua: string;
+  tenencia: string | null;
+  nombrePropietario: string | null;
+  telefonoPropietario: string | null;
   pagosAnio: { mes: number; anio: number; monto: number | null; estado: 'pagado' | 'pendiente' }[];
   totalPagado: number;
   mesesSinPagar: number;
@@ -46,14 +49,14 @@ export async function generarReporteResidentesExcel(params: {
   const periodos = params.residentes[0]?.pagosAnio ?? [];
 
   // ── Título ────────────────────────────────────────────────────
-  ws.mergeCells(1, 1, 1, 8 + periodos.length);
+  ws.mergeCells(1, 1, 1, 10 + periodos.length);
   const titleCell = ws.getCell('A1');
   titleCell.value = `Reporte de Residentes — ${params.circuito}`;
   titleCell.font  = { bold: true, size: 16, color: { argb: 'FF' + COLOR_HEADER } };
   titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
   ws.getRow(1).height = 30;
 
-  ws.mergeCells(2, 1, 2, 8 + periodos.length);
+  ws.mergeCells(2, 1, 2, 10 + periodos.length);
   const subCell = ws.getCell('A2');
   subCell.value = `Generado: ${params.generadoEn.toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}`;
   subCell.font  = { size: 10, color: { argb: 'FF6B7280' } };
@@ -62,7 +65,7 @@ export async function generarReporteResidentesExcel(params: {
 
   // ── Encabezados ───────────────────────────────────────────────
   const headerRow = ws.addRow([
-    'Nombre', 'Teléfono', 'Edificio', 'Depto.', 'Estado',
+    'Nombre', 'Teléfono', 'Edificio', 'Depto.', 'Estado', 'Tenencia', 'Propietario / Tel.',
     ...periodos.map(p => `${MESES_ES[p.mes - 1]} ${String(p.anio).slice(2)}`),
     'Total 12m', 'Sin pagar', 'Último pago',
   ]);
@@ -83,12 +86,18 @@ export async function generarReporteResidentesExcel(params: {
   };
 
   params.residentes.forEach((r, i) => {
+    const propietarioInfo = r.tenencia === 'inquilino' && r.nombrePropietario
+      ? `${r.nombrePropietario}${r.telefonoPropietario ? ' · ' + r.telefonoPropietario : ''}`
+      : '';
+
     const rowData: (string | number | null)[] = [
       r.nombre,
       r.telefono,
       r.edificio,
       r.departamento,
       estadoLabel[r.estadoAgua] ?? r.estadoAgua,
+      r.tenencia === 'inquilino' ? 'Inquilino' : 'Propietario',
+      propietarioInfo || '—',
       ...r.pagosAnio.map(p => p.estado === 'pagado' ? 'SI' : 'NO'),
       r.totalPagado,
       r.mesesSinPagar,
@@ -101,9 +110,9 @@ export async function generarReporteResidentesExcel(params: {
     row.eachCell({ includeEmpty: true }, (cell, colNum) => {
       cell.border    = border();
       cell.alignment = { horizontal: 'center', vertical: 'middle' };
-      // columnas de mes (6 a 5+periodos.length)
+      // columnas de mes (8 a 7+periodos.length)
       const mesCols = periodos.length;
-      if (colNum >= 6 && colNum <= 5 + mesCols) {
+      if (colNum >= 8 && colNum <= 7 + mesCols) {
         const pagado = cell.value === 'SI';
         cell.fill = headerFill(pagado ? COLOR_PAGADO.replace('#','') : COLOR_NO_PAGO.replace('#',''));
         cell.font = { bold: true, color: { argb: pagado ? 'FF065F46' : 'FF991B1B' }, size: 9 };
@@ -111,11 +120,16 @@ export async function generarReporteResidentesExcel(params: {
         cell.fill = headerFill(isAlt ? COLOR_ROW_ALT : COLOR_WHITE);
         cell.font = { size: 9 };
         if (colNum === 1) { cell.alignment.horizontal = 'left'; }
+        // Propietario en ámbar si es inquilino
+        if (colNum === 7 && r.tenencia === 'inquilino' && r.nombrePropietario) {
+          cell.font = { size: 9, color: { argb: 'FFB45309' } };
+          cell.alignment.horizontal = 'left';
+        }
       }
     });
 
     // Total pagado en verde
-    const totalCol = 6 + periodos.length;
+    const totalCol = 8 + periodos.length;
     const totalCell = row.getCell(totalCol);
     totalCell.numFmt = '"$"#,##0.00';
     totalCell.font   = { bold: true, color: { argb: 'FF065F46' }, size: 9 };
@@ -129,10 +143,9 @@ export async function generarReporteResidentesExcel(params: {
 
   // ── Resumen al final ──────────────────────────────────────────
   ws.addRow([]);
-  const totalCols = 8 + periodos.length;
   const sumRow = ws.addRow([
     `Total residentes: ${params.residentes.length}`,
-    '', '', '', '',
+    '', '', '', '', '', '',
     ...periodos.map((_,idx) => {
       const count = params.residentes.filter(r => r.pagosAnio[idx]?.estado === 'pagado').length;
       return count;
@@ -143,13 +156,13 @@ export async function generarReporteResidentesExcel(params: {
   ]);
   sumRow.height = 20;
   sumRow.eachCell({ includeEmpty: true }, (cell, colNum) => {
-    if (colNum === 1 || colNum >= 6) {
+    if (colNum === 1 || colNum >= 8) {
       cell.fill   = headerFill('EFF6FF');
       cell.font   = { bold: true, size: 9, color: { argb: 'FF1E40AF' } };
       cell.border = border();
       cell.alignment = { horizontal: 'center', vertical: 'middle' };
     }
-    if (colNum === 6 + periodos.length) {
+    if (colNum === 8 + periodos.length) {
       cell.numFmt = '"$"#,##0.00';
     }
   });
@@ -161,13 +174,15 @@ export async function generarReporteResidentesExcel(params: {
   ws.getColumn(3).width  = 9;  // edificio
   ws.getColumn(4).width  = 9;  // depto
   ws.getColumn(5).width  = 14; // estado
-  for (let c = 6; c <= 5 + periodos.length; c++) ws.getColumn(c).width = 8;
-  ws.getColumn(6 + periodos.length).width     = 11; // total
-  ws.getColumn(6 + periodos.length + 1).width = 10; // sin pagar
-  ws.getColumn(6 + periodos.length + 2).width = 13; // último pago
+  ws.getColumn(6).width  = 12; // tenencia
+  ws.getColumn(7).width  = 28; // propietario / tel
+  for (let c = 8; c <= 7 + periodos.length; c++) ws.getColumn(c).width = 8;
+  ws.getColumn(8 + periodos.length).width     = 11; // total
+  ws.getColumn(8 + periodos.length + 1).width = 10; // sin pagar
+  ws.getColumn(8 + periodos.length + 2).width = 13; // último pago
 
-  // Congelar filas de título + encabezado
-  ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 3 }];
+  // Congelar filas título+encabezado y primeras 5 columnas
+  ws.views = [{ state: 'frozen', xSplit: 5, ySplit: 3 }];
 
   return Buffer.from(await wb.xlsx.writeBuffer() as ArrayBuffer);
 }

@@ -78,11 +78,14 @@ export async function GET(req: Request) {
       .filter(p => p.estado === 'pagado' && p.fechaPago)
       .sort((a, b) => new Date(b.fechaPago!).getTime() - new Date(a.fechaPago!).getTime())[0]?.fechaPago ?? null;
     return {
-      nombre:       r.usuario.name,
-      telefono:     r.telefono,
-      edificio:     r.edificio,
-      departamento: r.departamento,
-      estadoAgua:   r.estadoAgua,
+      nombre:              r.usuario.name,
+      telefono:            r.telefono,
+      edificio:            r.edificio,
+      departamento:        r.departamento,
+      estadoAgua:          r.estadoAgua,
+      tenencia:            r.tenencia ?? null,
+      nombrePropietario:   r.nombrePropietario ?? null,
+      telefonoPropietario: r.telefonoPropietario ?? null,
       pagosAnio,
       totalPagado,
       mesesSinPagar,
