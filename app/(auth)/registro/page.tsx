@@ -161,7 +161,7 @@ export default function RegistroPage() {
       <div className="min-h-screen bg-gradient-to-br from-sky-100 via-white to-cyan-100 flex items-center justify-center p-4">
         <Card className="w-full max-w-lg shadow-2xl">
           <CardHeader className="text-center space-y-4">
-            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg overflow-hidden">
+            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl overflow-hidden">
               <Image
                 src="/logo1SIS4S.png"
                 alt="SIS4S Logo"
@@ -310,7 +310,7 @@ export default function RegistroPage() {
     <div className="min-h-screen bg-gradient-to-br from-sky-100 via-white to-cyan-100 flex items-center justify-center p-4">
       <Card className="w-full max-w-2xl shadow-2xl">
         <CardHeader className="space-y-4">
-          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg overflow-hidden">
+          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl overflow-hidden">
             <Image
               src="/logo1SIS4S.png"
               alt="SIS4S Logo"

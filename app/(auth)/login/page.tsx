@@ -113,7 +113,7 @@ export default function LoginPage() {
     <div className="min-h-screen bg-gradient-to-br from-sky-100 via-white to-cyan-100 flex items-center justify-center p-4">
       <Card className="w-full max-w-md shadow-2xl border-0">
         <CardHeader className="space-y-5 text-center">
-          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-lg overflow-hidden">
+          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl overflow-hidden">
             <Image
               src="/logo1SIS4S.png"
               alt="SIS4S Logo"
