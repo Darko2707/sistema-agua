@@ -23,7 +23,9 @@ export async function POST(request: Request) {
   const perfil = await residenteRepo.findByUserId(session.user.id);
   if (!perfil) return Response.json({ error: 'Completa tu perfil primero' }, { status: 400 });
   if (!perfil.circuito?.representanteId) return Response.json({ error: 'Tu circuito no tiene representante asignado' }, { status: 400 });
-  if (!perfil.circuito.mercadoPagoAccessToken) {
+  // El token ya viene descifrado desde el repositorio
+  const accessToken = perfil.circuito.mercadoPagoAccessToken;
+  if (!accessToken) {
     return Response.json({ error: 'El representante de tu circuito aun no tiene Mercado Pago configurado' }, { status: 400 });
   }
 
@@ -41,7 +43,7 @@ export async function POST(request: Request) {
   const externalReference = ['agua', perfil.id, periodo.mes, periodo.anio, esReconexion ? '1' : '0', desglose.montoBase].join('|');
   const baseUrl = appUrl.replace(/\/$/, '');
   const referenceParam = encodeURIComponent(externalReference);
-  const { preferenceClient } = createMercadoPagoClients(perfil.circuito.mercadoPagoAccessToken);
+  const { preferenceClient } = createMercadoPagoClients(accessToken);
 
   const preference = await preferenceClient.create({
     body: {

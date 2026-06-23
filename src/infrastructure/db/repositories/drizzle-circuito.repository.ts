@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { circuitos } from '@/db/schema';
+import { decryptTokenSafe } from '@/lib/crypto';
 import type { CircuitoRepository, CircuitoData } from '@/src/application/ports/circuito.repository';
 
 function toData(row: typeof circuitos.$inferSelect): CircuitoData {
@@ -10,7 +11,9 @@ function toData(row: typeof circuitos.$inferSelect): CircuitoData {
     representanteId:        row.representanteId ?? null,
     montoMensual:           row.montoMensual,
     montoReconexion:        row.montoReconexion,
-    mercadoPagoAccessToken: row.mercadoPagoAccessToken ?? null,
+    // Descifrar el token al leer — soporta valores cifrados y texto plano
+    // (compatibilidad hacia atrás durante la migración)
+    mercadoPagoAccessToken: decryptTokenSafe(row.mercadoPagoAccessToken),
     mercadoPagoCollectorId: row.mercadoPagoCollectorId ?? null,
     activo:                 row.activo,
   };

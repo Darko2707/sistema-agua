@@ -1,6 +1,7 @@
 import { InvalidWebhookSignatureError, WebhookSignatureValidator } from 'mercadopago';
 
 import { createMercadoPagoClients } from '@/lib/mercadopago';
+import { decryptTokenSafe } from '@/lib/crypto';
 import { db } from '@/db';
 import { parseExternalReference, type ExternalReference } from '@/src/infrastructure/mercadopago/parser';
 import { residenteRepo, pagoRepo, circuitoRepo } from '@/src/infrastructure/db/repositories';
@@ -15,7 +16,8 @@ async function getPaymentClientForReference(reference: ExternalReference | null)
     where: (p, { eq }) => eq(p.id, reference.perfilId),
     with: { circuito: true },
   });
-  const accessToken = perfil?.circuito?.mercadoPagoAccessToken;
+  // Descifrar el token antes de usarlo
+  const accessToken = decryptTokenSafe(perfil?.circuito?.mercadoPagoAccessToken);
   return accessToken ? createMercadoPagoClients(accessToken).paymentClient : null;
 }
 
@@ -24,15 +26,22 @@ export async function POST(request: Request) {
     const url = new URL(request.url);
     const webhookSecret = process.env.MP_WEBHOOK_SECRET;
 
-    if (webhookSecret) {
-      WebhookSignatureValidator.validate({
-        xSignature:       request.headers.get('x-signature'),
-        xRequestId:       request.headers.get('x-request-id'),
-        dataId:           url.searchParams.get('data.id'),
-        secret:           webhookSecret,
-        toleranceSeconds: 300,
+    // La firma es OBLIGATORIA. Sin MP_WEBHOOK_SECRET cualquiera podría
+    // enviar webhooks falsos y acreditar pagos que no existen.
+    if (!webhookSecret) {
+      logger.error('mp.webhook.misconfigured', undefined, {
+        message: 'MP_WEBHOOK_SECRET no está configurado — endpoint deshabilitado',
       });
+      return new Response('Service Unavailable', { status: 503 });
     }
+
+    WebhookSignatureValidator.validate({
+      xSignature:       request.headers.get('x-signature'),
+      xRequestId:       request.headers.get('x-request-id'),
+      dataId:           url.searchParams.get('data.id'),
+      secret:           webhookSecret,
+      toleranceSeconds: 300,
+    });
 
     const payload = await request.json().catch(() => ({}));
     const paymentId =

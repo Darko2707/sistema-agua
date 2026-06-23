@@ -18,10 +18,10 @@ export const pagosRouter = router({
     return historialPagosHandler.execute({ perfilId: ctx.user.id });
   }),
 
-  pagar: protectedProcedure
+  pagar: roleProcedure('residente')
     .input(z.object({ metodo: z.enum(['transferencia', 'efectivo']) }))
     .mutation(async ({ ctx, input }) => {
-      // Pago propio del residente via transferencia/efectivo (no MP)
+      // Solo residentes pueden registrar su propio pago
       const perfil = await residenteRepo.findByUserId(ctx.user.id);
       if (!perfil) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Completa tu perfil primero' });
       if (!perfil.circuito) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Circuito no encontrado' });

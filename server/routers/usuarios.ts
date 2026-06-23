@@ -10,7 +10,13 @@ import { user, account, circuitos, perfilesResidente } from '@/db/schema';
 import { residenteRepo, circuitoRepo } from '@/src/infrastructure/db/repositories';
 import { CrearPerfilHandler } from '@/src/application/residentes/commands/crear-perfil.handler';
 import { ListarResidentesHandler } from '@/src/application/residentes/queries/listar-residentes.handler';
+import { encryptToken } from '@/lib/crypto';
 import { logger } from '@/lib/logger';
+
+function encryptMpToken(token: string | undefined): string | undefined {
+  if (!token) return undefined;
+  try { return encryptToken(token); } catch { return token; }
+}
 
 const crearPerfilHandler    = new CrearPerfilHandler({ residenteRepo, circuitoRepo });
 const listarResidentesHandler = new ListarResidentesHandler({ residenteRepo, circuitoRepo });
@@ -155,7 +161,7 @@ export const usuariosRouter = router({
         await db.update(circuitos)
           .set({
             representanteId: userId,
-            ...(input.mercadoPagoAccessToken ? { mercadoPagoAccessToken: input.mercadoPagoAccessToken } : {}),
+            ...(input.mercadoPagoAccessToken ? { mercadoPagoAccessToken: encryptMpToken(input.mercadoPagoAccessToken) } : {}),
             ...(input.mercadoPagoCollectorId ? { mercadoPagoCollectorId: input.mercadoPagoCollectorId } : {}),
           })
           .where(eq(circuitos.id, input.circuitoId));
@@ -193,7 +199,7 @@ export const usuariosRouter = router({
         await db.update(circuitos)
           .set({
             representanteId: input.id,
-            ...(input.mercadoPagoAccessToken ? { mercadoPagoAccessToken: input.mercadoPagoAccessToken } : {}),
+            ...(input.mercadoPagoAccessToken ? { mercadoPagoAccessToken: encryptMpToken(input.mercadoPagoAccessToken) } : {}),
             ...(input.mercadoPagoCollectorId ? { mercadoPagoCollectorId: input.mercadoPagoCollectorId } : {}),
           })
           .where(eq(circuitos.id, input.circuitoId));
