@@ -23,6 +23,13 @@ export const estadoAguaEnum = pgEnum('estado_agua', [
   'pendiente_reconexion',
 ]);
 
+export const categoriaGastoEnum = pgEnum('categoria_gasto', [
+  'mantenimiento',
+  'administracion',
+  'servicios',
+  'otros',
+]);
+
 // ─────────────────────────────────────────────
 // Better Auth — tablas requeridas
 // ─────────────────────────────────────────────
@@ -162,6 +169,21 @@ export const tickets = pgTable('tickets', {
   emitidoEn: timestamp('emitido_en').defaultNow(),
 });
 
+export const gastosCircuito = pgTable('gastos_circuito', {
+  id:              uuid('id').defaultRandom().primaryKey(),
+  circuitoId:      uuid('circuito_id').notNull().references(() => circuitos.id, { onDelete: 'cascade' }),
+  representanteId: text('representante_id').notNull().references(() => user.id),
+  concepto:        text('concepto').notNull(),
+  monto:           decimal('monto', { precision: 10, scale: 2 }).notNull(),
+  categoria:       categoriaGastoEnum('categoria').notNull().default('otros'),
+  fecha:           timestamp('fecha').notNull().defaultNow(),
+  mes:             integer('mes').notNull(),
+  anio:            integer('anio').notNull(),
+  creadoEn:        timestamp('creado_en').defaultNow(),
+}, (t) => [
+  index('idx_gastos_circuito_periodo').on(t.circuitoId, t.mes, t.anio),
+]);
+
 // ─────────────────────────────────────────────
 // Relaciones
 // ─────────────────────────────────────────────
@@ -174,8 +196,20 @@ export const userRelations = relations(user, ({ one, many }) => ({
 
 export const circuitosRelations = relations(circuitos, ({ many, one }) => ({
   perfiles: many(perfilesResidente),
+  gastos:   many(gastosCircuito),
   representante: one(user, {
     fields: [circuitos.representanteId],
+    references: [user.id],
+  }),
+}));
+
+export const gastosCircuitoRelations = relations(gastosCircuito, ({ one }) => ({
+  circuito: one(circuitos, {
+    fields: [gastosCircuito.circuitoId],
+    references: [circuitos.id],
+  }),
+  representante: one(user, {
+    fields: [gastosCircuito.representanteId],
     references: [user.id],
   }),
 }));

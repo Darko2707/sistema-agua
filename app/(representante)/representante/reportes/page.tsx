@@ -1,161 +1,70 @@
 'use client';
 
-import { useMemo } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { useState } from 'react';
+import { ArrowLeft, FileBarChart, BarChart2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { trpcReact } from '@/lib/trpc-react';
 
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { Button }   from '@/components/ui/button';
+import { ReporteResidentes } from '@/components/representante/ReporteResidentes';
+import { ReporteFinanciero } from '@/components/representante/ReporteFinanciero';
 
-function moneda(valor: string | number | null) {
-  return Number(valor ?? 0).toLocaleString('es-MX', {
-    style: 'currency',
-    currency: 'MXN',
-  });
-}
+type TabId = 'residentes' | 'financiero';
+
+const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
+  { id: 'residentes', label: 'Residentes',  icon: <FileBarChart className="h-4 w-4" /> },
+  { id: 'financiero', label: 'Financiero',  icon: <BarChart2 className="h-4 w-4" /> },
+];
 
 export default function RepresentanteReportesPage() {
-  const router = useRouter();
-
-  const pagosQuery   = trpcReact.pagos.reportePagos.useQuery();
+  const router   = useRouter();
+  const [tab, setTab] = useState<TabId>('residentes');
   const circuitoQuery = trpcReact.circuitos.miCircuito.useQuery();
 
-  const pagosRaw = pagosQuery.data ?? [];
-  const pagos = pagosRaw.map((p) => ({
-    id:                     p.id,
-    folio:                  p.folio,
-    mes:                    p.mes,
-    anio:                   p.anio,
-    monto:                  p.monto,
-    montoBase:              p.montoBase,
-    iva:                    p.iva,
-    comisionMercadoPago:    p.comisionMercadoPago,
-    retencionIsr:           p.retencionIsr,
-    retencionIva:           p.retencionIva,
-    montoNetoRepresentante: p.montoNetoRepresentante,
-    edificio:               p.perfil?.edificio ?? '',
-    departamento:           p.perfil?.departamento ?? '',
-  }));
-
-  const cargando = pagosQuery.isLoading || circuitoQuery.isLoading;
-  const error    = pagosQuery.error?.message ?? circuitoQuery.error?.message ?? null;
-
-  const totales = useMemo(
-    () =>
-      pagos.reduce(
-        (acc, pago) => ({
-          base:       acc.base       + Number(pago.montoBase              ?? 0),
-          iva:        acc.iva        + Number(pago.iva                    ?? 0),
-          comision:   acc.comision   + Number(pago.comisionMercadoPago    ?? 0),
-          isr:        acc.isr        + Number(pago.retencionIsr           ?? 0),
-          ivaRetenido: acc.ivaRetenido + Number(pago.retencionIva         ?? 0),
-          neto:       acc.neto       + Number(pago.montoNetoRepresentante ?? 0),
-        }),
-        { base: 0, iva: 0, comision: 0, isr: 0, ivaRetenido: 0, neto: 0 }
-      ),
-    [pagos]
-  );
-
-  if (cargando) {
-    return (
-      <div className="min-h-screen bg-slate-50 p-4 md:p-8">
-        <p className="text-muted-foreground">Cargando...</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-8">
-      <div className="mx-auto max-w-7xl space-y-6">
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Reportes de pagos</h1>
-            <p className="mt-1 text-sm text-muted-foreground">
-              {circuitoQuery.data?.nombre ?? 'Circuito sin asignar'}
-            </p>
+    <div className="min-h-screen bg-slate-50">
+      {/* Top bar */}
+      <div className="border-b bg-background sticky top-0 z-10">
+        <div className="mx-auto max-w-7xl px-4 py-3 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="sm" onClick={() => router.push('/representante')} className="gap-1">
+              <ArrowLeft className="h-4 w-4" />
+              Volver
+            </Button>
+            <div>
+              <h1 className="text-lg font-semibold leading-none">Reportes</h1>
+              {circuitoQuery.data?.nombre && (
+                <p className="text-xs text-muted-foreground mt-0.5">{circuitoQuery.data.nombre}</p>
+              )}
+            </div>
           </div>
-          <Button variant="outline" onClick={() => router.push('/representante')}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            Volver
-          </Button>
         </div>
 
-        {error && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">{error}</div>}
-
-        <div className="grid gap-4 md:grid-cols-3">
-          <Card>
-            <CardContent className="p-5">
-              <p className="text-sm text-muted-foreground">Base</p>
-              <p className="text-2xl font-bold">{moneda(totales.base)}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-5">
-              <p className="text-sm text-muted-foreground">Comisiones y retenciones</p>
-              <p className="text-2xl font-bold">{moneda(totales.comision + totales.isr + totales.ivaRetenido)}</p>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-5">
-              <p className="text-sm text-muted-foreground">Neto representante</p>
-              <p className="text-2xl font-bold text-green-600">{moneda(totales.neto)}</p>
-            </CardContent>
-          </Card>
+        {/* Tabs */}
+        <div className="mx-auto max-w-7xl px-4">
+          <nav className="flex gap-1">
+            {TABS.map(t => (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+                  tab === t.id
+                    ? 'border-sky-600 text-sky-600'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {t.icon}
+                {t.label}
+              </button>
+            ))}
+          </nav>
         </div>
+      </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Desglose de pagos</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Periodo</TableHead>
-                  <TableHead>Departamento</TableHead>
-                  <TableHead>Base</TableHead>
-                  <TableHead>IVA</TableHead>
-                  <TableHead>Comision MP</TableHead>
-                  <TableHead>ISR</TableHead>
-                  <TableHead>IVA retenido</TableHead>
-                  <TableHead>Neto</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {pagos.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
-                      Sin pagos registrados.
-                    </TableCell>
-                  </TableRow>
-                )}
-                {pagos.map((pago) => (
-                  <TableRow key={pago.id}>
-                    <TableCell>{pago.mes}/{pago.anio}</TableCell>
-                    <TableCell>{pago.edificio} - {pago.departamento}</TableCell>
-                    <TableCell>{moneda(pago.montoBase)}</TableCell>
-                    <TableCell>{moneda(pago.iva)}</TableCell>
-                    <TableCell>{moneda(pago.comisionMercadoPago)}</TableCell>
-                    <TableCell>{moneda(pago.retencionIsr)}</TableCell>
-                    <TableCell>{moneda(pago.retencionIva)}</TableCell>
-                    <TableCell className="font-medium text-green-700">
-                      {moneda(pago.montoNetoRepresentante)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+      {/* Content */}
+      <div className="mx-auto max-w-7xl px-4 py-6">
+        {tab === 'residentes' && <ReporteResidentes />}
+        {tab === 'financiero' && <ReporteFinanciero />}
       </div>
     </div>
   );
