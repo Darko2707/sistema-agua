@@ -7,7 +7,7 @@ import { RegistrarPagoManualHandler } from '@/src/application/pagos/commands/reg
 import { HistorialPagosHandler } from '@/src/application/pagos/queries/historial-pagos.handler';
 import { ResumenMesHandler } from '@/src/application/pagos/queries/resumen-mes.handler';
 import { db } from '@/db';
-import { obtenerPeriodoVigente } from '../utils';
+import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
 
 const registrarPagoManualHandler = new RegistrarPagoManualHandler({ residenteRepo, pagoRepo, circuitoRepo });
 const historialPagosHandler = new HistorialPagosHandler({ pagoRepo, residenteRepo });
@@ -91,7 +91,8 @@ export const pagosRouter = router({
       anio:       z.number().optional(),
     }))
     .query(async ({ ctx, input }) => {
-      const { mes, anio } = obtenerPeriodoVigente();
+      const periodo = PeriodoVO.vigente();
+      const { mes, anio } = periodo;
       const mesFiltro  = input.mes  || mes;
       const anioFiltro = input.anio || anio;
       const rol = (ctx.user as { role?: string }).role;

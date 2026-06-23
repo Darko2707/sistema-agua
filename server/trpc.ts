@@ -1,7 +1,29 @@
 import { initTRPC, TRPCError } from '@trpc/server';
 import { auth } from '@/lib/auth';
 import { db } from '@/db';
-import { verificarAccesoPorCircuito } from './utils';
+
+async function verificarAccesoPorCircuito(userId: string, role?: string | null) {
+  if (role === 'residente') {
+    const perfil = await db.query.perfilesResidente.findFirst({
+      where: (p, { eq }) => eq(p.userId, userId),
+      with: { circuito: true },
+    });
+    if (perfil?.circuito && !perfil.circuito.activo) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Tu circuito esta inhabilitado. Contacta al administrador.' });
+    }
+    return perfil;
+  }
+  if (role === 'representante') {
+    const circuito = await db.query.circuitos.findFirst({
+      where: (c, { eq }) => eq(c.representanteId, userId),
+    });
+    if (circuito && !circuito.activo) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Tu circuito esta inhabilitado. Contacta al administrador.' });
+    }
+    return circuito;
+  }
+  return null;
+}
 
 export const createTRPCContext = async (opts: { headers: Headers }) => {
   const session = await auth.api.getSession({ headers: opts.headers });

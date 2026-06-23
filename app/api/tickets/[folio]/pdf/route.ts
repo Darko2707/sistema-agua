@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { tickets } from '@/db/schema';
 import { auth } from '@/lib/auth';
-import { generarTicketPDF } from '@/lib/ticket';
+import { generarTicketPDF } from '@/server/services/pdf';
 import { storageGet, storagePut } from '@/lib/storage';
 import { logger } from '@/lib/logger';
 

@@ -1,5 +1,5 @@
 import { Badge } from '@/components/ui/badge';
-import { ESTADOS, type EstadoAgua } from '@/domain/agua/state-machine';
+import { ESTADOS, type EstadoAgua } from '@/src/domain/agua/state-machine';
 
 // ─── Mapa canónico: estado → presentación ────────────────────────────────────
 // Única fuente de verdad para labels y colores del estado del servicio de agua.
