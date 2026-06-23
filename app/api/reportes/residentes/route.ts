@@ -2,6 +2,23 @@ import { auth } from '@/lib/auth';
 import { db } from '@/db';
 import { generarReporteResidentesPDF } from '@/server/services/pdf-reportes';
 
+function parsarDepto(depto: string) {
+  const m = depto.match(/^(\d+)([a-zA-Z]?)$/);
+  if (m) return { numero: parseInt(m[1], 10), letra: m[2].toLowerCase() };
+  return { numero: 0, letra: depto.toLowerCase() };
+}
+
+function sortPorEdificio<T extends { edificio: string; departamento: string }>(arr: T[]): T[] {
+  return [...arr].sort((a, b) => {
+    const ea = parseInt(a.edificio, 10), eb = parseInt(b.edificio, 10);
+    const edifCmp = isNaN(ea) || isNaN(eb) ? a.edificio.localeCompare(b.edificio) : ea - eb;
+    if (edifCmp !== 0) return edifCmp;
+    const da = parsarDepto(a.departamento), db2 = parsarDepto(b.departamento);
+    if (da.letra !== db2.letra) return da.letra.localeCompare(db2.letra);
+    return da.numero - db2.numero;
+  });
+}
+
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: Request) {
@@ -31,7 +48,6 @@ export async function GET(req: Request) {
       return and(...conds as [ReturnType<typeof eq>]);
     },
     with: { usuario: true },
-    orderBy: (p, { asc }) => [asc(p.edificio), asc(p.departamento)],
   });
 
   // Ultimos 12 meses
@@ -74,16 +90,20 @@ export async function GET(req: Request) {
     };
   });
 
-  if (orden === 'nombre') residentesData.sort((a, b) => a.nombre.localeCompare(b.nombre));
-  else if (orden === 'estado') {
+  let ordenados = residentesData;
+  if (orden === 'nombre') {
+    ordenados = [...residentesData].sort((a, b) => a.nombre.localeCompare(b.nombre));
+  } else if (orden === 'estado') {
     const pr: Record<string, number> = { activo: 0, pendiente_corte: 1, pendiente_reconexion: 2, cortado: 3 };
-    residentesData.sort((a, b) => (pr[a.estadoAgua] ?? 4) - (pr[b.estadoAgua] ?? 4));
+    ordenados = [...residentesData].sort((a, b) => (pr[a.estadoAgua] ?? 4) - (pr[b.estadoAgua] ?? 4));
+  } else {
+    ordenados = sortPorEdificio(residentesData);
   }
 
   const pdfBytes = await generarReporteResidentesPDF({
     circuito:   circuito.nombre,
     generadoEn: new Date(),
-    residentes: residentesData,
+    residentes: ordenados,
   });
 
   return new Response(pdfBytes, {

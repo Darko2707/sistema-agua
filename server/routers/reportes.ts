@@ -8,6 +8,24 @@ import { gastosCircuito } from '@/db/schema';
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 
+// Edif. 8 < Edif. 10; dentro del edificio: 314a, 315a, 314b, 315b, 314c, 315c
+function parsarDepto(depto: string): { letra: string; numero: number } {
+  const m = depto.match(/^(\d+)([a-zA-Z]?)$/);
+  if (m) return { numero: parseInt(m[1], 10), letra: m[2].toLowerCase() };
+  return { numero: 0, letra: depto.toLowerCase() };
+}
+
+function sortPorEdificio<T extends { edificio: string; departamento: string }>(arr: T[]): T[] {
+  return [...arr].sort((a, b) => {
+    const ea = parseInt(a.edificio, 10), eb = parseInt(b.edificio, 10);
+    const edifCmp = isNaN(ea) || isNaN(eb) ? a.edificio.localeCompare(b.edificio) : ea - eb;
+    if (edifCmp !== 0) return edifCmp;
+    const da = parsarDepto(a.departamento), db = parsarDepto(b.departamento);
+    if (da.letra !== db.letra) return da.letra.localeCompare(db.letra);
+    return da.numero - db.numero;
+  });
+}
+
 function ultimos12Meses(): { mes: number; anio: number }[] {
   const hoy = new Date();
   const periodos: { mes: number; anio: number }[] = [];
@@ -51,7 +69,6 @@ export const reportesRouter = router({
           return and(...conds as [ReturnType<typeof eq>]);
         },
         with: { usuario: true },
-        orderBy: (p, { asc }) => [asc(p.edificio), asc(p.departamento)],
       });
 
       const periodos = ultimos12Meses();
@@ -123,14 +140,16 @@ export const reportesRouter = router({
         };
       });
 
-      // Ordenamiento adicional
+      // Ordenamiento
       if (input.orden === 'nombre') {
         resultado.sort((a, b) => a.nombre.localeCompare(b.nombre));
       } else if (input.orden === 'estado') {
-        const prioridad = { activo: 0, pendiente_corte: 1, pendiente_reconexion: 2, cortado: 3 };
-        resultado.sort((a, b) => prioridad[a.estadoAgua] - prioridad[b.estadoAgua]);
+        const prioridad: Record<string, number> = { activo: 0, pendiente_corte: 1, pendiente_reconexion: 2, cortado: 3 };
+        resultado.sort((a, b) => (prioridad[a.estadoAgua] ?? 4) - (prioridad[b.estadoAgua] ?? 4));
+      } else {
+        // 'edificio': numérico + letra de piso dentro del edificio
+        return sortPorEdificio(resultado);
       }
-      // 'edificio' ya viene ordenado desde la DB
 
       return resultado;
     }),
