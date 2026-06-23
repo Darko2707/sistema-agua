@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { authClient, useSession } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
+import { trpc } from '@/lib/trpc-client';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -74,62 +75,34 @@ export default function TrabajadorPage() {
     cargarDatos();
   }, []);
 
-  // ✅ CORREGIDO: Formato tRPC batch
+  // ✅ Usando cliente vanilla tRPC
   async function handleConfirmarCorte(perfilId: string) {
     setProcesando(perfilId);
     setError(null);
 
     try {
-      const res = await fetch('/api/trpc/cortes.confirmarCorte', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 0: { json: { perfilId } } }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data?.[0]?.error?.json?.message || 'Error al confirmar corte');
-      }
-
+      await trpc.cortes.confirmarCorte.mutate({ perfilId });
       await cargarDatos();
-    } catch (err: any) {
-      setError(err.message);
-      console.error('Error:', err);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Error al confirmar corte');
+    } finally {
+      setProcesando(null);
     }
-
-    setProcesando(null);
   }
 
-  // ✅ CORREGIDO: Formato tRPC batch
+  // ✅ Usando cliente vanilla tRPC
   async function handleConfirmarReconexion(perfilId: string) {
     setProcesando(perfilId);
     setError(null);
 
     try {
-      const res = await fetch('/api/trpc/cortes.confirmarReconexion', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 0: { json: { perfilId } } }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data?.[0]?.error?.json?.message || 'Error al confirmar reconexión');
-      }
-
+      await trpc.cortes.confirmarReconexion.mutate({ perfilId });
       await cargarDatos();
-    } catch (err: any) {
-      setError(err.message);
-      console.error('Error:', err);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Error al confirmar reconexión');
+    } finally {
+      setProcesando(null);
     }
-
-    setProcesando(null);
   }
 
   async function salir() {
