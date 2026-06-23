@@ -1,40 +1,16 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ArrowLeft, Pencil, Plus, Save, Trash2, X } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { trpcReact } from '@/lib/trpc-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
-
-type Circuito = {
-  id: string;
-  nombre: string;
-  representanteId: string | null;
-  mercadoPagoAccessToken: string | null;
-  mercadoPagoCollectorId: string | null;
-};
-
-type Representante = {
-  id: string;
-  name: string;
-  email: string;
-  circuito: {
-    id: string;
-    nombre: string;
-    mercadoPagoAccessToken: string | null;
-    mercadoPagoCollectorId: string | null;
-  } | null;
-};
 
 type FormState = {
   nombre: string;
@@ -45,60 +21,57 @@ type FormState = {
   mercadoPagoCollectorId: string;
 };
 
+type Representante = {
+  id: string;
+  name: string;
+  email: string;
+  circuito: {
+    id: string;
+    nombre: string;
+    representanteId: string | null;
+    mercadoPagoAccessToken: string | null;
+    mercadoPagoCollectorId: string | null;
+    activo: boolean;
+    montoMensual: string;
+    montoReconexion: string;
+  } | null | undefined;
+};
+
 const emptyForm: FormState = {
-  nombre: '',
-  email: '',
-  password: '',
-  circuitoId: '',
-  mercadoPagoAccessToken: '',
-  mercadoPagoCollectorId: '',
+  nombre: '', email: '', password: '', circuitoId: '',
+  mercadoPagoAccessToken: '', mercadoPagoCollectorId: '',
 };
 
 export default function AdminRepresentantesPage() {
   const router = useRouter();
-  const [representantes, setRepresentantes] = useState<Representante[]>([]);
-  const [circuitos, setCircuitos] = useState<Circuito[]>([]);
-  const [form, setForm] = useState<FormState>(emptyForm);
-  const [editando, setEditando] = useState<Representante | null>(null);
+  const utils  = trpcReact.useUtils();
+
+  const [editando,     setEditando]     = useState<Representante | null>(null);
   const [modalAbierto, setModalAbierto] = useState(false);
-  const [cargando, setCargando] = useState(true);
-  const [guardando, setGuardando] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [mensaje, setMensaje] = useState<string | null>(null);
+  const [form,         setForm]         = useState<FormState>(emptyForm);
+  const [error,        setError]        = useState<string | null>(null);
+  const [mensaje,      setMensaje]      = useState<string | null>(null);
+
+  const repsQuery      = trpcReact.usuarios.listarRepresentantes.useQuery();
+  const circuitosQuery = trpcReact.circuitos.listar.useQuery();
+
+  const representantes   = repsQuery.data      ?? [];
+  const circuitos        = circuitosQuery.data  ?? [];
+  const cargando         = repsQuery.isLoading;
 
   const circuitosDisponibles = useMemo(
-    () =>
-      circuitos.filter(
-        (circuito) => !circuito.representanteId || circuito.representanteId === editando?.id
-      ),
-    [circuitos, editando]
+    () => circuitos.filter((c) => !c.representanteId || c.representanteId === editando?.id),
+    [circuitos, editando],
   );
 
-  async function cargar() {
-    setCargando(true);
-    setError(null);
+  const crearMut      = trpcReact.usuarios.crearRepresentante.useMutation();
+  const actualizarMut = trpcReact.usuarios.actualizarRepresentante.useMutation();
+  const eliminarMut   = trpcReact.usuarios.eliminarRepresentante.useMutation();
 
-    const [representantesRes, circuitosRes] = await Promise.all([
-      fetch('/api/admin/representantes'),
-      fetch('/api/admin/circuitos'),
-    ]);
-
-    if (!representantesRes.ok || !circuitosRes.ok) {
-      setError('No se pudo cargar la informacion');
-      setCargando(false);
-      return;
-    }
-
-    const representantesData = await representantesRes.json();
-    const circuitosData = await circuitosRes.json();
-    setRepresentantes(representantesData.representantes ?? []);
-    setCircuitos(circuitosData.circuitos ?? []);
-    setCargando(false);
+  function recargar() {
+    void utils.usuarios.listarRepresentantes.invalidate();
+    void utils.circuitos.listar.invalidate();
   }
-
-  useEffect(() => {
-    void Promise.resolve().then(cargar);
-  }, []);
 
   function abrirCrear() {
     setEditando(null);
@@ -108,15 +81,15 @@ export default function AdminRepresentantesPage() {
     setModalAbierto(true);
   }
 
-  function abrirEditar(representante: Representante) {
-    setEditando(representante);
+  function abrirEditar(rep: Representante) {
+    setEditando(rep);
     setForm({
-      nombre: representante.name,
-      email: representante.email,
+      nombre: rep.name,
+      email: rep.email,
       password: '',
-      circuitoId: representante.circuito?.id ?? '',
+      circuitoId: rep.circuito?.id ?? '',
       mercadoPagoAccessToken: '',
-      mercadoPagoCollectorId: representante.circuito?.mercadoPagoCollectorId ?? '',
+      mercadoPagoCollectorId: rep.circuito?.mercadoPagoCollectorId ?? '',
     });
     setError(null);
     setMensaje(null);
@@ -124,56 +97,52 @@ export default function AdminRepresentantesPage() {
   }
 
   async function guardar() {
-    setGuardando(true);
     setError(null);
     setMensaje(null);
-
-    const payload = {
-      nombre: form.nombre,
-      email: form.email,
-      ...(form.password ? { password: form.password } : {}),
-      circuitoId: form.circuitoId || null,
-      ...(form.mercadoPagoAccessToken ? { mercadoPagoAccessToken: form.mercadoPagoAccessToken } : {}),
-      ...(form.mercadoPagoCollectorId ? { mercadoPagoCollectorId: form.mercadoPagoCollectorId } : {}),
-    };
-
-    const res = await fetch(
-      editando ? `/api/admin/representantes/${editando.id}` : '/api/admin/representantes',
-      {
-        method: editando ? 'PUT' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editando ? payload : { ...payload, password: form.password }),
+    try {
+      if (editando) {
+        await actualizarMut.mutateAsync({
+          id: editando.id,
+          ...(form.nombre   !== editando.name  ? { nombre: form.nombre }   : {}),
+          ...(form.email    !== editando.email  ? { email: form.email }     : {}),
+          ...(form.password ? { password: form.password } : {}),
+          circuitoId: form.circuitoId || null,
+          ...(form.mercadoPagoAccessToken ? { mercadoPagoAccessToken: form.mercadoPagoAccessToken } : {}),
+          ...(form.mercadoPagoCollectorId ? { mercadoPagoCollectorId: form.mercadoPagoCollectorId } : {}),
+        });
+        setMensaje('Representante actualizado');
+      } else {
+        await crearMut.mutateAsync({
+          nombre: form.nombre,
+          email: form.email,
+          password: form.password,
+          ...(form.circuitoId ? { circuitoId: form.circuitoId } : {}),
+          ...(form.mercadoPagoAccessToken ? { mercadoPagoAccessToken: form.mercadoPagoAccessToken } : {}),
+          ...(form.mercadoPagoCollectorId ? { mercadoPagoCollectorId: form.mercadoPagoCollectorId } : {}),
+        });
+        setMensaje('Representante creado');
       }
-    );
-
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error ?? 'No se pudo guardar el representante');
-    } else {
-      setMensaje(editando ? 'Representante actualizado' : 'Representante creado');
       setModalAbierto(false);
-      await cargar();
+      recargar();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'No se pudo guardar el representante');
     }
-
-    setGuardando(false);
   }
 
-  async function eliminar(representante: Representante) {
-    const confirmar = window.confirm(`Eliminar a ${representante.name}?`);
-    if (!confirmar) return;
-
+  async function eliminar(rep: Representante) {
+    if (!window.confirm(`¿Eliminar a ${rep.name}?`)) return;
     setError(null);
     setMensaje(null);
-    const res = await fetch(`/api/admin/representantes/${representante.id}`, { method: 'DELETE' });
-    if (!res.ok) {
-      const data = await res.json().catch(() => ({}));
-      setError(data.error ?? 'No se pudo eliminar el representante');
-      return;
+    try {
+      await eliminarMut.mutateAsync({ id: rep.id });
+      setMensaje('Representante eliminado');
+      recargar();
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'No se pudo eliminar el representante');
     }
-
-    setMensaje('Representante eliminado');
-    await cargar();
   }
+
+  const guardando = crearMut.isPending || actualizarMut.isPending;
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8">
@@ -187,26 +156,22 @@ export default function AdminRepresentantesPage() {
           </div>
           <div className="flex gap-2">
             <Button onClick={abrirCrear}>
-              <Plus className="mr-2 h-4 w-4" />
-              Crear
+              <Plus className="mr-2 h-4 w-4" />Crear
             </Button>
             <Button variant="outline" onClick={() => router.push('/admin/circuitos')}>
               Circuitos
             </Button>
             <Button variant="outline" onClick={() => router.push('/admin')}>
-              <ArrowLeft className="mr-2 h-4 w-4" />
-              Volver
+              <ArrowLeft className="mr-2 h-4 w-4" />Volver
             </Button>
           </div>
         </div>
 
-        {error && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">{error}</div>}
+        {error   && <div className="rounded-lg border border-red-200   bg-red-50   p-3 text-sm text-red-600">{error}</div>}
         {mensaje && <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">{mensaje}</div>}
 
         <Card>
-          <CardHeader>
-            <CardTitle>Representantes registrados</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle>Representantes registrados</CardTitle></CardHeader>
           <CardContent>
             {cargando ? (
               <p className="py-10 text-center text-muted-foreground">Cargando...</p>
@@ -217,7 +182,6 @@ export default function AdminRepresentantesPage() {
                     <TableHead>Nombre</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Circuito</TableHead>
-                    <TableHead>Token MP</TableHead>
                     <TableHead>Collector ID</TableHead>
                     <TableHead className="w-44 text-right">Acciones</TableHead>
                   </TableRow>
@@ -225,37 +189,27 @@ export default function AdminRepresentantesPage() {
                 <TableBody>
                   {representantes.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={6} className="py-10 text-center text-muted-foreground">
+                      <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
                         Sin representantes registrados.
                       </TableCell>
                     </TableRow>
                   )}
-                  {representantes.map((representante) => (
-                    <TableRow key={representante.id}>
-                      <TableCell className="font-medium">{representante.name}</TableCell>
-                      <TableCell>{representante.email}</TableCell>
+                  {representantes.map((rep) => (
+                    <TableRow key={rep.id}>
+                      <TableCell className="font-medium">{rep.name}</TableCell>
+                      <TableCell>{rep.email}</TableCell>
                       <TableCell>
-                        {representante.circuito?.nombre ?? (
-                          <span className="text-muted-foreground">Sin asignar</span>
-                        )}
+                        {rep.circuito?.nombre ?? <span className="text-muted-foreground">Sin asignar</span>}
                       </TableCell>
                       <TableCell>
-                        {representante.circuito?.mercadoPagoAccessToken ?? (
-                          <span className="text-muted-foreground">Pendiente</span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {representante.circuito?.mercadoPagoCollectorId ?? (
-                          <span className="text-muted-foreground">Pendiente</span>
-                        )}
+                        {rep.circuito?.mercadoPagoCollectorId ?? <span className="text-muted-foreground">Pendiente</span>}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
-                          <Button size="sm" variant="outline" onClick={() => abrirEditar(representante)}>
-                            <Pencil className="mr-2 h-4 w-4" />
-                            Editar
+                          <Button size="sm" variant="outline" onClick={() => abrirEditar(rep)}>
+                            <Pencil className="mr-2 h-4 w-4" />Editar
                           </Button>
-                          <Button size="icon-sm" variant="destructive" onClick={() => eliminar(representante)}>
+                          <Button size="sm" variant="destructive" onClick={() => eliminar(rep)} disabled={eliminarMut.isPending}>
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
@@ -278,7 +232,7 @@ export default function AdminRepresentantesPage() {
                   {editando ? 'Editar representante' : 'Crear representante'}
                 </h2>
                 <p className="text-sm text-muted-foreground">
-                  {editando ? 'Actualiza datos y configuracion de cobro' : 'Se enviaran credenciales por correo'}
+                  {editando ? 'Actualiza datos y configuración de cobro' : 'Se crearán las credenciales de acceso'}
                 </p>
               </div>
               <Button size="icon" variant="ghost" onClick={() => setModalAbierto(false)}>
@@ -289,42 +243,33 @@ export default function AdminRepresentantesPage() {
             <div className="grid gap-4 md:grid-cols-2">
               <div>
                 <label className="mb-2 block text-sm font-medium">Nombre</label>
-                <Input
-                  value={form.nombre}
-                  onChange={(e) => setForm((prev) => ({ ...prev, nombre: e.target.value }))}
-                />
+                <Input value={form.nombre} onChange={(e) => setForm((p) => ({ ...p, nombre: e.target.value }))} />
               </div>
               <div>
                 <label className="mb-2 block text-sm font-medium">Email</label>
-                <Input
-                  type="email"
-                  value={form.email}
-                  onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
-                />
+                <Input type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} />
               </div>
               <div>
                 <label className="mb-2 block text-sm font-medium">
-                  {editando ? 'Nueva contrasena' : 'Contrasena'}
+                  {editando ? 'Nueva contraseña' : 'Contraseña'}
                 </label>
                 <Input
                   type="password"
                   value={form.password}
-                  placeholder={editando ? 'Dejar vacio para conservar' : 'Minimo 8 caracteres'}
-                  onChange={(e) => setForm((prev) => ({ ...prev, password: e.target.value }))}
+                  placeholder={editando ? 'Dejar vacío para conservar' : 'Mínimo 8 caracteres'}
+                  onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
                 />
               </div>
               <div>
                 <label className="mb-2 block text-sm font-medium">Circuito</label>
                 <select
                   value={form.circuitoId}
-                  onChange={(e) => setForm((prev) => ({ ...prev, circuitoId: e.target.value }))}
+                  onChange={(e) => setForm((p) => ({ ...p, circuitoId: e.target.value }))}
                   className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
                 >
                   <option value="">Sin circuito</option>
-                  {circuitosDisponibles.map((circuito) => (
-                    <option key={circuito.id} value={circuito.id}>
-                      {circuito.nombre}
-                    </option>
+                  {circuitosDisponibles.map((c) => (
+                    <option key={c.id} value={c.id}>{c.nombre}</option>
                   ))}
                 </select>
               </div>
@@ -333,38 +278,30 @@ export default function AdminRepresentantesPage() {
                 <Input
                   type="password"
                   value={form.mercadoPagoAccessToken}
-                  placeholder={editando ? 'Dejar vacio para conservar' : 'APP_USR...'}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, mercadoPagoAccessToken: e.target.value }))
-                  }
+                  placeholder={editando ? 'Dejar vacío para conservar' : 'APP_USR...'}
+                  onChange={(e) => setForm((p) => ({ ...p, mercadoPagoAccessToken: e.target.value }))}
                 />
               </div>
               <div>
                 <label className="mb-2 block text-sm font-medium">Collector ID</label>
                 <Input
                   value={form.mercadoPagoCollectorId}
-                  onChange={(e) =>
-                    setForm((prev) => ({ ...prev, mercadoPagoCollectorId: e.target.value }))
-                  }
+                  onChange={(e) => setForm((p) => ({ ...p, mercadoPagoCollectorId: e.target.value }))}
                 />
               </div>
             </div>
 
+            {error && (
+              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">{error}</div>
+            )}
+
             <div className="mt-6 flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setModalAbierto(false)}>
-                Cancelar
-              </Button>
+              <Button variant="outline" onClick={() => setModalAbierto(false)}>Cancelar</Button>
               <Button
-                disabled={
-                  guardando ||
-                  !form.nombre ||
-                  !form.email ||
-                  (!editando && form.password.length < 8)
-                }
+                disabled={guardando || !form.nombre || !form.email || (!editando && form.password.length < 8)}
                 onClick={guardar}
               >
-                <Save className="mr-2 h-4 w-4" />
-                Guardar
+                <Save className="mr-2 h-4 w-4" />Guardar
               </Button>
             </div>
           </div>
