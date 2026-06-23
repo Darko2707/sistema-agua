@@ -287,7 +287,7 @@ export const pagosRouter = router({
         requiereReconexion,
         miCircuito.montoReconexion,
       );
-      const desglose = calcularDesglosePago(montoBase);
+      const desglose = calcularDesglosePagoManual(montoBase);
       const monto = desglose.total;
       const folio = `AGU-${nanoid(10).toUpperCase()}`;
 
