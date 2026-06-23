@@ -100,8 +100,10 @@ export const perfilesResidente = pgTable('perfiles_residente', {
   sexo:         sexoEnum('sexo').notNull(),
   tenencia:     tenenciaEnum('tenencia').notNull(),
   circuitoId:   uuid('circuito_id').notNull().references(() => circuitos.id),
-  edificio:     text('edificio').notNull(),
-  departamento: text('departamento').notNull(),
+  edificio:             text('edificio').notNull(),
+  departamento:         text('departamento').notNull(),
+  nombrePropietario:    text('nombre_propietario'),
+  telefonoPropietario:  text('telefono_propietario'),
   estadoAgua:   estadoAguaEnum('estado_agua').notNull().default('activo'),
   creadoEn:     timestamp('creado_en').defaultNow(),
 }, (t) => [

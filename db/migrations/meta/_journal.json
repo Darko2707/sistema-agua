@@ -57,6 +57,13 @@
       "when": 1782247411438,
       "tag": "0007_puzzling_exiles",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1782249509901,
+      "tag": "0008_colorful_black_knight",
+      "breakpoints": true
     }
   ]
 }

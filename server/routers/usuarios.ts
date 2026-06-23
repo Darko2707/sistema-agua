@@ -18,12 +18,17 @@ const listarResidentesHandler = new ListarResidentesHandler({ residenteRepo, cir
 export const usuariosRouter = router({
   crearPerfil: protectedProcedure
     .input(z.object({
-      telefono:     z.string().min(10),
-      sexo:         z.enum(['masculino', 'femenino', 'otro']),
-      tenencia:     z.enum(['propietario', 'inquilino']),
-      circuitoId:   z.string().uuid(),
-      edificio:     z.string().min(1),
-      departamento: z.string().min(1),
+      telefono:            z.string().min(10),
+      sexo:                z.enum(['masculino', 'femenino', 'otro']),
+      tenencia:            z.enum(['propietario', 'inquilino']),
+      circuitoId:          z.string().uuid(),
+      edificio:            z.string().min(1),
+      departamento:        z.string().regex(/^\d+[abc]$/, 'El departamento debe ser un número seguido de a, b o c (ej: 314a)'),
+      nombrePropietario:   z.string().min(2).optional(),
+      telefonoPropietario: z.string().min(10).optional(),
+    }).refine(d => d.tenencia === 'propietario' || (!!d.nombrePropietario && !!d.telefonoPropietario), {
+      message: 'Los datos del propietario son requeridos cuando eres inquilino',
+      path: ['nombrePropietario'],
     }))
     .mutation(async ({ ctx, input }) => {
       // crearPerfilHandler handles validation, but telefono/sexo/tenencia need DB insert
@@ -39,9 +44,16 @@ export const usuariosRouter = router({
       const estadoInicial = new Date().getDate() > 5 ? 'pendiente_corte' : 'activo';
       logger.info('usuario.perfil.creado', { userId: ctx.user.id, estadoInicial });
       const [perfil] = await db.insert(perfilesResidente).values({
-        userId: ctx.user.id,
-        ...input,
-        estadoAgua: estadoInicial,
+        userId:              ctx.user.id,
+        telefono:            input.telefono,
+        sexo:                input.sexo,
+        tenencia:            input.tenencia,
+        circuitoId:          input.circuitoId,
+        edificio:            input.edificio,
+        departamento:        input.departamento,
+        nombrePropietario:   input.nombrePropietario ?? null,
+        telefonoPropietario: input.telefonoPropietario ?? null,
+        estadoAgua:          estadoInicial,
       }).returning();
       return perfil;
     }),

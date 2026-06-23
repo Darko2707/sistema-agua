@@ -151,9 +151,11 @@ export async function generarReporteResidentesPDF(data: {
     // 12 meses
     for (const p of r.pagosAnio) {
       if (p.estado === 'pagado') {
-        page.drawText('✓', { x: x + 10, y, size: 8, font: bold, color: COLOR_GREEN });
+        page.drawRectangle({ x: x + 9, y: y - 1, width: 14, height: 9, color: COLOR_GREEN });
+        page.drawText('SI', { x: x + 11, y: y + 1, size: 6, font: bold, color: COLOR_WHITE });
       } else {
-        page.drawText('—', { x: x + 12, y, size: 7, font, color: COLOR_LIGHT });
+        page.drawRectangle({ x: x + 9, y: y - 1, width: 14, height: 9, color: COLOR_LIGHT });
+        page.drawText('NO', { x: x + 10, y: y + 1, size: 5.5, font, color: COLOR_WHITE });
       }
       x += COL_MES;
     }
@@ -328,7 +330,7 @@ export async function generarReporteFinancieroPDF(data: {
   // ── Saldo final ──
   y -= 8;
   page.drawRectangle({ x: MARGIN, y: y - 8, width: W - MARGIN * 2, height: 34, color: data.saldo >= 0 ? rgb(0.9, 0.98, 0.93) : rgb(0.99, 0.93, 0.93) });
-  page.drawText('Saldo final (Recaudado − Gastos):', { x: MARGIN + 8, y: y + 12, size: 10, font: bold });
+  page.drawText('Saldo final (Recaudado - Gastos):', { x: MARGIN + 8, y: y + 12, size: 10, font: bold });
   page.drawText(mxn(data.saldo), {
     x: MARGIN + 8, y: y - 4, size: 16, font: bold,
     color: data.saldo >= 0 ? COLOR_GREEN : COLOR_RED,
