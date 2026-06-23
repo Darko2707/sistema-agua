@@ -219,7 +219,7 @@ export default function ResidentePage() {
 
   const isAdmin = miRol === 'admin';
   const isRepresentante = miRol === 'representante';
-  const isTrabajador = miRol === 'operador_pozo' || miRol === 'cuadrilla_cortes';
+  const isTrabajador = miRol === 'cuadrilla_cortes';
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8">

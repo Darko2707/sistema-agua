@@ -63,7 +63,7 @@ export default function LoginPage() {
         router.push('/admin');
       } else if (rol === 'representante') {
         router.push('/representante');
-      } else if (rol === 'operador_pozo' || rol === 'cuadrilla_cortes') {
+      } else if (rol === 'cuadrilla_cortes') {
         router.push('/trabajador');
       } else {
         router.push('/residente');

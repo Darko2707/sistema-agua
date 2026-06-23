@@ -5,7 +5,6 @@ import { relations } from 'drizzle-orm';
 export const rolEnum = pgEnum('rol', [
   'admin',
   'representante',
-  'operador_pozo',
   'cuadrilla_cortes',
   'residente',
 ]);

@@ -79,7 +79,7 @@ ALTER TABLE "pagos" DROP CONSTRAINT "pagos_departamento_id_departamentos_id_fk";
 ALTER TABLE "user" ALTER COLUMN "role" SET DATA TYPE text;--> statement-breakpoint
 ALTER TABLE "user" ALTER COLUMN "role" SET DEFAULT 'residente'::text;--> statement-breakpoint
 DROP TYPE "public"."rol";--> statement-breakpoint
-CREATE TYPE "public"."rol" AS ENUM('admin', 'representante', 'operador_pozo', 'cuadrilla_cortes', 'residente');--> statement-breakpoint
+CREATE TYPE "public"."rol" AS ENUM('admin', 'representante', 'cuadrilla_cortes', 'residente');--> statement-breakpoint
 ALTER TABLE "user" ALTER COLUMN "role" SET DEFAULT 'residente'::"public"."rol";--> statement-breakpoint
 ALTER TABLE "user" ALTER COLUMN "role" SET DATA TYPE "public"."rol" USING "role"::"public"."rol";--> statement-breakpoint
 ALTER TABLE "circuitos" ALTER COLUMN "representante_id" SET DATA TYPE text;--> statement-breakpoint

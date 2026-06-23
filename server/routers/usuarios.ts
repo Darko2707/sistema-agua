@@ -144,7 +144,7 @@ export const usuariosRouter = router({
   cambiarRol: roleProcedure('admin')
     .input(z.object({
       userId: z.string(),
-      rol: z.enum(['admin', 'representante', 'operador_pozo', 'cuadrilla_cortes', 'residente']),
+      rol: z.enum(['admin', 'representante', 'cuadrilla_cortes', 'residente']),
     }))
     .mutation(async ({ input }) => {
       console.log('📝 Cambiando rol:', input);

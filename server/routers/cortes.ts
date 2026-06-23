@@ -103,30 +103,4 @@ export const cortesRouter = router({
 
       return { ok: true };
     }),
-
-  // Operador de pozo: corte manual
-  crearCorteManual: roleProcedure('operador_pozo', 'admin')
-    .input(z.object({
-      perfilId: z.string().uuid(),
-      motivo: z.string().min(3),
-    }))
-    .mutation(async ({ ctx, input }) => {
-      const perfil = await db.query.perfilesResidente.findFirst({
-        where: (p, { eq }) => eq(p.id, input.perfilId),
-      });
-      if (!perfil) throw new TRPCError({ code: 'NOT_FOUND' });
-
-      const [corte] = await db.insert(cortes).values({
-        perfilId: input.perfilId,
-        trabajadorId: ctx.user.id,
-        motivo: input.motivo,
-        activo: true,
-      }).returning();
-
-      await db.update(perfilesResidente)
-        .set({ estadoAgua: 'cortado' })
-        .where(eq(perfilesResidente.id, input.perfilId));
-
-      return corte;
-    }),
 });

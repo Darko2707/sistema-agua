@@ -85,7 +85,6 @@ type Circuito = {
 const ROLES = [
   { value: 'admin', label: 'Administrador' },
   { value: 'representante', label: 'Representante' },
-  { value: 'operador_pozo', label: 'Operador de pozo' },
   { value: 'cuadrilla_cortes', label: 'Cuadrilla' },
   { value: 'residente', label: 'Residente' },
 ];
