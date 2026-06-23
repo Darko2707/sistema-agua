@@ -1,6 +1,6 @@
 'use client';
 
-import { signIn, signOut } from '@/lib/auth-client';
+import { signIn, signOut, authClient } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { Eye, EyeOff } from 'lucide-react';
@@ -45,17 +45,8 @@ export default function LoginPage() {
         return;
       }
 
-      const meRes = await fetch('/api/me');
-      const meData = await meRes.json();
-
-      if (!meRes.ok) {
-        await signOut();
-        setError(meData.error || 'No puedes iniciar sesion en este momento');
-        setLoading(false);
-        return;
-      }
-
-      const { role: rol } = meData;
+      const session = await authClient.getSession();
+      const rol = (session?.data?.user as { role?: string })?.role ?? 'residente';
 
       localStorage.setItem('userRole', rol);
 
