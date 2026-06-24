@@ -5,7 +5,6 @@ import { authClient } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
 import { useSession } from '@/hooks/useAuth';
 import { useCircuitoActual } from '@/hooks/useCircuito';
-import { usePagar } from '@/hooks/usePagos';
 import { trpcReact } from '@/lib/trpc-react';
 import { EstadoAguaBadge } from '@/components/domain/EstadoAguaBadge';
 
@@ -15,25 +14,30 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import {
   LogOut, Users, AlertTriangle, TrendingUp, Droplets, Home,
-  Banknote, Search, Loader2, DollarSign, Shield, UserPlus, X,
+  Search, Loader2, DollarSign, Shield, UserPlus, X,
 } from 'lucide-react';
 
 const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+const ROL_LABEL: Record<string, string> = {
+  tesorera:         'Tesorera/o',
+  cuadrilla_cortes: 'Cuadrilla de cortes',
+};
 
 export function RepresentanteDashboard() {
   const router = useRouter();
   const { data: session, isPending: sessionPending } = useSession();
   const [tab, setTab]             = useState<'todos' | 'morosos' | 'personal'>('todos');
   const [busqueda, setBusqueda]   = useState('');
-  const [registrando, setRegistrando] = useState<string | null>(null);
   const [mensaje, setMensaje]     = useState('');
   const [error, setError]         = useState('');
 
   // Modal "Añadir personal"
-  const [modalPersonal,   setModalPersonal]   = useState(false);
-  const [residenteSelId,  setResidenteSelId]  = useState('');
+  const [modalPersonal,     setModalPersonal]     = useState(false);
+  const [residenteSelId,    setResidenteSelId]    = useState('');
+  const [rolSeleccionado,   setRolSeleccionado]   = useState<'tesorera' | 'cuadrilla_cortes'>('tesorera');
   const [guardandoPersonal, setGuardandoPersonal] = useState(false);
-  const [errorPersonal,   setErrorPersonal]   = useState('');
+  const [errorPersonal,     setErrorPersonal]     = useState('');
 
   // Modal "Quitar personal"
   const [quitando, setQuitando] = useState<string | null>(null);
@@ -42,7 +46,6 @@ export function RepresentanteDashboard() {
   const resumenQuery    = trpcReact.pagos.resumenMes.useQuery();
   const residentesQuery = trpcReact.usuarios.listarResidentes.useQuery();
   const personalQuery   = trpcReact.usuarios.listarPersonal.useQuery();
-  const pagarMutation   = usePagar();
   const cambiarRolMut   = trpcReact.usuarios.cambiarRolEnCircuito.useMutation();
 
   const circuito   = circuitoQuery.data;
@@ -58,30 +61,17 @@ export function RepresentanteDashboard() {
     [residentes],
   );
 
-  async function registrarPagoManual(perfilId: string, metodo: 'efectivo' | 'transferencia') {
-    setRegistrando(`${perfilId}:${metodo}`);
-    setMensaje(''); setError('');
-    try {
-      const result = await pagarMutation.mutateAsync({ perfilId, metodo });
-      setMensaje(`Pago registrado con folio ${result.folio}`);
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'No se pudo registrar el pago');
-    } finally {
-      setRegistrando(null);
-    }
-  }
-
   async function agregarPersonal() {
     if (!residenteSelId) return;
     setGuardandoPersonal(true);
     setErrorPersonal('');
     try {
-      await cambiarRolMut.mutateAsync({ userId: residenteSelId, rol: 'tesorera' });
+      await cambiarRolMut.mutateAsync({ userId: residenteSelId, rol: rolSeleccionado });
       setModalPersonal(false);
       setResidenteSelId('');
       void residentesQuery.refetch();
       void personalQuery.refetch();
-      setMensaje('Tesorero/a asignado correctamente');
+      setMensaje(`${ROL_LABEL[rolSeleccionado] ?? rolSeleccionado} asignado correctamente`);
     } catch (e: unknown) {
       setErrorPersonal(e instanceof Error ? e.message : 'No se pudo asignar el rol');
     } finally {
@@ -216,16 +206,16 @@ export function RepresentanteDashboard() {
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
                 <CardTitle>Personal del circuito</CardTitle>
-                <p className="text-sm text-muted-foreground mt-1">Tesorero/a y otros roles de tu circuito</p>
+                <p className="text-sm text-muted-foreground mt-1">Tesorera/o y cuadrilla de cortes de tu circuito</p>
               </div>
-              <Button size="sm" onClick={() => { setModalPersonal(true); setResidenteSelId(''); setErrorPersonal(''); }}>
+              <Button size="sm" onClick={() => { setModalPersonal(true); setResidenteSelId(''); setRolSeleccionado('tesorera'); setErrorPersonal(''); }}>
                 <UserPlus className="mr-2 h-4 w-4" />Añadir personal
               </Button>
             </CardHeader>
             <CardContent className="space-y-3">
               {personal.length === 0 ? (
                 <p className="py-10 text-center text-muted-foreground">
-                  No hay personal asignado. Usa el botón "Añadir personal" para designar al tesorero/a de tu circuito.
+                  No hay personal asignado. Usa el botón "Añadir personal" para designar roles en tu circuito.
                 </p>
               ) : (
                 personal.map((p) => (
@@ -237,7 +227,7 @@ export function RepresentanteDashboard() {
                       <div>
                         <p className="font-medium">{p.name}</p>
                         <p className="text-sm text-muted-foreground">{p.email}</p>
-                        <Badge variant="outline" className="mt-1 text-xs">Tesorero/a</Badge>
+                        <Badge variant="outline" className="mt-1 text-xs">{ROL_LABEL[p.role] ?? p.role}</Badge>
                       </div>
                     </div>
                     <Button
@@ -275,7 +265,6 @@ export function RepresentanteDashboard() {
               )}
               {listaMostrar.map(r => (
                 <div key={r.id} className="rounded-xl border bg-background p-4 space-y-3 hover:border-slate-300 transition-colors">
-                  {/* Info + estado */}
                   <div className="flex items-center justify-between gap-4">
                     <div className="flex items-center gap-3">
                       <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-50 border border-sky-100">
@@ -296,38 +285,6 @@ export function RepresentanteDashboard() {
                       {r.estadoAgua === 'activo' && r.esMoroso && !r.pagoEsteMes && <Badge variant="outline" className="border-amber-300 text-amber-600 font-medium">Moroso</Badge>}
                     </div>
                   </div>
-
-                  {/* Botones de pago */}
-                  {(r.estadoAgua === 'cortado' || !r.pagoEsteMes) && (
-                    <div className="flex items-center justify-between gap-2 border-t pt-3">
-                      {r.estadoAgua === 'cortado' && (
-                        <p className="text-xs text-red-600 font-medium">
-                          Reconexión ${Number(circuito?.montoReconexion ?? 0).toFixed(2)} + mes ${Number(circuito?.montoMensual ?? 0).toFixed(2)}
-                        </p>
-                      )}
-                      <div className="flex gap-1.5 ml-auto">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => registrarPagoManual(r.id, 'efectivo')}
-                          disabled={!!registrando}
-                          className={r.estadoAgua === 'cortado' ? 'border-red-300 text-red-700' : ''}
-                        >
-                          {registrando === `${r.id}:efectivo` ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Banknote className="h-3 w-3 mr-1" />}
-                          Efectivo
-                        </Button>
-                        <Button
-                          size="sm"
-                          onClick={() => registrarPagoManual(r.id, 'transferencia')}
-                          disabled={!!registrando}
-                          className={r.estadoAgua === 'cortado' ? 'bg-red-600 hover:bg-red-700' : ''}
-                        >
-                          {registrando === `${r.id}:transferencia` ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Banknote className="h-3 w-3 mr-1" />}
-                          Transferencia
-                        </Button>
-                      </div>
-                    </div>
-                  )}
                 </div>
               ))}
             </CardContent>
@@ -350,8 +307,13 @@ export function RepresentanteDashboard() {
             <div className="space-y-4">
               <div>
                 <label className="mb-1.5 block text-sm font-medium">Rol</label>
-                <select className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm" disabled>
-                  <option value="tesorera">Tesorero/a</option>
+                <select
+                  className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm"
+                  value={rolSeleccionado}
+                  onChange={e => setRolSeleccionado(e.target.value as 'tesorera' | 'cuadrilla_cortes')}
+                >
+                  <option value="tesorera">Tesorera/o</option>
+                  <option value="cuadrilla_cortes">Cuadrilla de cortes</option>
                 </select>
               </div>
 

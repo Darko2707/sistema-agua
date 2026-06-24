@@ -115,7 +115,7 @@ export const usuariosRouter = router({
   cambiarRolEnCircuito: roleProcedure('representante')
     .input(z.object({
       userId: z.string(),
-      rol:    z.enum(['residente', 'tesorera']),
+      rol:    z.enum(['residente', 'tesorera', 'cuadrilla_cortes']),
     }))
     .mutation(async ({ ctx, input }) => {
       const miCircuito = await db.query.circuitos.findFirst({
@@ -187,7 +187,7 @@ export const usuariosRouter = router({
         with: { usuario: true },
       });
       return perfiles
-        .filter(p => p.usuario?.role === 'tesorera')
+        .filter(p => p.usuario?.role && !['admin', 'representante', 'residente'].includes(p.usuario.role))
         .map(p => p.usuario!);
     }
     return db.query.user.findMany({

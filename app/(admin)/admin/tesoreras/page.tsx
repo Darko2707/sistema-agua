@@ -102,7 +102,7 @@ export default function AdminTesorerasPage() {
 
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-3xl font-bold">Tesorero/a</h1>
+            <h1 className="text-3xl font-bold">Tesorera/o</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               Asigna circuitos y configura Mercado Pago para cada tesorero/a.
             </p>
@@ -117,7 +117,7 @@ export default function AdminTesorerasPage() {
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
           <p>
             Para añadir un tesorero/a, cambia el rol de un residente a{' '}
-            <strong>Tesorero/a</strong> desde la pestaña{' '}
+            <strong>Tesorera/o</strong> desde la pestaña{' '}
             <strong>Personal</strong> en el panel de administrador.
             Después aparecerá aquí para asignarle un circuito y sus credenciales de Mercado Pago.
           </p>
@@ -128,7 +128,7 @@ export default function AdminTesorerasPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Tesorero/a registrados</CardTitle>
+            <CardTitle>Tesorera/o registrados</CardTitle>
           </CardHeader>
           <CardContent>
             {cargando ? (

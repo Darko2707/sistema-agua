@@ -83,8 +83,10 @@ export async function GET(
   }
 
   // ── Cache miss: generar PDF ───────────────────────────────────────────────
-  const baseUrl =
-    process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin;
+  const requestOrigin = new URL(request.url).origin;
+  const baseUrl = requestOrigin.startsWith('http://localhost')
+    ? (process.env.NEXT_PUBLIC_APP_URL ?? requestOrigin)
+    : requestOrigin;
 
   logger.info('ticket.pdf.generando', { folio });
 

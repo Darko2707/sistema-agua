@@ -32,6 +32,12 @@ function getLogoBuffer(): Buffer | null {
 function agregarLogo(wb: ExcelJS.Workbook, ws: ExcelJS.Worksheet, totalDataCols: number) {
   const logoBuffer = getLogoBuffer();
   if (!logoBuffer) return;
+  // Fondo blanco detrás del logo para mejorar visibilidad sobre fondos coloreados
+  const whiteFill: ExcelJS.Fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } };
+  for (let r = 1; r <= 4; r++) {
+    const cell = ws.getCell(r, totalDataCols + 1);
+    cell.fill = whiteFill;
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const imageId = wb.addImage({ buffer: logoBuffer as any, extension: 'png' });
   ws.addImage(imageId, {

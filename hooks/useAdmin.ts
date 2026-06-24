@@ -10,7 +10,7 @@ export const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'S
 export const ROLES = [
   { value: 'admin',            label: 'Administrador' },
   { value: 'representante',    label: 'Representante' },
-  { value: 'tesorera',         label: 'Tesorero/a' },
+  { value: 'tesorera',         label: 'Tesorera/o' },
   { value: 'cuadrilla_cortes', label: 'Cuadrilla' },
   { value: 'residente',        label: 'Residente' },
 ];

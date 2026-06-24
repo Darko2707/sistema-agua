@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Download, FileText, Loader2, QrCode } from 'lucide-react';
-import Image from 'next/image';
 
 import { trpc } from '@/lib/trpc-client';
 import { Button } from '@/components/ui/button';
@@ -85,12 +84,9 @@ export default function FoliosPage() {
       <div className="mx-auto max-w-5xl space-y-6">
         <div className="rounded-3xl bg-gradient-to-r from-sky-600 to-cyan-600 p-6 text-white shadow-lg">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center gap-3">
-              <Image src="/logo2SIS4S.png" alt="SIS4S" width={48} height={48} className="rounded-xl" />
-              <div>
-                <h1 className="text-3xl font-bold">Folios</h1>
-                <p className="mt-1 text-sky-100">Tickets y comprobantes PDF de tus pagos</p>
-              </div>
+            <div>
+              <h1 className="text-3xl font-bold">Folios</h1>
+              <p className="mt-1 text-sky-100">Tickets y comprobantes PDF de tus pagos</p>
             </div>
             <Button
               variant="secondary"

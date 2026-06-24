@@ -10,7 +10,7 @@ import { EstadoAguaBadge } from '@/components/domain/EstadoAguaBadge';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { LogOut, Scissors, RotateCcw, Droplets, AlertTriangle } from 'lucide-react';
+import { LogOut, Scissors, RotateCcw, Droplets, AlertTriangle, Home } from 'lucide-react';
 
 export function TrabajadorDashboard() {
   const router = useRouter();
@@ -71,6 +71,9 @@ export function TrabajadorDashboard() {
               <p className="mt-2 text-sky-100">{session?.user?.name}</p>
             </div>
             <div className="flex gap-2">
+              <Button variant="secondary" onClick={() => router.push('/residente')} className="bg-white/20 text-white hover:bg-white/30 backdrop-blur-sm border-0">
+                <Home className="mr-2 h-4 w-4" />Mi cuenta
+              </Button>
               <Button variant="secondary" onClick={salir}><LogOut className="mr-2 h-4 w-4" />Salir</Button>
             </div>
           </div>
