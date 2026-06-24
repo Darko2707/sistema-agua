@@ -136,17 +136,14 @@ export async function generarTicketPDF(data: {
   const BOX_W = W - 56;
 
   page.drawRectangle({
-    x: 28, y: y - 180, width: BOX_W, height: 185,
+    x: 28, y: y - 118, width: BOX_W, height: 123,
     borderColor: GRAY_L, borderWidth: 1,
   });
   page.drawText('Desglose del pago', { x: 42, y: y - 18, size: 11, font: bold, color: BLACK });
 
   const filas: [string, string | null | undefined][] = [
-    ['Cuota del circuito',    data.montoBase],
-    ['IVA',                   data.iva],
-    ['Comisión Mercado Pago', data.comisionMercadoPago],
-    ['Retención ISR',         data.retencionIsr],
-    ['Retención IVA',         data.retencionIva],
+    ['Cuota del servicio', data.montoBase],
+    ['IVA (16%)',          data.iva],
   ];
   let fy = y - 44;
   for (const [label, value] of filas) {
@@ -167,7 +164,7 @@ export async function generarTicketPDF(data: {
   // ════════════════════════════════════════════════════════
   // SELLO PAGADO
   // ════════════════════════════════════════════════════════
-  const STAMP_Y = y - 195;
+  const STAMP_Y = y - 135;
   page.drawRectangle({
     x: W - 120, y: STAMP_Y, width: 92, height: 28,
     color: GREEN,

@@ -154,26 +154,14 @@ export default function FoliosPage() {
                     </div>
                   </div>
 
-                  <div className="grid gap-2 rounded-lg border bg-slate-50 p-3 text-sm md:grid-cols-5">
+                  <div className="grid gap-2 rounded-lg border bg-slate-50 p-3 text-sm md:grid-cols-2">
                     <div>
-                      <p className="text-muted-foreground">Cuota</p>
+                      <p className="text-muted-foreground">Cuota del servicio</p>
                       <p className="font-medium">{money(pago?.montoBase)}</p>
                     </div>
                     <div>
-                      <p className="text-muted-foreground">IVA</p>
+                      <p className="text-muted-foreground">IVA (16%)</p>
                       <p className="font-medium">{money(pago?.iva)}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Comision</p>
-                      <p className="font-medium">{money(pago?.comisionMercadoPago)}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Ret. ISR</p>
-                      <p className="font-medium">{money(pago?.retencionIsr)}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Ret. IVA</p>
-                      <p className="font-medium">{money(pago?.retencionIva)}</p>
                     </div>
                   </div>
 
