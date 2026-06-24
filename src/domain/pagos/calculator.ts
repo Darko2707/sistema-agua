@@ -28,12 +28,11 @@ function money(value: number): string {
 
 export function calcularDesglosePago(montoBase: number): DesglosePago {
   const base     = roundMoney(montoBase);
-  const iva      = roundMoney(base * TASA_IVA);
-  const subtotal = roundMoney(base + iva);
+  // Sin IVA: sistema informal sin registro fiscal ante SAT.
+  const subtotal = base;
 
-  // Gross-up: el residente cubre todos los cargos de MP.
-  // T = (subtotal + COMISION_FIJA_MP) / (1 - COMISION_% - ISR_% - IVA_ret_%)
-  // Garantiza que el representante reciba exactamente `subtotal` tras las deducciones de MP.
+  // Gross-up: residente cubre los cargos de MP para que el representante reciba `base` íntegro.
+  // T = (base + COMISION_FIJA_MP) / (1 - %comisión - %ISR - %IVA_ret)
   const factorNeto          = 1 - COMISION_PORCENTAJE_MP - TASA_RETENCION_ISR - TASA_RETENCION_IVA;
   const totalBruto          = roundMoney((subtotal + COMISION_FIJA_MP) / factorNeto);
   const comisionMercadoPago = roundMoney(totalBruto * COMISION_PORCENTAJE_MP + COMISION_FIJA_MP);
@@ -41,11 +40,11 @@ export function calcularDesglosePago(montoBase: number): DesglosePago {
   const retencionIva        = roundMoney(totalBruto * TASA_RETENCION_IVA);
   const montoNetoRepresentante = roundMoney(totalBruto - comisionMercadoPago - retencionIsr - retencionIva);
   // Sumar los ítems redondeados evita discrepancias de centavo en el comprobante.
-  const total = roundMoney(base + iva + comisionMercadoPago + retencionIsr + retencionIva);
+  const total = roundMoney(base + comisionMercadoPago + retencionIsr + retencionIva);
 
   return {
     montoBase:              money(base),
-    iva:                    money(iva),
+    iva:                    '0.00',
     subtotal:               money(subtotal),
     comisionMercadoPago:    money(comisionMercadoPago),
     retencionIsr:           money(retencionIsr),

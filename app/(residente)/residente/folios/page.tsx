@@ -154,26 +154,20 @@ export default function FoliosPage() {
                     </div>
                   </div>
 
-                  <div className="grid gap-2 rounded-lg border bg-slate-50 p-3 text-sm md:grid-cols-5">
+                  <div className="grid gap-2 rounded-lg border bg-slate-50 p-3 text-sm md:grid-cols-3">
                     <div>
                       <p className="text-muted-foreground">Cuota</p>
                       <p className="font-medium">{money(pago?.montoBase)}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">IVA</p>
-                      <p className="font-medium">{money(pago?.iva)}</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Comisión MP</p>
                       <p className="font-medium">{money(pago?.comisionMercadoPago)}</p>
                     </div>
                     <div>
-                      <p className="text-muted-foreground">Ret. ISR</p>
-                      <p className="font-medium">{money(pago?.retencionIsr)}</p>
-                    </div>
-                    <div>
-                      <p className="text-muted-foreground">Ret. IVA</p>
-                      <p className="font-medium">{money(pago?.retencionIva)}</p>
+                      <p className="text-muted-foreground">Ret. ISR + IVA</p>
+                      <p className="font-medium">
+                        {money((Number(pago?.retencionIsr ?? 0) + Number(pago?.retencionIva ?? 0)).toFixed(2))}
+                      </p>
                     </div>
                   </div>
 
