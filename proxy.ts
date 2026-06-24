@@ -1,27 +1,79 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getSessionCookie } from 'better-auth/cookies';
+import { NextResponse } from 'next/server';
+import type { NextRequest } from 'next/server';
 
-const rutasProtegidas = ['/admin', '/representante', '/trabajador', '/residente'];
+// Rutas que requieren sesión activa
+const PROTECTED_PREFIXES = [
+  '/admin',
+  '/representante',
+  '/tesorera',
+  '/trabajador', // Unificar: usar 'trabajador' en lugar de 'cuadrilla'
+  '/residente',
+];
 
-export function proxy(req: NextRequest) {
-  // Obtener la sesión de la cookie
-  const session = getSessionCookie(req);
-  const path = req.nextUrl.pathname;
+// Rutas públicas (no requieren autenticación)
+const PUBLIC_PATHS = [
+  '/',
+  '/login',
+  '/registro',
+  '/reset-password',
+  '/api/auth',
+  '/api/trpc',
+  '/api/cron',
+  '/api/mercadopago/webhook', // Webhook de MP es público
+];
 
-  // Verificar si la ruta actual es una de las protegidas
-  const esProtegida = rutasProtegidas.some((r) => path.startsWith(r));
+// Cookie que Better Auth establece al autenticarse
+const SESSION_COOKIE = 'better-auth.session-token';
+const SECURE_SESSION_COOKIE = '__Secure-better-auth.session-token';
 
-  // Si es protegida y no hay sesión, redirigir a login
-  if (esProtegida && !session) {
-    const loginUrl = new URL('/login', req.url);
+export function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // Verificar si es una ruta pública
+  const isPublic = PUBLIC_PATHS.some(path => pathname.startsWith(path));
+  if (isPublic) {
+    return NextResponse.next();
+  }
+
+  // Verificar si la ruta está protegida
+  const isProtected = PROTECTED_PREFIXES.some(prefix => pathname.startsWith(prefix));
+  if (!isProtected) {
+    return NextResponse.next();
+  }
+
+  // Verificar cookie de sesión
+  const sessionCookie =
+    request.cookies.get(SESSION_COOKIE) ??
+    request.cookies.get(SECURE_SESSION_COOKIE);
+
+  // Si no hay sesión, redirigir a login
+  if (!sessionCookie?.value) {
+    const loginUrl = new URL('/login', request.url);
+    loginUrl.searchParams.set('redirect', pathname);
     return NextResponse.redirect(loginUrl);
   }
 
-  // Si el usuario tiene sesión e intenta entrar a /login, redirigir a /residente
+  // Si el usuario ya tiene sesión y está en login o registro, redirigir
+  if (pathname === '/login' || pathname === '/registro') {
+    // Opcional: redirigir según rol (puedes hacerlo en el cliente)
+    return NextResponse.next();
+  }
+
   return NextResponse.next();
 }
 
-// Configurar el matcher para que no aplique a archivos estáticos ni a la API
+// Configuración del matcher - excluye archivos estáticos y API internas
 export const config = {
-  matcher: ['/((?!api|_next|.*\\..*|favicon.ico).*)'],
+  matcher: [
+    '/admin/:path*',
+    '/representante/:path*',
+    '/tesorera/:path*',
+    '/trabajador/:path*',
+    '/residente/:path*',
+    '/login',
+    '/registro',
+    '/reset-password',
+    // Excluir archivos estáticos y API
+    '/((?!api|_next|.*\\..*|favicon.ico).*)',
+  ],
 };
