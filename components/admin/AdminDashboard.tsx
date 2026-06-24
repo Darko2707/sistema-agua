@@ -153,7 +153,7 @@ export function AdminDashboard() {
             onClick={() => router.push('/admin/tesoreras')}
           >
             <Landmark className="h-4 w-4" />
-            Tesoreras
+            Tesorero/a
           </Button>
         </div>
 

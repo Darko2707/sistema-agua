@@ -77,17 +77,33 @@ export const usuariosRouter = router({
     return listarResidentesHandler.execute({ rol, userId: ctx.user.id });
   }),
 
-  cambiarRol: roleProcedure('admin')
+  cambiarRol: roleProcedure('admin', 'representante')
     .input(z.object({
       userId: z.string(),
       rol:    z.enum(['admin', 'representante', 'tesorera', 'cuadrilla_cortes', 'residente']),
     }))
     .mutation(async ({ ctx, input }) => {
+      const actorRole = (ctx.user as { role?: string }).role;
+      if (actorRole === 'representante') {
+        if (input.rol === 'admin' || input.rol === 'cuadrilla_cortes' || input.rol === 'representante') {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes permiso para asignar ese rol' });
+        }
+        const miCircuito = await db.query.circuitos.findFirst({
+          where: (c, { eq }) => eq(c.representanteId, ctx.user.id),
+        });
+        if (!miCircuito) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes un circuito asignado' });
+        const perfil = await db.query.perfilesResidente.findFirst({
+          where: (p, { eq }) => eq(p.userId, input.userId),
+        });
+        if (!perfil || perfil.circuitoId !== miCircuito.id) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'Este usuario no pertenece a tu circuito' });
+        }
+      }
+
       logger.info('usuario.rol.cambiado', { actorId: ctx.user.id, userId: input.userId, rol: input.rol });
       const usuario = await db.query.user.findFirst({ where: (u, { eq }) => eq(u.id, input.userId) });
       if (!usuario) throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
 
-      // Al dejar de ser representante o tesorera, liberar el circuito asignado
       if (usuario.role === 'representante' && input.rol !== 'representante') {
         await db.update(circuitos).set({ representanteId: null }).where(eq(circuitos.representanteId, input.userId));
       }
@@ -121,7 +137,18 @@ export const usuariosRouter = router({
       return { ok: true };
     }),
 
-  listarPersonal: roleProcedure('admin').query(async () => {
+  listarPersonal: roleProcedure('admin', 'representante').query(async ({ ctx }) => {
+    const actorRole = (ctx.user as { role?: string }).role;
+    if (actorRole === 'representante') {
+      const circuito = await db.query.circuitos.findFirst({
+        where: (c, { eq }) => eq(c.representanteId, ctx.user.id),
+      });
+      if (!circuito?.tesoreraId) return [];
+      const tesorero = await db.query.user.findFirst({
+        where: (u, { eq }) => eq(u.id, circuito.tesoreraId!),
+      });
+      return tesorero ? [tesorero] : [];
+    }
     return db.query.user.findMany({
       where: (u, { ne }) => ne(u.role, 'residente'),
       orderBy: (u, { desc }) => [desc(u.createdAt)],

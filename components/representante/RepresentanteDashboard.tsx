@@ -13,27 +13,40 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { LogOut, Users, AlertTriangle, TrendingUp, Droplets, Home, Banknote, Search, Loader2, DollarSign } from 'lucide-react';
+import {
+  LogOut, Users, AlertTriangle, TrendingUp, Droplets, Home,
+  Banknote, Search, Loader2, DollarSign, Shield,
+} from 'lucide-react';
 
 const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+// Roles que el representante puede asignar dentro de su circuito
+const ROLES_CIRCUITO = [
+  { value: 'residente', label: 'Residente' },
+  { value: 'tesorera',  label: 'Tesorero/a' },
+];
 
 export function RepresentanteDashboard() {
   const router = useRouter();
   const { data: session, isPending: sessionPending } = useSession();
-  const [tab, setTab]               = useState<'todos' | 'morosos'>('todos');
+  const [tab, setTab]               = useState<'todos' | 'morosos' | 'personal'>('todos');
   const [busqueda, setBusqueda]     = useState('');
   const [registrando, setRegistrando] = useState<string | null>(null);
+  const [actualizando, setActualizando] = useState<string | null>(null);
   const [mensaje, setMensaje]       = useState('');
   const [error, setError]           = useState('');
 
   const circuitoQuery   = useCircuitoActual();
   const resumenQuery    = trpcReact.pagos.resumenMes.useQuery();
   const residentesQuery = trpcReact.usuarios.listarResidentes.useQuery();
+  const personalQuery   = trpcReact.usuarios.listarPersonal.useQuery();
   const pagarMutation   = usePagar();
+  const cambiarRolMut   = trpcReact.usuarios.cambiarRol.useMutation();
 
   const circuito   = circuitoQuery.data;
   const resumen    = resumenQuery.data;
   const residentes = residentesQuery.data ?? [];
+  const personal   = personalQuery.data ?? [];
   const cargando   = sessionPending || circuitoQuery.isLoading || resumenQuery.isLoading || residentesQuery.isLoading;
   const queryError = circuitoQuery.error?.message ?? resumenQuery.error?.message ?? residentesQuery.error?.message ?? null;
 
@@ -48,6 +61,25 @@ export function RepresentanteDashboard() {
       setError(e instanceof Error ? e.message : 'No se pudo registrar el pago');
     } finally {
       setRegistrando(null);
+    }
+  }
+
+  async function cambiarRol(userId: string, rol: string) {
+    setActualizando(userId);
+    setError('');
+    setMensaje('');
+    try {
+      await cambiarRolMut.mutateAsync({
+        userId,
+        rol: rol as 'residente' | 'tesorera',
+      });
+      setMensaje('Rol actualizado correctamente');
+      void residentesQuery.refetch();
+      void personalQuery.refetch();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'No se pudo cambiar el rol');
+    } finally {
+      setActualizando(null);
     }
   }
 
@@ -126,84 +158,154 @@ export function RepresentanteDashboard() {
           </Card>
         </div>
 
-        <div className="flex gap-2">
-          <Button variant={tab === 'todos' ? 'default' : 'outline'} onClick={() => setTab('todos')}>Todos ({residentes.length})</Button>
-          <Button variant={tab === 'morosos' ? 'destructive' : 'outline'} onClick={() => setTab('morosos')}>Morosos ({residentes.filter(r => !r.pagoEsteMes).length})</Button>
-        </div>
-
         {(mensaje || error) && (
           <div className={`rounded-xl border p-4 text-sm font-medium ${error ? 'border-red-200 bg-red-50 text-red-600' : 'border-green-200 bg-green-50 text-green-700'}`}>
             {error || mensaje}
           </div>
         )}
 
-        <Card>
-          <CardHeader className="space-y-4">
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <CardTitle className="text-xl font-bold">{tab === 'morosos' ? 'Residentes morosos' : 'Todos los residentes'}</CardTitle>
-              <div className="relative md:w-80">
-                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-                <Input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar residente, correo o vivienda..." className="pl-9" />
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {listaMostrar.length === 0 && (
-              <p className="py-10 text-center text-muted-foreground">{tab === 'morosos' ? 'Sin morosos este mes ✓' : 'No hay residentes que coincidan con la búsqueda'}</p>
-            )}
-            {listaMostrar.map(r => (
-              <div key={r.id} className="flex flex-col gap-4 rounded-xl border bg-background p-4 md:flex-row md:items-center md:justify-between hover:border-slate-300 transition-colors">
-                <div className="flex items-center gap-4">
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-sky-50 border border-sky-100"><Droplets className="h-6 w-6 text-sky-600" /></div>
-                  <div>
-                    <p className="font-semibold text-slate-800">{r.usuario.name}</p>
-                    <p className="text-sm text-muted-foreground">Edificio {r.edificio} · Depto {r.departamento}</p>
-                    <p className="text-xs text-slate-400 mt-0.5">{r.usuario.email}</p>
-                    {r.tenencia === 'inquilino' && r.nombrePropietario && (
-                      <p className="text-xs text-amber-700 mt-0.5">
-                        Inquilino · Dueño: {r.nombrePropietario}
-                        {r.telefonoPropietario ? ` · ${r.telefonoPropietario}` : ''}
-                      </p>
-                    )}
+        {/* Tabs */}
+        <div className="flex gap-2 flex-wrap">
+          <Button variant={tab === 'todos'    ? 'default' : 'outline'} onClick={() => setTab('todos')}>
+            Todos ({residentes.length})
+          </Button>
+          <Button variant={tab === 'morosos'  ? 'destructive' : 'outline'} onClick={() => setTab('morosos')}>
+            Morosos ({residentes.filter(r => !r.pagoEsteMes).length})
+          </Button>
+          <Button variant={tab === 'personal' ? 'default' : 'outline'} onClick={() => setTab('personal')}>
+            Personal ({personal.length})
+          </Button>
+        </div>
+
+        {/* ── Tab Personal ── */}
+        {tab === 'personal' && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Personal del circuito</CardTitle>
+              <p className="text-sm text-muted-foreground">Cambia el rol de los usuarios de tu circuito</p>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {personal.length === 0 ? (
+                <p className="py-10 text-center text-muted-foreground">
+                  No hay personal asignado a tu circuito. Cambia el rol de un residente a Tesorero/a desde la pestaña de residentes.
+                </p>
+              ) : (
+                personal.map((p) => (
+                  <div key={p.id} className="flex flex-col gap-4 rounded-xl border p-4 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <Shield className="h-4 w-4 text-primary" />
+                        <p className="font-medium">{p.name}</p>
+                      </div>
+                      <p className="text-sm text-muted-foreground">{p.email}</p>
+                      <Badge variant="outline" className="mt-1">
+                        {ROLES_CIRCUITO.find(r => r.value === p.role)?.label ?? p.role}
+                      </Badge>
+                    </div>
+                    <select
+                      value={p.role}
+                      disabled={actualizando === p.id}
+                      onChange={e => cambiarRol(p.id, e.target.value)}
+                      className="h-10 rounded-lg border bg-background px-3 md:w-56"
+                    >
+                      {ROLES_CIRCUITO.map(r => (
+                        <option key={r.value} value={r.value}>{r.label}</option>
+                      ))}
+                    </select>
                   </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* ── Tabs de residentes ── */}
+        {(tab === 'todos' || tab === 'morosos') && (
+          <Card>
+            <CardHeader className="space-y-4">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <CardTitle className="text-xl font-bold">{tab === 'morosos' ? 'Residentes morosos' : 'Todos los residentes'}</CardTitle>
+                <div className="relative md:w-80">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input value={busqueda} onChange={e => setBusqueda(e.target.value)} placeholder="Buscar residente, correo o vivienda..." className="pl-9" />
                 </div>
-                <div className="flex items-center gap-2 flex-wrap justify-end">
-                  <EstadoAguaBadge estado={r.estadoAgua} />
-                  {r.estadoAgua === 'activo' && r.pagoEsteMes && <Badge variant="default" className="font-medium bg-green-600">Pagado</Badge>}
-                  {r.estadoAgua === 'activo' && r.esMoroso && !r.pagoEsteMes && <Badge variant="outline" className="border-amber-300 text-amber-600 font-medium">Moroso</Badge>}
-                </div>
-                {r.estadoAgua === 'cortado' ? (
-                  <div className="flex flex-col gap-1.5 ml-2 items-end">
-                    <p className="text-xs text-red-600 font-medium">
-                      Reconexión: ${Number(circuito?.montoReconexion ?? 0).toFixed(2)} + mes: ${Number(circuito?.montoMensual ?? 0).toFixed(2)}
-                    </p>
-                    <div className="flex gap-1.5">
-                      <Button size="sm" variant="outline" onClick={() => registrarPagoManual(r.id, 'efectivo')} disabled={!!registrando} className="h-9 border-red-300 text-red-700">
-                        {registrando === `${r.id}:efectivo` ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Banknote className="mr-2 h-4 w-4" />}
-                        {registrando === `${r.id}:efectivo` ? 'Guardando...' : 'Efectivo'}
-                      </Button>
-                      <Button size="sm" onClick={() => registrarPagoManual(r.id, 'transferencia')} disabled={!!registrando} className="h-9 bg-red-600 hover:bg-red-700">
-                        {registrando === `${r.id}:transferencia` ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Banknote className="mr-2 h-4 w-4" />}
-                        {registrando === `${r.id}:transferencia` ? 'Guardando...' : 'Transf.'}
-                      </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {listaMostrar.length === 0 && (
+                <p className="py-10 text-center text-muted-foreground">{tab === 'morosos' ? 'Sin morosos este mes ✓' : 'No hay residentes que coincidan con la búsqueda'}</p>
+              )}
+              {listaMostrar.map(r => (
+                <div key={r.id} className="flex flex-col gap-4 rounded-xl border bg-background p-4 md:flex-row md:items-center md:justify-between hover:border-slate-300 transition-colors">
+                  <div className="flex items-center gap-4">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-sky-50 border border-sky-100"><Droplets className="h-6 w-6 text-sky-600" /></div>
+                    <div>
+                      <p className="font-semibold text-slate-800">{r.usuario.name}</p>
+                      <p className="text-sm text-muted-foreground">Edificio {r.edificio} · Depto {r.departamento}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">{r.usuario.email}</p>
+                      {r.tenencia === 'inquilino' && r.nombrePropietario && (
+                        <p className="text-xs text-amber-700 mt-0.5">
+                          Inquilino · Dueño: {r.nombrePropietario}
+                          {r.telefonoPropietario ? ` · ${r.telefonoPropietario}` : ''}
+                        </p>
+                      )}
                     </div>
                   </div>
-                ) : !r.pagoEsteMes ? (
-                  <div className="flex gap-1.5 ml-2">
-                    <Button size="sm" variant="outline" onClick={() => registrarPagoManual(r.id, 'efectivo')} disabled={!!registrando} className="h-9">
-                      {registrando === `${r.id}:efectivo` ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Banknote className="mr-2 h-4 w-4 text-emerald-600" />}
-                      {registrando === `${r.id}:efectivo` ? 'Guardando...' : 'Efectivo'}
-                    </Button>
-                    <Button size="sm" onClick={() => registrarPagoManual(r.id, 'transferencia')} disabled={!!registrando} className="h-9">
-                      {registrando === `${r.id}:transferencia` ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Banknote className="mr-2 h-4 w-4" />}
-                      {registrando === `${r.id}:transferencia` ? 'Guardando...' : 'Transferencia'}
-                    </Button>
+
+                  <div className="flex items-center gap-2 flex-wrap justify-end">
+                    <EstadoAguaBadge estado={r.estadoAgua} />
+                    {r.estadoAgua === 'activo' && r.pagoEsteMes && <Badge variant="default" className="font-medium bg-green-600">Pagado</Badge>}
+                    {r.estadoAgua === 'activo' && r.esMoroso && !r.pagoEsteMes && <Badge variant="outline" className="border-amber-300 text-amber-600 font-medium">Moroso</Badge>}
                   </div>
-                ) : null}
-              </div>
-            ))}
-          </CardContent>
-        </Card>
+
+                  {/* Selector de rol */}
+                  {r.usuario.id && (
+                    <select
+                      value={r.usuario.role ?? 'residente'}
+                      disabled={actualizando === r.usuario.id}
+                      onChange={e => cambiarRol(r.usuario.id!, e.target.value)}
+                      className="h-9 rounded-lg border bg-background px-2 text-sm md:w-40"
+                      title="Cambiar rol"
+                    >
+                      {ROLES_CIRCUITO.map(ro => (
+                        <option key={ro.value} value={ro.value}>{ro.label}</option>
+                      ))}
+                    </select>
+                  )}
+
+                  {r.estadoAgua === 'cortado' ? (
+                    <div className="flex flex-col gap-1.5 ml-2 items-end">
+                      <p className="text-xs text-red-600 font-medium">
+                        Reconexión: ${Number(circuito?.montoReconexion ?? 0).toFixed(2)} + mes: ${Number(circuito?.montoMensual ?? 0).toFixed(2)}
+                      </p>
+                      <div className="flex gap-1.5">
+                        <Button size="sm" variant="outline" onClick={() => registrarPagoManual(r.id, 'efectivo')} disabled={!!registrando} className="h-9 border-red-300 text-red-700">
+                          {registrando === `${r.id}:efectivo` ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Banknote className="mr-2 h-4 w-4" />}
+                          {registrando === `${r.id}:efectivo` ? 'Guardando...' : 'Efectivo'}
+                        </Button>
+                        <Button size="sm" onClick={() => registrarPagoManual(r.id, 'transferencia')} disabled={!!registrando} className="h-9 bg-red-600 hover:bg-red-700">
+                          {registrando === `${r.id}:transferencia` ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Banknote className="mr-2 h-4 w-4" />}
+                          {registrando === `${r.id}:transferencia` ? 'Guardando...' : 'Transf.'}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : !r.pagoEsteMes ? (
+                    <div className="flex gap-1.5 ml-2">
+                      <Button size="sm" variant="outline" onClick={() => registrarPagoManual(r.id, 'efectivo')} disabled={!!registrando} className="h-9">
+                        {registrando === `${r.id}:efectivo` ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Banknote className="mr-2 h-4 w-4 text-emerald-600" />}
+                        {registrando === `${r.id}:efectivo` ? 'Guardando...' : 'Efectivo'}
+                      </Button>
+                      <Button size="sm" onClick={() => registrarPagoManual(r.id, 'transferencia')} disabled={!!registrando} className="h-9">
+                        {registrando === `${r.id}:transferencia` ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Banknote className="mr-2 h-4 w-4" />}
+                        {registrando === `${r.id}:transferencia` ? 'Guardando...' : 'Transferencia'}
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );

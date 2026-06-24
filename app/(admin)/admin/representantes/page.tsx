@@ -96,9 +96,9 @@ export default function AdminRepresentantesPage() {
         <div className="flex items-start gap-3 rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-800">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
           <p>
-            Para añadir un nuevo representante, cambia el rol de un residente a{' '}
+            Para añadir un representante, cambia el rol de un residente a{' '}
             <strong>Representante</strong> desde la pestaña{' '}
-            <strong>Personal</strong> en el panel de administrador.
+            <strong>Personal</strong> en el panel de administrador (o pídele al representante que lo haga desde su panel).
             Después aparecerá en esta lista para asignarle un circuito.
           </p>
         </div>

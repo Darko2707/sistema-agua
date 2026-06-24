@@ -102,9 +102,9 @@ export default function AdminTesorerasPage() {
 
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-3xl font-bold">Tesoreras</h1>
+            <h1 className="text-3xl font-bold">Tesorero/a</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Asigna circuitos y configura Mercado Pago para cada tesorera.
+              Asigna circuitos y configura Mercado Pago para cada tesorero/a.
             </p>
           </div>
           <Button variant="outline" onClick={() => router.push('/admin')}>
@@ -116,8 +116,8 @@ export default function AdminTesorerasPage() {
         <div className="flex items-start gap-3 rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-800">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
           <p>
-            Para añadir una tesorera, cambia el rol de un residente a{' '}
-            <strong>Tesorera</strong> desde la pestaña{' '}
+            Para añadir un tesorero/a, cambia el rol de un residente a{' '}
+            <strong>Tesorero/a</strong> desde la pestaña{' '}
             <strong>Personal</strong> en el panel de administrador.
             Después aparecerá aquí para asignarle un circuito y sus credenciales de Mercado Pago.
           </p>
@@ -128,14 +128,14 @@ export default function AdminTesorerasPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Tesoreras registradas</CardTitle>
+            <CardTitle>Tesorero/a registrados</CardTitle>
           </CardHeader>
           <CardContent>
             {cargando ? (
               <p className="py-10 text-center text-muted-foreground">Cargando...</p>
             ) : tesoreras.length === 0 ? (
               <p className="py-10 text-center text-muted-foreground">
-                No hay usuarios con rol de tesorera. Asigna el rol desde la pestaña Personal.
+                No hay usuarios con rol de tesorero/a. Asigna el rol desde la pestaña Personal.
               </p>
             ) : (
               <Table>
