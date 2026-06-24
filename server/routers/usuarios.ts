@@ -119,11 +119,18 @@ export const usuariosRouter = router({
       const usuario = await db.query.user.findFirst({ where: (u, { eq }) => eq(u.id, input.userId) });
       if (!usuario) throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
 
+      // Limpiar asignación previa si deja de ser tesorera
       if (usuario.role === 'tesorera' && input.rol !== 'tesorera') {
         await db.update(circuitos).set({ tesoreraId: null }).where(eq(circuitos.tesoreraId, input.userId));
       }
 
       await db.update(user).set({ role: input.rol }).where(eq(user.id, input.userId));
+
+      // Si se promueve a tesorera, vincular al circuito del representante
+      if (input.rol === 'tesorera') {
+        await db.update(circuitos).set({ tesoreraId: input.userId }).where(eq(circuitos.id, miCircuito.id));
+      }
+
       logger.info('representante.rol.cambiado', { actorId: ctx.user.id, userId: input.userId, rol: input.rol });
       return { ok: true };
     }),

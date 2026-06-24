@@ -236,71 +236,78 @@ export function RepresentanteDashboard() {
                 <p className="py-10 text-center text-muted-foreground">{tab === 'morosos' ? 'Sin morosos este mes ✓' : 'No hay residentes que coincidan con la búsqueda'}</p>
               )}
               {listaMostrar.map(r => (
-                <div key={r.id} className="flex flex-col gap-4 rounded-xl border bg-background p-4 md:flex-row md:items-center md:justify-between hover:border-slate-300 transition-colors">
-                  <div className="flex items-center gap-4">
-                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-sky-50 border border-sky-100"><Droplets className="h-6 w-6 text-sky-600" /></div>
-                    <div>
-                      <p className="font-semibold text-slate-800">{r.usuario.name}</p>
-                      <p className="text-sm text-muted-foreground">Edificio {r.edificio} · Depto {r.departamento}</p>
-                      <p className="text-xs text-slate-400 mt-0.5">{r.usuario.email}</p>
-                      {r.tenencia === 'inquilino' && r.nombrePropietario && (
-                        <p className="text-xs text-amber-700 mt-0.5">
-                          Inquilino · Dueño: {r.nombrePropietario}
-                          {r.telefonoPropietario ? ` · ${r.telefonoPropietario}` : ''}
-                        </p>
-                      )}
+                <div key={r.id} className="rounded-xl border bg-background p-4 space-y-3 hover:border-slate-300 transition-colors">
+                  {/* Fila superior: info + estado */}
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-50 border border-sky-100">
+                        <Droplets className="h-5 w-5 text-sky-600" />
+                      </div>
+                      <div>
+                        <p className="font-semibold text-slate-800">{r.usuario?.name}</p>
+                        <p className="text-sm text-muted-foreground">Edif. {r.edificio} · Depto {r.departamento}</p>
+                        <p className="text-xs text-slate-400">{r.usuario?.email}</p>
+                        {r.tenencia === 'inquilino' && r.nombrePropietario && (
+                          <p className="text-xs text-amber-700">
+                            Inquilino · Dueño: {r.nombrePropietario}
+                            {r.telefonoPropietario ? ` · ${r.telefonoPropietario}` : ''}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap justify-end">
+                      <EstadoAguaBadge estado={r.estadoAgua} />
+                      {r.estadoAgua === 'activo' && r.pagoEsteMes && <Badge className="font-medium bg-green-600">Pagado</Badge>}
+                      {r.estadoAgua === 'activo' && r.esMoroso && !r.pagoEsteMes && <Badge variant="outline" className="border-amber-300 text-amber-600 font-medium">Moroso</Badge>}
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-2 flex-wrap justify-end">
-                    <EstadoAguaBadge estado={r.estadoAgua} />
-                    {r.estadoAgua === 'activo' && r.pagoEsteMes && <Badge variant="default" className="font-medium bg-green-600">Pagado</Badge>}
-                    {r.estadoAgua === 'activo' && r.esMoroso && !r.pagoEsteMes && <Badge variant="outline" className="border-amber-300 text-amber-600 font-medium">Moroso</Badge>}
-                  </div>
-
-                  {/* Selector de rol */}
-                  {r.usuario.id && (
+                  {/* Fila inferior: rol + botones de pago */}
+                  <div className="flex items-center justify-between gap-2 flex-wrap border-t pt-3">
+                    {/* Selector de rol — siempre visible */}
                     <select
-                      value={r.usuario.role ?? 'residente'}
-                      disabled={actualizando === r.usuario.id}
-                      onChange={e => cambiarRol(r.usuario.id!, e.target.value)}
-                      className="h-9 rounded-lg border bg-background px-2 text-sm md:w-40"
-                      title="Cambiar rol"
+                      value={r.usuario?.role ?? 'residente'}
+                      disabled={!r.usuario?.id || actualizando === r.usuario?.id}
+                      onChange={e => { if (r.usuario?.id) void cambiarRol(r.usuario.id, e.target.value); }}
+                      className="h-8 rounded-lg border bg-background px-2 text-sm w-36"
                     >
                       {ROLES_CIRCUITO.map(ro => (
                         <option key={ro.value} value={ro.value}>{ro.label}</option>
                       ))}
                     </select>
-                  )}
 
-                  {r.estadoAgua === 'cortado' ? (
-                    <div className="flex flex-col gap-1.5 ml-2 items-end">
-                      <p className="text-xs text-red-600 font-medium">
-                        Reconexión: ${Number(circuito?.montoReconexion ?? 0).toFixed(2)} + mes: ${Number(circuito?.montoMensual ?? 0).toFixed(2)}
-                      </p>
+                    {/* Botones de pago */}
+                    {r.estadoAgua === 'cortado' ? (
+                      <div className="flex flex-col gap-1 items-end">
+                        <p className="text-xs text-red-600 font-medium">
+                          Reconexión ${Number(circuito?.montoReconexion ?? 0).toFixed(2)} + mes ${Number(circuito?.montoMensual ?? 0).toFixed(2)}
+                        </p>
+                        <div className="flex gap-1.5">
+                          <Button size="sm" variant="outline" onClick={() => registrarPagoManual(r.id, 'efectivo')} disabled={!!registrando} className="border-red-300 text-red-700">
+                            {registrando === `${r.id}:efectivo` ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Banknote className="h-3 w-3 mr-1" />}
+                            Efectivo
+                          </Button>
+                          <Button size="sm" onClick={() => registrarPagoManual(r.id, 'transferencia')} disabled={!!registrando} className="bg-red-600 hover:bg-red-700">
+                            {registrando === `${r.id}:transferencia` ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Banknote className="h-3 w-3 mr-1" />}
+                            Transf.
+                          </Button>
+                        </div>
+                      </div>
+                    ) : !r.pagoEsteMes ? (
                       <div className="flex gap-1.5">
-                        <Button size="sm" variant="outline" onClick={() => registrarPagoManual(r.id, 'efectivo')} disabled={!!registrando} className="h-9 border-red-300 text-red-700">
-                          {registrando === `${r.id}:efectivo` ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Banknote className="mr-2 h-4 w-4" />}
-                          {registrando === `${r.id}:efectivo` ? 'Guardando...' : 'Efectivo'}
+                        <Button size="sm" variant="outline" onClick={() => registrarPagoManual(r.id, 'efectivo')} disabled={!!registrando}>
+                          {registrando === `${r.id}:efectivo` ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Banknote className="h-3 w-3 mr-1 text-emerald-600" />}
+                          Efectivo
                         </Button>
-                        <Button size="sm" onClick={() => registrarPagoManual(r.id, 'transferencia')} disabled={!!registrando} className="h-9 bg-red-600 hover:bg-red-700">
-                          {registrando === `${r.id}:transferencia` ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Banknote className="mr-2 h-4 w-4" />}
-                          {registrando === `${r.id}:transferencia` ? 'Guardando...' : 'Transf.'}
+                        <Button size="sm" onClick={() => registrarPagoManual(r.id, 'transferencia')} disabled={!!registrando}>
+                          {registrando === `${r.id}:transferencia` ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Banknote className="h-3 w-3 mr-1" />}
+                          Transferencia
                         </Button>
                       </div>
-                    </div>
-                  ) : !r.pagoEsteMes ? (
-                    <div className="flex gap-1.5 ml-2">
-                      <Button size="sm" variant="outline" onClick={() => registrarPagoManual(r.id, 'efectivo')} disabled={!!registrando} className="h-9">
-                        {registrando === `${r.id}:efectivo` ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Banknote className="mr-2 h-4 w-4 text-emerald-600" />}
-                        {registrando === `${r.id}:efectivo` ? 'Guardando...' : 'Efectivo'}
-                      </Button>
-                      <Button size="sm" onClick={() => registrarPagoManual(r.id, 'transferencia')} disabled={!!registrando} className="h-9">
-                        {registrando === `${r.id}:transferencia` ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Banknote className="mr-2 h-4 w-4" />}
-                        {registrando === `${r.id}:transferencia` ? 'Guardando...' : 'Transferencia'}
-                      </Button>
-                    </div>
-                  ) : null}
+                    ) : (
+                      <span className="text-xs text-green-700 font-medium">Pago registrado este mes</span>
+                    )}
+                  </div>
                 </div>
               ))}
             </CardContent>
