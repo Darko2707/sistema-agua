@@ -28,10 +28,10 @@ export async function GET(req: Request) {
   const dbUser = await db.query.user.findFirst({
     where: (u, { eq }) => eq(u.id, session.user.id),
   });
-  if (dbUser?.role !== 'representante') return new Response('Prohibido', { status: 403 });
+  if (dbUser?.role !== 'tesorera') return new Response('Prohibido', { status: 403 });
 
   const circuito = await db.query.circuitos.findFirst({
-    where: (c, { eq }) => eq(c.representanteId, session.user.id),
+    where: (c, { eq }) => eq(c.tesoreraId, session.user.id),
   });
   if (!circuito) return new Response('Sin circuito asignado', { status: 404 });
 

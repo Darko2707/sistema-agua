@@ -64,6 +64,13 @@
       "when": 1782249509901,
       "tag": "0008_colorful_black_knight",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1782260793137,
+      "tag": "0009_warm_doorman",
+      "breakpoints": true
     }
   ]
 }

@@ -17,16 +17,20 @@ type FormState = {
   email: string;
   password: string;
   circuitoId: string;
+  mercadoPagoAccessToken: string;
+  mercadoPagoCollectorId: string;
 };
 
-type Representante = {
+type Tesorera = {
   id: string;
   name: string;
   email: string;
   circuito: {
     id: string;
     nombre: string;
-    representanteId: string | null;
+    tesoreraId: string | null;
+    mercadoPagoAccessToken: string | null;
+    mercadoPagoCollectorId: string | null;
     activo: boolean;
     montoMensual: string;
     montoReconexion: string;
@@ -35,36 +39,37 @@ type Representante = {
 
 const emptyForm: FormState = {
   nombre: '', email: '', password: '', circuitoId: '',
+  mercadoPagoAccessToken: '', mercadoPagoCollectorId: '',
 };
 
-export default function AdminRepresentantesPage() {
+export default function AdminTesorerasPage() {
   const router = useRouter();
   const utils  = trpcReact.useUtils();
 
-  const [editando,     setEditando]     = useState<Representante | null>(null);
+  const [editando,     setEditando]     = useState<Tesorera | null>(null);
   const [modalAbierto, setModalAbierto] = useState(false);
   const [form,         setForm]         = useState<FormState>(emptyForm);
   const [error,        setError]        = useState<string | null>(null);
   const [mensaje,      setMensaje]      = useState<string | null>(null);
 
-  const repsQuery      = trpcReact.usuarios.listarRepresentantes.useQuery();
+  const tesorerasQuery = trpcReact.usuarios.listarTesoreras.useQuery();
   const circuitosQuery = trpcReact.circuitos.listar.useQuery();
 
-  const representantes       = repsQuery.data      ?? [];
-  const circuitos            = circuitosQuery.data  ?? [];
-  const cargando             = repsQuery.isLoading;
+  const tesoreras = tesorerasQuery.data ?? [];
+  const circuitos = circuitosQuery.data ?? [];
+  const cargando  = tesorerasQuery.isLoading;
 
   const circuitosDisponibles = useMemo(
-    () => circuitos.filter((c) => !c.representanteId || c.representanteId === editando?.id),
+    () => circuitos.filter((c) => !c.tesoreraId || c.tesoreraId === editando?.id),
     [circuitos, editando],
   );
 
-  const crearMut      = trpcReact.usuarios.crearRepresentante.useMutation();
-  const actualizarMut = trpcReact.usuarios.actualizarRepresentante.useMutation();
-  const eliminarMut   = trpcReact.usuarios.eliminarRepresentante.useMutation();
+  const crearMut      = trpcReact.usuarios.crearTesorera.useMutation();
+  const actualizarMut = trpcReact.usuarios.actualizarTesorera.useMutation();
+  const eliminarMut   = trpcReact.usuarios.eliminarTesorera.useMutation();
 
   function recargar() {
-    void utils.usuarios.listarRepresentantes.invalidate();
+    void utils.usuarios.listarTesoreras.invalidate();
     void utils.circuitos.listar.invalidate();
   }
 
@@ -76,13 +81,15 @@ export default function AdminRepresentantesPage() {
     setModalAbierto(true);
   }
 
-  function abrirEditar(rep: Representante) {
-    setEditando(rep);
+  function abrirEditar(tes: Tesorera) {
+    setEditando(tes);
     setForm({
-      nombre: rep.name,
-      email: rep.email,
+      nombre: tes.name,
+      email: tes.email,
       password: '',
-      circuitoId: rep.circuito?.id ?? '',
+      circuitoId: tes.circuito?.id ?? '',
+      mercadoPagoAccessToken: '',
+      mercadoPagoCollectorId: tes.circuito?.mercadoPagoCollectorId ?? '',
     });
     setError(null);
     setMensaje(null);
@@ -96,38 +103,42 @@ export default function AdminRepresentantesPage() {
       if (editando) {
         await actualizarMut.mutateAsync({
           id: editando.id,
-          ...(form.nombre !== editando.name  ? { nombre: form.nombre } : {}),
-          ...(form.email  !== editando.email ? { email: form.email }   : {}),
+          ...(form.nombre !== editando.name ? { nombre: form.nombre } : {}),
+          ...(form.email  !== editando.email ? { email: form.email }  : {}),
           ...(form.password ? { password: form.password } : {}),
           circuitoId: form.circuitoId || null,
+          ...(form.mercadoPagoAccessToken ? { mercadoPagoAccessToken: form.mercadoPagoAccessToken } : {}),
+          ...(form.mercadoPagoCollectorId ? { mercadoPagoCollectorId: form.mercadoPagoCollectorId } : {}),
         });
-        setMensaje('Representante actualizado');
+        setMensaje('Tesorera actualizada');
       } else {
         await crearMut.mutateAsync({
           nombre: form.nombre,
           email: form.email,
           password: form.password,
           ...(form.circuitoId ? { circuitoId: form.circuitoId } : {}),
+          ...(form.mercadoPagoAccessToken ? { mercadoPagoAccessToken: form.mercadoPagoAccessToken } : {}),
+          ...(form.mercadoPagoCollectorId ? { mercadoPagoCollectorId: form.mercadoPagoCollectorId } : {}),
         });
-        setMensaje('Representante creado');
+        setMensaje('Tesorera creada');
       }
       setModalAbierto(false);
       recargar();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'No se pudo guardar el representante');
+      setError(err instanceof Error ? err.message : 'No se pudo guardar la tesorera');
     }
   }
 
-  async function eliminar(rep: Representante) {
-    if (!window.confirm(`¿Eliminar a ${rep.name}?`)) return;
+  async function eliminar(tes: Tesorera) {
+    if (!window.confirm(`¿Eliminar a ${tes.name}?`)) return;
     setError(null);
     setMensaje(null);
     try {
-      await eliminarMut.mutateAsync({ id: rep.id });
-      setMensaje('Representante eliminado');
+      await eliminarMut.mutateAsync({ id: tes.id });
+      setMensaje('Tesorera eliminada');
       recargar();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'No se pudo eliminar el representante');
+      setError(err instanceof Error ? err.message : 'No se pudo eliminar la tesorera');
     }
   }
 
@@ -138,17 +149,14 @@ export default function AdminRepresentantesPage() {
       <div className="mx-auto max-w-7xl space-y-6">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-3xl font-bold">Representantes</h1>
+            <h1 className="text-3xl font-bold">Tesoreras</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Crea cuentas y asigna circuitos. La configuración de Mercado Pago se gestiona desde Tesoreras.
+              Crea cuentas, asigna circuitos y configura Mercado Pago.
             </p>
           </div>
           <div className="flex gap-2">
             <Button onClick={abrirCrear}>
               <Plus className="mr-2 h-4 w-4" />Crear
-            </Button>
-            <Button variant="outline" onClick={() => router.push('/admin/circuitos')}>
-              Circuitos
             </Button>
             <Button variant="outline" onClick={() => router.push('/admin')}>
               <ArrowLeft className="mr-2 h-4 w-4" />Volver
@@ -160,7 +168,7 @@ export default function AdminRepresentantesPage() {
         {mensaje && <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">{mensaje}</div>}
 
         <Card>
-          <CardHeader><CardTitle>Representantes registrados</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Tesoreras registradas</CardTitle></CardHeader>
           <CardContent>
             {cargando ? (
               <p className="py-10 text-center text-muted-foreground">Cargando...</p>
@@ -171,30 +179,34 @@ export default function AdminRepresentantesPage() {
                     <TableHead>Nombre</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Circuito</TableHead>
+                    <TableHead>Collector ID</TableHead>
                     <TableHead className="w-44 text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {representantes.length === 0 && (
+                  {tesoreras.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={4} className="py-10 text-center text-muted-foreground">
-                        Sin representantes registrados.
+                      <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
+                        Sin tesoreras registradas.
                       </TableCell>
                     </TableRow>
                   )}
-                  {representantes.map((rep) => (
-                    <TableRow key={rep.id}>
-                      <TableCell className="font-medium">{rep.name}</TableCell>
-                      <TableCell>{rep.email}</TableCell>
+                  {tesoreras.map((tes) => (
+                    <TableRow key={tes.id}>
+                      <TableCell className="font-medium">{tes.name}</TableCell>
+                      <TableCell>{tes.email}</TableCell>
                       <TableCell>
-                        {rep.circuito?.nombre ?? <span className="text-muted-foreground">Sin asignar</span>}
+                        {tes.circuito?.nombre ?? <span className="text-muted-foreground">Sin asignar</span>}
+                      </TableCell>
+                      <TableCell>
+                        {tes.circuito?.mercadoPagoCollectorId ?? <span className="text-muted-foreground">Pendiente</span>}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
-                          <Button size="sm" variant="outline" onClick={() => abrirEditar(rep)}>
+                          <Button size="sm" variant="outline" onClick={() => abrirEditar(tes)}>
                             <Pencil className="mr-2 h-4 w-4" />Editar
                           </Button>
-                          <Button size="sm" variant="destructive" onClick={() => eliminar(rep)} disabled={eliminarMut.isPending}>
+                          <Button size="sm" variant="destructive" onClick={() => eliminar(tes)} disabled={eliminarMut.isPending}>
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
@@ -210,14 +222,14 @@ export default function AdminRepresentantesPage() {
 
       {modalAbierto && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-background p-6 shadow-xl">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-lg bg-background p-6 shadow-xl">
             <div className="mb-5 flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-semibold">
-                  {editando ? 'Editar representante' : 'Crear representante'}
+                  {editando ? 'Editar tesorera' : 'Crear tesorera'}
                 </h2>
                 <p className="text-sm text-muted-foreground">
-                  {editando ? 'Actualiza datos del representante' : 'Se crearán las credenciales de acceso'}
+                  {editando ? 'Actualiza datos y configuración de cobro' : 'Se crearán las credenciales de acceso'}
                 </p>
               </div>
               <Button size="icon" variant="ghost" onClick={() => setModalAbierto(false)}>
@@ -257,6 +269,22 @@ export default function AdminRepresentantesPage() {
                     <option key={c.id} value={c.id}>{c.nombre}</option>
                   ))}
                 </select>
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium">Access Token Mercado Pago</label>
+                <Input
+                  type="password"
+                  value={form.mercadoPagoAccessToken}
+                  placeholder={editando ? 'Dejar vacío para conservar' : 'APP_USR...'}
+                  onChange={(e) => setForm((p) => ({ ...p, mercadoPagoAccessToken: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="mb-2 block text-sm font-medium">Collector ID</label>
+                <Input
+                  value={form.mercadoPagoCollectorId}
+                  onChange={(e) => setForm((p) => ({ ...p, mercadoPagoCollectorId: e.target.value }))}
+                />
               </div>
             </div>
 

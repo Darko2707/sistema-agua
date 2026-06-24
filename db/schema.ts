@@ -5,6 +5,7 @@ import { relations, sql } from 'drizzle-orm';
 export const rolEnum = pgEnum('rol', [
   'admin',
   'representante',
+  'tesorera',
   'cuadrilla_cortes',
   'residente',
 ]);
@@ -85,6 +86,7 @@ export const circuitos = pgTable('circuitos', {
   id:                     uuid('id').defaultRandom().primaryKey(),
   nombre:                 text('nombre').notNull(),
   representanteId:        text('representante_id').references(() => user.id),
+  tesoreraId:             text('tesorera_id').references(() => user.id),
   montoMensual:           decimal('monto_mensual', { precision: 10, scale: 2 }).notNull().default('50.00'),
   montoReconexion:        decimal('monto_reconexion', { precision: 10, scale: 2 }).notNull().default('300.00'),
   mercadoPagoAccessToken: text('mercado_pago_access_token'),

@@ -12,6 +12,7 @@ import {
   UserCog,
   Users,
   Wallet,
+  Landmark,
 } from 'lucide-react';
 
 import { useAdmin, MESES } from '@/hooks/useAdmin';
@@ -145,6 +146,14 @@ export function AdminDashboard() {
           >
             <UserCog className="h-4 w-4" />
             Representantes
+          </Button>
+          <Button
+            variant="outline"
+            className="flex items-center gap-2"
+            onClick={() => router.push('/admin/tesoreras')}
+          >
+            <Landmark className="h-4 w-4" />
+            Tesoreras
           </Button>
         </div>
 

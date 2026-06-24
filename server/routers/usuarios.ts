@@ -216,4 +216,102 @@ export const usuariosRouter = router({
       logger.info('admin.representante.eliminado', { actorId: ctx.user.id, userId: input.id });
       return { ok: true };
     }),
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // CRUD TESORERAS
+  // ══════════════════════════════════════════════════════════════════════════
+  listarTesoreras: roleProcedure('admin').query(async () => {
+    const tesoreras = await db.query.user.findMany({
+      where: (u, { eq }) => eq(u.role, 'tesorera'),
+      orderBy: (u, { asc }) => [asc(u.name)],
+    });
+    const todos = await db.query.circuitos.findMany();
+    return tesoreras.map((t) => ({
+      id:      t.id,
+      name:    t.name,
+      email:   t.email,
+      circuito: todos.find((c) => c.tesoreraId === t.id) ?? null,
+    }));
+  }),
+
+  crearTesorera: roleProcedure('admin')
+    .input(z.object({
+      nombre:                 z.string().min(1),
+      email:                  z.string().email(),
+      password:               z.string().min(8),
+      circuitoId:             z.string().uuid().optional(),
+      mercadoPagoAccessToken: z.string().optional(),
+      mercadoPagoCollectorId: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const existe = await db.query.user.findFirst({ where: (u, { eq }) => eq(u.email, input.email) });
+      if (existe) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Ya existe un usuario con ese correo' });
+
+      const userId = nanoid();
+      const hashed = await bcrypt.hash(input.password, 10);
+
+      await db.insert(user).values({
+        id: userId, name: input.nombre, email: input.email, role: 'tesorera', emailVerified: false,
+      });
+      await db.insert(account).values({
+        id: nanoid(), accountId: input.email, providerId: 'credential',
+        userId, password: hashed,
+      });
+
+      if (input.circuitoId) {
+        await db.update(circuitos)
+          .set({
+            tesoreraId: userId,
+            ...(input.mercadoPagoAccessToken ? { mercadoPagoAccessToken: encryptMpToken(input.mercadoPagoAccessToken) } : {}),
+            ...(input.mercadoPagoCollectorId ? { mercadoPagoCollectorId: input.mercadoPagoCollectorId } : {}),
+          })
+          .where(eq(circuitos.id, input.circuitoId));
+      }
+      logger.info('admin.tesorera.creada', { actorId: ctx.user.id, userId });
+      return { ok: true };
+    }),
+
+  actualizarTesorera: roleProcedure('admin')
+    .input(z.object({
+      id:                     z.string(),
+      nombre:                 z.string().min(1).optional(),
+      email:                  z.string().email().optional(),
+      password:               z.string().min(8).optional(),
+      circuitoId:             z.string().uuid().nullable().optional(),
+      mercadoPagoAccessToken: z.string().optional(),
+      mercadoPagoCollectorId: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const userUpdates: Record<string, unknown> = {};
+      if (input.nombre) userUpdates.name  = input.nombre;
+      if (input.email)  userUpdates.email = input.email;
+      if (Object.keys(userUpdates).length) {
+        await db.update(user).set(userUpdates).where(eq(user.id, input.id));
+      }
+      if (input.password) {
+        const hashed = await bcrypt.hash(input.password, 10);
+        await db.update(account).set({ password: hashed }).where(eq(account.userId, input.id));
+      }
+      await db.update(circuitos).set({ tesoreraId: null }).where(eq(circuitos.tesoreraId, input.id));
+      if (input.circuitoId) {
+        await db.update(circuitos)
+          .set({
+            tesoreraId: input.id,
+            ...(input.mercadoPagoAccessToken ? { mercadoPagoAccessToken: encryptMpToken(input.mercadoPagoAccessToken) } : {}),
+            ...(input.mercadoPagoCollectorId ? { mercadoPagoCollectorId: input.mercadoPagoCollectorId } : {}),
+          })
+          .where(eq(circuitos.id, input.circuitoId));
+      }
+      logger.info('admin.tesorera.actualizada', { actorId: ctx.user.id, userId: input.id });
+      return { ok: true };
+    }),
+
+  eliminarTesorera: roleProcedure('admin')
+    .input(z.object({ id: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      await db.update(circuitos).set({ tesoreraId: null }).where(eq(circuitos.tesoreraId, input.id));
+      await db.delete(user).where(eq(user.id, input.id));
+      logger.info('admin.tesorera.eliminada', { actorId: ctx.user.id, userId: input.id });
+      return { ok: true };
+    }),
 });

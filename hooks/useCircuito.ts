@@ -1,11 +1,20 @@
 import { trpcReact } from '@/lib/trpc-react';
-import { useIsRepresentante } from '@/hooks/useAuth';
+import { useIsRepresentante, useSession } from '@/hooks/useAuth';
 
 // Representante: circuito propio (devuelve NOT_FOUND para otros roles)
 export function useCircuitoActual() {
   const isRepresentante = useIsRepresentante();
   return trpcReact.circuitos.miCircuito.useQuery(undefined, {
     enabled: isRepresentante,
+  });
+}
+
+// Tesorera: circuito propio por tesoreraId
+export function useCircuitoTesorera() {
+  const { data: session } = useSession();
+  const isTesorera = session?.user?.role === 'tesorera';
+  return trpcReact.circuitos.miCircuitoTesorera.useQuery(undefined, {
+    enabled: isTesorera,
   });
 }
 

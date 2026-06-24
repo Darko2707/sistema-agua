@@ -36,9 +36,9 @@ function ultimos12Meses(): { mes: number; anio: number }[] {
   return periodos;
 }
 
-async function getCircuitoDelRepresentante(userId: string) {
+async function getCircuitoDelTesorera(userId: string) {
   const circuito = await db.query.circuitos.findFirst({
-    where: (c, { eq }) => eq(c.representanteId, userId),
+    where: (c, { eq }) => eq(c.tesoreraId, userId),
   });
   if (!circuito) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes un circuito asignado.' });
   return circuito;
@@ -51,7 +51,7 @@ export const reportesRouter = router({
   // ══════════════════════════════════════════════════════════════════════════
   // REPORTE 1: Residentes con historial de 12 meses
   // ══════════════════════════════════════════════════════════════════════════
-  reporteResidentes: roleProcedure('representante')
+  reporteResidentes: roleProcedure('tesorera')
     .input(z.object({
       estadoAgua: z.enum(['activo', 'pendiente_corte', 'cortado', 'pendiente_reconexion']).optional(),
       edificio:   z.string().optional(),
@@ -59,7 +59,7 @@ export const reportesRouter = router({
       orden:      z.enum(['edificio', 'nombre', 'estado']).default('edificio'),
     }))
     .query(async ({ ctx, input }) => {
-      const circuito = await getCircuitoDelRepresentante(ctx.user.id);
+      const circuito = await getCircuitoDelTesorera(ctx.user.id);
 
       const residentes = await db.query.perfilesResidente.findMany({
         where: (p, { eq, and }) => {
@@ -155,8 +155,8 @@ export const reportesRouter = router({
     }),
 
   // Lista de edificios únicos del circuito (para el filtro)
-  edificiosCircuito: roleProcedure('representante').query(async ({ ctx }) => {
-    const circuito = await getCircuitoDelRepresentante(ctx.user.id);
+  edificiosCircuito: roleProcedure('tesorera').query(async ({ ctx }) => {
+    const circuito = await getCircuitoDelTesorera(ctx.user.id);
     const perfiles = await db.query.perfilesResidente.findMany({
       where: (p, { eq }) => eq(p.circuitoId, circuito.id),
       columns: { edificio: true },
@@ -167,13 +167,13 @@ export const reportesRouter = router({
   // ══════════════════════════════════════════════════════════════════════════
   // REPORTE 2: Financiero del mes
   // ══════════════════════════════════════════════════════════════════════════
-  reporteFinanciero: roleProcedure('representante')
+  reporteFinanciero: roleProcedure('tesorera')
     .input(z.object({
       mes:  z.number().int().min(1).max(12),
       anio: z.number().int().min(2020).max(2099),
     }))
     .query(async ({ ctx, input }) => {
-      const circuito = await getCircuitoDelRepresentante(ctx.user.id);
+      const circuito = await getCircuitoDelTesorera(ctx.user.id);
 
       const [residentes, pagosPeriodo, gastosPeriodo, ingresosPeriodo] = await Promise.all([
         db.query.perfilesResidente.findMany({
@@ -256,7 +256,7 @@ export const reportesRouter = router({
   // ══════════════════════════════════════════════════════════════════════════
   // CRUD GASTOS
   // ══════════════════════════════════════════════════════════════════════════
-  agregarGasto: roleProcedure('representante')
+  agregarGasto: roleProcedure('tesorera')
     .input(z.object({
       concepto:  z.string().min(1, 'Concepto requerido'),
       monto:     z.number().positive('El monto debe ser positivo'),
@@ -266,7 +266,7 @@ export const reportesRouter = router({
       anio:      z.number().int().min(2020).max(2099),
     }))
     .mutation(async ({ ctx, input }) => {
-      const circuito = await getCircuitoDelRepresentante(ctx.user.id);
+      const circuito = await getCircuitoDelTesorera(ctx.user.id);
 
       const [gasto] = await db.insert(gastosCircuito).values({
         circuitoId:      circuito.id,
@@ -282,7 +282,7 @@ export const reportesRouter = router({
       return gasto;
     }),
 
-  editarGasto: roleProcedure('representante')
+  editarGasto: roleProcedure('tesorera')
     .input(z.object({
       id:        z.string().uuid(),
       concepto:  z.string().min(1).optional(),
@@ -291,7 +291,7 @@ export const reportesRouter = router({
       fecha:     z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const circuito = await getCircuitoDelRepresentante(ctx.user.id);
+      const circuito = await getCircuitoDelTesorera(ctx.user.id);
 
       const gasto = await db.query.gastosCircuito.findFirst({
         where: (g, { eq }) => eq(g.id, input.id),
@@ -309,10 +309,10 @@ export const reportesRouter = router({
       return { ok: true };
     }),
 
-  eliminarGasto: roleProcedure('representante')
+  eliminarGasto: roleProcedure('tesorera')
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      const circuito = await getCircuitoDelRepresentante(ctx.user.id);
+      const circuito = await getCircuitoDelTesorera(ctx.user.id);
 
       const gasto = await db.query.gastosCircuito.findFirst({
         where: (g, { eq }) => eq(g.id, input.id),
@@ -327,7 +327,7 @@ export const reportesRouter = router({
   // ══════════════════════════════════════════════════════════════════════════
   // CRUD INGRESOS ADICIONALES
   // ══════════════════════════════════════════════════════════════════════════
-  agregarIngreso: roleProcedure('representante')
+  agregarIngreso: roleProcedure('tesorera')
     .input(z.object({
       concepto: z.string().min(1, 'Concepto requerido'),
       monto:    z.number().positive('El monto debe ser positivo'),
@@ -336,7 +336,7 @@ export const reportesRouter = router({
       anio:     z.number().int().min(2020).max(2099),
     }))
     .mutation(async ({ ctx, input }) => {
-      const circuito = await getCircuitoDelRepresentante(ctx.user.id);
+      const circuito = await getCircuitoDelTesorera(ctx.user.id);
       const [ingreso] = await db.insert(ingresosAdicionales).values({
         circuitoId:      circuito.id,
         representanteId: ctx.user.id,
@@ -349,7 +349,7 @@ export const reportesRouter = router({
       return ingreso;
     }),
 
-  editarIngreso: roleProcedure('representante')
+  editarIngreso: roleProcedure('tesorera')
     .input(z.object({
       id:       z.string().uuid(),
       concepto: z.string().min(1).optional(),
@@ -357,7 +357,7 @@ export const reportesRouter = router({
       fecha:    z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const circuito = await getCircuitoDelRepresentante(ctx.user.id);
+      const circuito = await getCircuitoDelTesorera(ctx.user.id);
       const ingreso = await db.query.ingresosAdicionales.findFirst({
         where: (i, { eq }) => eq(i.id, input.id),
       });
@@ -373,10 +373,10 @@ export const reportesRouter = router({
       return { ok: true };
     }),
 
-  eliminarIngreso: roleProcedure('representante')
+  eliminarIngreso: roleProcedure('tesorera')
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      const circuito = await getCircuitoDelRepresentante(ctx.user.id);
+      const circuito = await getCircuitoDelTesorera(ctx.user.id);
       const ingreso = await db.query.ingresosAdicionales.findFirst({
         where: (i, { eq }) => eq(i.id, input.id),
       });

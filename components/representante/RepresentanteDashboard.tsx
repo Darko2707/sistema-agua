@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
-import { LogOut, Users, AlertTriangle, TrendingUp, Droplets, Home, Banknote, Search, Loader2, DollarSign, FileBarChart } from 'lucide-react';
+import { LogOut, Users, AlertTriangle, TrendingUp, Droplets, Home, Banknote, Search, Loader2, DollarSign } from 'lucide-react';
 
 const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 
@@ -87,9 +87,6 @@ export function RepresentanteDashboard() {
               <p className="mt-1 text-sky-100 text-sm">{MESES[ahora.getMonth()]} {ahora.getFullYear()} · Representante: {session?.user?.name}</p>
             </div>
             <div className="flex gap-2 flex-wrap">
-              <Button variant="secondary" onClick={() => router.push('/representante/reportes')} className="bg-white/20 text-white hover:bg-white/30 backdrop-blur-sm border-0">
-                <FileBarChart className="mr-2 h-4 w-4" />Reportes
-              </Button>
               <Button variant="secondary" onClick={() => router.push('/residente')} className="bg-white/20 text-white hover:bg-white/30 backdrop-blur-sm border-0">
                 <Home className="mr-2 h-4 w-4" />Mi cuenta
               </Button>

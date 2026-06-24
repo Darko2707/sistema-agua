@@ -78,4 +78,22 @@ export const circuitosRouter = router({
 
     return circuito;
   }),
+
+  // ============================================
+  // miCircuitoTesorera: Obtener el circuito de la tesorera autenticada
+  // ============================================
+  miCircuitoTesorera: roleProcedure('tesorera').query(async ({ ctx }) => {
+    const circuito = await db.query.circuitos.findFirst({
+      where: (c, { eq }) => eq(c.tesoreraId, ctx.user.id),
+    });
+
+    if (!circuito) {
+      throw new TRPCError({
+        code: 'NOT_FOUND',
+        message: 'No tienes un circuito asignado',
+      });
+    }
+
+    return circuito;
+  }),
 });
