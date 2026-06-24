@@ -10,6 +10,7 @@ export const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'S
 export const ROLES = [
   { value: 'admin',            label: 'Administrador' },
   { value: 'representante',    label: 'Representante' },
+  { value: 'tesorera',         label: 'Tesorera' },
   { value: 'cuadrilla_cortes', label: 'Cuadrilla' },
   { value: 'residente',        label: 'Residente' },
 ];
@@ -105,7 +106,7 @@ export function useAdmin() {
     try {
       await trpc.usuarios.cambiarRol.mutate({
         userId,
-        rol: rol as 'admin' | 'representante' | 'cuadrilla_cortes' | 'residente',
+        rol: rol as 'admin' | 'representante' | 'tesorera' | 'cuadrilla_cortes' | 'residente',
       });
       await cargarDatos();
     } catch (err: unknown) {

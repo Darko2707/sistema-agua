@@ -54,6 +54,8 @@ export default function LoginPage() {
         router.push('/admin');
       } else if (rol === 'representante') {
         router.push('/representante');
+      } else if (rol === 'tesorera') {
+        router.push('/tesorera');
       } else if (rol === 'cuadrilla_cortes') {
         router.push('/trabajador');
       } else {

@@ -80,12 +80,21 @@ export const usuariosRouter = router({
   cambiarRol: roleProcedure('admin')
     .input(z.object({
       userId: z.string(),
-      rol:    z.enum(['admin', 'representante', 'cuadrilla_cortes', 'residente']),
+      rol:    z.enum(['admin', 'representante', 'tesorera', 'cuadrilla_cortes', 'residente']),
     }))
     .mutation(async ({ ctx, input }) => {
       logger.info('usuario.rol.cambiado', { actorId: ctx.user.id, userId: input.userId, rol: input.rol });
       const usuario = await db.query.user.findFirst({ where: (u, { eq }) => eq(u.id, input.userId) });
       if (!usuario) throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
+
+      // Al dejar de ser representante o tesorera, liberar el circuito asignado
+      if (usuario.role === 'representante' && input.rol !== 'representante') {
+        await db.update(circuitos).set({ representanteId: null }).where(eq(circuitos.representanteId, input.userId));
+      }
+      if (usuario.role === 'tesorera' && input.rol !== 'tesorera') {
+        await db.update(circuitos).set({ tesoreraId: null }).where(eq(circuitos.tesoreraId, input.userId));
+      }
+
       await db.update(user).set({ role: input.rol }).where(eq(user.id, input.userId));
       return { ok: true };
     }),

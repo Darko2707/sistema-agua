@@ -8,7 +8,7 @@ import { useMiHistorial, useCheckoutMP } from '@/hooks/usePagos';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Droplets, CreditCard, LogOut, AlertTriangle, UserCog, Shield, FileText } from 'lucide-react';
+import { Droplets, CreditCard, LogOut, AlertTriangle, UserCog, FileText } from 'lucide-react';
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
@@ -32,24 +32,6 @@ export function ResidenteDashboard() {
 
   if (cargando) {
     return <div className="min-h-screen flex items-center justify-center"><p className="text-muted-foreground">Cargando...</p></div>;
-  }
-
-  if (miRol === 'admin') {
-    return (
-      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <Card className="w-full max-w-md">
-          <CardContent className="space-y-6 pt-6 text-center">
-            <Shield className="mx-auto h-16 w-16 text-primary" />
-            <div>
-              <h2 className="text-2xl font-bold">Panel de Administrador</h2>
-              <p className="text-muted-foreground mt-2">Los administradores no tienen acceso al panel de pagos.</p>
-            </div>
-            <Button onClick={() => router.push('/admin')} className="w-full">Ir al panel de administrador</Button>
-            <Button variant="outline" onClick={salir} className="w-full"><LogOut className="mr-2 h-4 w-4" />Cerrar sesión</Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
   }
 
   if (!historial?.perfil) {
@@ -88,6 +70,11 @@ export function ResidenteDashboard() {
               {miRol === 'representante' && (
                 <Button variant="secondary" onClick={() => router.push('/representante')} className="bg-white/20 text-white hover:bg-white/30">
                   <UserCog className="mr-2 h-4 w-4" />Representante
+                </Button>
+              )}
+              {miRol === 'tesorera' && (
+                <Button variant="secondary" onClick={() => router.push('/tesorera')} className="bg-white/20 text-white hover:bg-white/30">
+                  <UserCog className="mr-2 h-4 w-4" />Tesorera
                 </Button>
               )}
               {miRol === 'cuadrilla_cortes' && (

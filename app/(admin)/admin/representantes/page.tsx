@@ -1,23 +1,15 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ArrowLeft, Pencil, Plus, Save, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Save, X, Info } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { trpcReact } from '@/lib/trpc-react';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
-
-type FormState = {
-  nombre: string;
-  email: string;
-  password: string;
-  circuitoId: string;
-};
 
 type Representante = {
   id: string;
@@ -27,14 +19,7 @@ type Representante = {
     id: string;
     nombre: string;
     representanteId: string | null;
-    activo: boolean;
-    montoMensual: string;
-    montoReconexion: string;
   } | null | undefined;
-};
-
-const emptyForm: FormState = {
-  nombre: '', email: '', password: '', circuitoId: '',
 };
 
 export default function AdminRepresentantesPage() {
@@ -42,162 +27,120 @@ export default function AdminRepresentantesPage() {
   const utils  = trpcReact.useUtils();
 
   const [editando,     setEditando]     = useState<Representante | null>(null);
-  const [modalAbierto, setModalAbierto] = useState(false);
-  const [form,         setForm]         = useState<FormState>(emptyForm);
+  const [circuitoSel,  setCircuitoSel]  = useState('');
   const [error,        setError]        = useState<string | null>(null);
   const [mensaje,      setMensaje]      = useState<string | null>(null);
 
   const repsQuery      = trpcReact.usuarios.listarRepresentantes.useQuery();
   const circuitosQuery = trpcReact.circuitos.listar.useQuery();
 
-  const representantes       = repsQuery.data      ?? [];
-  const circuitos            = circuitosQuery.data  ?? [];
-  const cargando             = repsQuery.isLoading;
+  const representantes = repsQuery.data      ?? [];
+  const circuitos      = circuitosQuery.data  ?? [];
+  const cargando       = repsQuery.isLoading;
 
+  // Circuitos libres + el circuito actual del representante que se edita
   const circuitosDisponibles = useMemo(
-    () => circuitos.filter((c) => !c.representanteId || c.representanteId === editando?.id),
+    () => circuitos.filter(c => !c.representanteId || c.representanteId === editando?.id),
     [circuitos, editando],
   );
 
-  const crearMut      = trpcReact.usuarios.crearRepresentante.useMutation();
   const actualizarMut = trpcReact.usuarios.actualizarRepresentante.useMutation();
-  const eliminarMut   = trpcReact.usuarios.eliminarRepresentante.useMutation();
-
-  function recargar() {
-    void utils.usuarios.listarRepresentantes.invalidate();
-    void utils.circuitos.listar.invalidate();
-  }
-
-  function abrirCrear() {
-    setEditando(null);
-    setForm(emptyForm);
-    setError(null);
-    setMensaje(null);
-    setModalAbierto(true);
-  }
 
   function abrirEditar(rep: Representante) {
     setEditando(rep);
-    setForm({
-      nombre: rep.name,
-      email: rep.email,
-      password: '',
-      circuitoId: rep.circuito?.id ?? '',
-    });
+    setCircuitoSel(rep.circuito?.id ?? '');
     setError(null);
     setMensaje(null);
-    setModalAbierto(true);
+  }
+
+  function cerrarModal() {
+    setEditando(null);
+    setError(null);
   }
 
   async function guardar() {
+    if (!editando) return;
     setError(null);
     setMensaje(null);
     try {
-      if (editando) {
-        await actualizarMut.mutateAsync({
-          id: editando.id,
-          ...(form.nombre !== editando.name  ? { nombre: form.nombre } : {}),
-          ...(form.email  !== editando.email ? { email: form.email }   : {}),
-          ...(form.password ? { password: form.password } : {}),
-          circuitoId: form.circuitoId || null,
-        });
-        setMensaje('Representante actualizado');
-      } else {
-        await crearMut.mutateAsync({
-          nombre: form.nombre,
-          email: form.email,
-          password: form.password,
-          ...(form.circuitoId ? { circuitoId: form.circuitoId } : {}),
-        });
-        setMensaje('Representante creado');
-      }
-      setModalAbierto(false);
-      recargar();
+      await actualizarMut.mutateAsync({
+        id: editando.id,
+        circuitoId: circuitoSel || null,
+      });
+      setMensaje('Circuito asignado correctamente');
+      setEditando(null);
+      void utils.usuarios.listarRepresentantes.invalidate();
+      void utils.circuitos.listar.invalidate();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'No se pudo guardar el representante');
+      setError(err instanceof Error ? err.message : 'Error al guardar');
     }
   }
-
-  async function eliminar(rep: Representante) {
-    if (!window.confirm(`¿Eliminar a ${rep.name}?`)) return;
-    setError(null);
-    setMensaje(null);
-    try {
-      await eliminarMut.mutateAsync({ id: rep.id });
-      setMensaje('Representante eliminado');
-      recargar();
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'No se pudo eliminar el representante');
-    }
-  }
-
-  const guardando = crearMut.isPending || actualizarMut.isPending;
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8">
-      <div className="mx-auto max-w-7xl space-y-6">
+      <div className="mx-auto max-w-5xl space-y-6">
+
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-3xl font-bold">Representantes</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Crea cuentas y asigna circuitos. La configuración de Mercado Pago se gestiona desde Tesoreras.
+              Asigna circuitos a los representantes del sistema.
             </p>
           </div>
-          <div className="flex gap-2">
-            <Button onClick={abrirCrear}>
-              <Plus className="mr-2 h-4 w-4" />Crear
-            </Button>
-            <Button variant="outline" onClick={() => router.push('/admin/circuitos')}>
-              Circuitos
-            </Button>
-            <Button variant="outline" onClick={() => router.push('/admin')}>
-              <ArrowLeft className="mr-2 h-4 w-4" />Volver
-            </Button>
-          </div>
+          <Button variant="outline" onClick={() => router.push('/admin')}>
+            <ArrowLeft className="mr-2 h-4 w-4" />Volver
+          </Button>
+        </div>
+
+        {/* Aviso informativo */}
+        <div className="flex items-start gap-3 rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-800">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
+          <p>
+            Para añadir un nuevo representante, cambia el rol de un residente a{' '}
+            <strong>Representante</strong> desde la pestaña{' '}
+            <strong>Personal</strong> en el panel de administrador.
+            Después aparecerá en esta lista para asignarle un circuito.
+          </p>
         </div>
 
         {error   && <div className="rounded-lg border border-red-200   bg-red-50   p-3 text-sm text-red-600">{error}</div>}
         {mensaje && <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-700">{mensaje}</div>}
 
         <Card>
-          <CardHeader><CardTitle>Representantes registrados</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>Representantes registrados</CardTitle>
+          </CardHeader>
           <CardContent>
             {cargando ? (
               <p className="py-10 text-center text-muted-foreground">Cargando...</p>
+            ) : representantes.length === 0 ? (
+              <p className="py-10 text-center text-muted-foreground">
+                No hay usuarios con rol de representante. Asigna el rol desde la pestaña Personal.
+              </p>
             ) : (
               <Table>
                 <TableHeader>
                   <TableRow>
                     <TableHead>Nombre</TableHead>
                     <TableHead>Email</TableHead>
-                    <TableHead>Circuito</TableHead>
-                    <TableHead className="w-44 text-right">Acciones</TableHead>
+                    <TableHead>Circuito asignado</TableHead>
+                    <TableHead className="w-28 text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {representantes.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={4} className="py-10 text-center text-muted-foreground">
-                        Sin representantes registrados.
-                      </TableCell>
-                    </TableRow>
-                  )}
                   {representantes.map((rep) => (
                     <TableRow key={rep.id}>
                       <TableCell className="font-medium">{rep.name}</TableCell>
-                      <TableCell>{rep.email}</TableCell>
+                      <TableCell className="text-muted-foreground">{rep.email}</TableCell>
                       <TableCell>
-                        {rep.circuito?.nombre ?? <span className="text-muted-foreground">Sin asignar</span>}
+                        {rep.circuito?.nombre ?? (
+                          <span className="text-muted-foreground italic">Sin asignar</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button size="sm" variant="outline" onClick={() => abrirEditar(rep)}>
-                            <Pencil className="mr-2 h-4 w-4" />Editar
-                          </Button>
-                          <Button size="sm" variant="destructive" onClick={() => eliminar(rep)} disabled={eliminarMut.isPending}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
+                        <Button size="sm" variant="outline" onClick={() => abrirEditar(rep)}>
+                          Asignar circuito
+                        </Button>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -208,69 +151,45 @@ export default function AdminRepresentantesPage() {
         </Card>
       </div>
 
-      {modalAbierto && (
+      {/* Modal de asignación */}
+      {editando && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-background p-6 shadow-xl">
+          <div className="w-full max-w-md rounded-lg bg-background p-6 shadow-xl">
             <div className="mb-5 flex items-center justify-between">
               <div>
-                <h2 className="text-xl font-semibold">
-                  {editando ? 'Editar representante' : 'Crear representante'}
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  {editando ? 'Actualiza datos del representante' : 'Se crearán las credenciales de acceso'}
-                </p>
+                <h2 className="text-lg font-semibold">Asignar circuito</h2>
+                <p className="text-sm text-muted-foreground">{editando.name}</p>
               </div>
-              <Button size="icon" variant="ghost" onClick={() => setModalAbierto(false)}>
+              <Button size="icon" variant="ghost" onClick={cerrarModal}>
                 <X className="h-4 w-4" />
               </Button>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="mb-2 block text-sm font-medium">Nombre</label>
-                <Input value={form.nombre} onChange={(e) => setForm((p) => ({ ...p, nombre: e.target.value }))} />
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-medium">Email</label>
-                <Input type="email" value={form.email} onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))} />
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-medium">
-                  {editando ? 'Nueva contraseña' : 'Contraseña'}
-                </label>
-                <Input
-                  type="password"
-                  value={form.password}
-                  placeholder={editando ? 'Dejar vacío para conservar' : 'Mínimo 8 caracteres'}
-                  onChange={(e) => setForm((p) => ({ ...p, password: e.target.value }))}
-                />
-              </div>
+            <div className="space-y-4">
               <div>
                 <label className="mb-2 block text-sm font-medium">Circuito</label>
                 <select
-                  value={form.circuitoId}
-                  onChange={(e) => setForm((p) => ({ ...p, circuitoId: e.target.value }))}
-                  className="h-8 w-full rounded-lg border border-input bg-background px-2.5 text-sm"
+                  value={circuitoSel}
+                  onChange={e => setCircuitoSel(e.target.value)}
+                  className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm"
                 >
                   <option value="">Sin circuito</option>
-                  {circuitosDisponibles.map((c) => (
+                  {circuitosDisponibles.map(c => (
                     <option key={c.id} value={c.id}>{c.nombre}</option>
                   ))}
                 </select>
               </div>
+
+              {error && (
+                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">{error}</div>
+              )}
             </div>
 
-            {error && (
-              <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">{error}</div>
-            )}
-
             <div className="mt-6 flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setModalAbierto(false)}>Cancelar</Button>
-              <Button
-                disabled={guardando || !form.nombre || !form.email || (!editando && form.password.length < 8)}
-                onClick={guardar}
-              >
-                <Save className="mr-2 h-4 w-4" />Guardar
+              <Button variant="outline" onClick={cerrarModal}>Cancelar</Button>
+              <Button onClick={guardar} disabled={actualizarMut.isPending}>
+                <Save className="mr-2 h-4 w-4" />
+                {actualizarMut.isPending ? 'Guardando...' : 'Guardar'}
               </Button>
             </div>
           </div>
