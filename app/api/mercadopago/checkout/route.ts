@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { auth } from '@/lib/auth';
 import { createMercadoPagoClients } from '@/lib/mercadopago';
+import { decryptTokenSafe } from '@/lib/crypto';
 import { residenteRepo } from '@/src/infrastructure/db/repositories';
 import { calcularDesglosePago, calcularMontoBase } from '@/src/domain/pagos/calculator';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
@@ -23,8 +24,7 @@ export async function POST(request: Request) {
   const perfil = await residenteRepo.findByUserId(session.user.id);
   if (!perfil) return Response.json({ error: 'Completa tu perfil primero' }, { status: 400 });
   if (!perfil.circuito?.representanteId) return Response.json({ error: 'Tu circuito no tiene representante asignado' }, { status: 400 });
-  // El token ya viene descifrado desde el repositorio
-  const accessToken = perfil.circuito.mercadoPagoAccessToken;
+  const accessToken = decryptTokenSafe(perfil.circuito.mercadoPagoAccessToken);
   if (!accessToken) {
     return Response.json({ error: 'El representante de tu circuito aun no tiene Mercado Pago configurado' }, { status: 400 });
   }
