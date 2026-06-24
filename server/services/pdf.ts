@@ -172,8 +172,8 @@ export async function generarTicketPDF(data: {
     x: W - 120, y: STAMP_Y, width: 92, height: 28,
     color: GREEN,
   });
-  page.drawText('✓  PAGADO', {
-    x: W - 108, y: STAMP_Y + 9, size: 11, font: bold, color: WHITE,
+  page.drawText('PAGADO', {
+    x: W - 104, y: STAMP_Y + 9, size: 11, font: bold, color: WHITE,
   });
 
   // ════════════════════════════════════════════════════════
