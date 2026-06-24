@@ -83,6 +83,6 @@ export async function POST(request: Request) {
       return Response.json({ error: 'Firma invalida' }, { status: 401 });
     }
     logger.error('mp.webhook.error', error);
-    return Response.json({ received: true });
+    throw error;
   }
 }

@@ -31,7 +31,7 @@ export class DrizzlePagoRepository implements PagoRepository {
     return rows as PagoData[];
   }
 
-  async findByCircuitoYMes(circuitoId: string, mes: number, anio: number): Promise<PagoData[]> {
+  async findAllPagadosPorMes(mes: number, anio: number): Promise<PagoData[]> {
     const rows = await db.query.pagos.findMany({
       where: (p, { eq, and }) => and(eq(p.mes, mes), eq(p.anio, anio), eq(p.estado, 'pagado')),
       orderBy: (p, { desc }) => [desc(p.fechaPago)],

@@ -38,7 +38,7 @@ function makeDeps() {
   const pagoRepo: PagoRepository = {
     findByPerfilYMes: vi.fn().mockResolvedValue(null),
     findByPerfilId: vi.fn(),
-    findByCircuitoYMes: vi.fn(),
+    findAllPagadosPorMes: vi.fn(),
     findPagadosByMes: vi.fn(),
     createWithLock: vi.fn().mockResolvedValue(mockPagoCreado),
     findCorteActivo: vi.fn(),

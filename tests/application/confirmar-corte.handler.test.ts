@@ -28,7 +28,7 @@ function makeDeps() {
   const pagoRepo: PagoRepository = {
     findByPerfilYMes: vi.fn(),
     findByPerfilId: vi.fn(),
-    findByCircuitoYMes: vi.fn(),
+    findAllPagadosPorMes: vi.fn(),
     findPagadosByMes: vi.fn(),
     createWithLock: vi.fn(),
     findCorteActivo: vi.fn(),

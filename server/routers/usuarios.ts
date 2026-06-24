@@ -69,7 +69,12 @@ export const usuariosRouter = router({
   }),
 
   listarCircuitos: publicProcedure.query(async () => {
-    return circuitoRepo.findAll();
+    return db.select({
+      id:              circuitos.id,
+      nombre:          circuitos.nombre,
+      activo:          circuitos.activo,
+      representanteId: circuitos.representanteId,
+    }).from(circuitos).where(eq(circuitos.activo, true));
   }),
 
   listarResidentes: roleProcedure('admin', 'representante').query(async ({ ctx }) => {
@@ -87,28 +92,39 @@ export const usuariosRouter = router({
       const usuario = await db.query.user.findFirst({ where: (u, { eq }) => eq(u.id, input.userId) });
       if (!usuario) throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
 
-      if (usuario.role === 'representante' && input.rol !== 'representante') {
-        await db.update(circuitos).set({ representanteId: null }).where(eq(circuitos.representanteId, input.userId));
-      }
-      if (usuario.role === 'tesorera' && input.rol !== 'tesorera') {
-        await db.update(circuitos).set({ tesoreraId: null }).where(eq(circuitos.tesoreraId, input.userId));
-      }
+      // Leer estado actual antes de la transacción
+      let nuevaCircuitoId: string | undefined;
+      let anteriorTesoreraId: string | undefined;
       if (input.rol === 'tesorera') {
         const perfil = await db.query.perfilesResidente.findFirst({
           where: (p, { eq }) => eq(p.userId, input.userId),
         });
         if (perfil?.circuitoId) {
+          nuevaCircuitoId = perfil.circuitoId;
           const circuito = await db.query.circuitos.findFirst({
             where: (c, { eq }) => eq(c.id, perfil.circuitoId!),
           });
           if (circuito?.tesoreraId && circuito.tesoreraId !== input.userId) {
-            await db.update(user).set({ role: 'residente' }).where(eq(user.id, circuito.tesoreraId));
+            anteriorTesoreraId = circuito.tesoreraId;
           }
-          await db.update(circuitos).set({ tesoreraId: input.userId }).where(eq(circuitos.id, perfil.circuitoId));
         }
       }
 
-      await db.update(user).set({ role: input.rol }).where(eq(user.id, input.userId));
+      await db.transaction(async (tx) => {
+        if (usuario.role === 'representante' && input.rol !== 'representante') {
+          await tx.update(circuitos).set({ representanteId: null }).where(eq(circuitos.representanteId, input.userId));
+        }
+        if (usuario.role === 'tesorera' && input.rol !== 'tesorera') {
+          await tx.update(circuitos).set({ tesoreraId: null }).where(eq(circuitos.tesoreraId, input.userId));
+        }
+        if (nuevaCircuitoId) {
+          if (anteriorTesoreraId) {
+            await tx.update(user).set({ role: 'residente' }).where(eq(user.id, anteriorTesoreraId));
+          }
+          await tx.update(circuitos).set({ tesoreraId: input.userId }).where(eq(circuitos.id, nuevaCircuitoId));
+        }
+        await tx.update(user).set({ role: input.rol }).where(eq(user.id, input.userId));
+      });
       return { ok: true };
     }),
 
@@ -133,20 +149,18 @@ export const usuariosRouter = router({
       const usuario = await db.query.user.findFirst({ where: (u, { eq }) => eq(u.id, input.userId) });
       if (!usuario) throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
 
-      // Limpiar asignación previa si deja de ser tesorera
-      if (usuario.role === 'tesorera' && input.rol !== 'tesorera') {
-        await db.update(circuitos).set({ tesoreraId: null }).where(eq(circuitos.tesoreraId, input.userId));
-      }
-
-      await db.update(user).set({ role: input.rol }).where(eq(user.id, input.userId));
-
-      // Si se promueve a tesorera, degradar al tesorero/a anterior y vincular el nuevo
-      if (input.rol === 'tesorera') {
-        if (miCircuito.tesoreraId && miCircuito.tesoreraId !== input.userId) {
-          await db.update(user).set({ role: 'residente' }).where(eq(user.id, miCircuito.tesoreraId));
+      await db.transaction(async (tx) => {
+        if (usuario.role === 'tesorera' && input.rol !== 'tesorera') {
+          await tx.update(circuitos).set({ tesoreraId: null }).where(eq(circuitos.tesoreraId, input.userId));
         }
-        await db.update(circuitos).set({ tesoreraId: input.userId }).where(eq(circuitos.id, miCircuito.id));
-      }
+        await tx.update(user).set({ role: input.rol }).where(eq(user.id, input.userId));
+        if (input.rol === 'tesorera') {
+          if (miCircuito.tesoreraId && miCircuito.tesoreraId !== input.userId) {
+            await tx.update(user).set({ role: 'residente' }).where(eq(user.id, miCircuito.tesoreraId));
+          }
+          await tx.update(circuitos).set({ tesoreraId: input.userId }).where(eq(circuitos.id, miCircuito.id));
+        }
+      });
 
       logger.info('representante.rol.cambiado', { actorId: ctx.user.id, userId: input.userId, rol: input.rol });
       return { ok: true };
@@ -269,17 +283,18 @@ export const usuariosRouter = router({
         await db.update(account).set({ password: hashed })
           .where(eq(account.userId, input.id));
       }
-      // Desasignar circuito anterior
-      await db.update(circuitos).set({ representanteId: null }).where(eq(circuitos.representanteId, input.id));
-      // Asignar nuevo circuito si se proveyó
-      if (input.circuitoId) {
-        await db.update(circuitos)
-          .set({
-            representanteId: input.id,
-            ...(input.mercadoPagoAccessToken ? { mercadoPagoAccessToken: encryptMpToken(input.mercadoPagoAccessToken) } : {}),
-            ...(input.mercadoPagoCollectorId ? { mercadoPagoCollectorId: input.mercadoPagoCollectorId } : {}),
-          })
-          .where(eq(circuitos.id, input.circuitoId));
+      // Solo modificar asignación si se envía circuitoId explícitamente (undefined = no tocar)
+      if (input.circuitoId !== undefined) {
+        await db.update(circuitos).set({ representanteId: null }).where(eq(circuitos.representanteId, input.id));
+        if (input.circuitoId) {
+          await db.update(circuitos)
+            .set({
+              representanteId: input.id,
+              ...(input.mercadoPagoAccessToken ? { mercadoPagoAccessToken: encryptMpToken(input.mercadoPagoAccessToken) } : {}),
+              ...(input.mercadoPagoCollectorId ? { mercadoPagoCollectorId: input.mercadoPagoCollectorId } : {}),
+            })
+            .where(eq(circuitos.id, input.circuitoId));
+        }
       }
       logger.info('admin.representante.actualizado', { actorId: ctx.user.id, userId: input.id });
       return { ok: true };
@@ -288,6 +303,17 @@ export const usuariosRouter = router({
   eliminarRepresentante: roleProcedure('admin')
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
+      const tieneRegistros = await db.query.ingresosAdicionales.findFirst({
+        where: (ia, { eq }) => eq(ia.representanteId, input.id),
+      }) ?? await db.query.gastosCircuito.findFirst({
+        where: (g, { eq }) => eq(g.representanteId, input.id),
+      });
+      if (tieneRegistros) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: 'No se puede eliminar: el representante tiene ingresos o gastos registrados. Desasígnalo del circuito en su lugar.',
+        });
+      }
       await db.update(circuitos).set({ representanteId: null }).where(eq(circuitos.representanteId, input.id));
       await db.delete(user).where(eq(user.id, input.id));
       logger.info('admin.representante.eliminado', { actorId: ctx.user.id, userId: input.id });
@@ -369,15 +395,17 @@ export const usuariosRouter = router({
         const hashed = await bcrypt.hash(input.password, 10);
         await db.update(account).set({ password: hashed }).where(eq(account.userId, input.id));
       }
-      await db.update(circuitos).set({ tesoreraId: null }).where(eq(circuitos.tesoreraId, input.id));
-      if (input.circuitoId) {
-        await db.update(circuitos)
-          .set({
-            tesoreraId: input.id,
-            ...(input.mercadoPagoAccessToken ? { mercadoPagoAccessToken: encryptMpToken(input.mercadoPagoAccessToken) } : {}),
-            ...(input.mercadoPagoCollectorId ? { mercadoPagoCollectorId: input.mercadoPagoCollectorId } : {}),
-          })
-          .where(eq(circuitos.id, input.circuitoId));
+      if (input.circuitoId !== undefined) {
+        await db.update(circuitos).set({ tesoreraId: null }).where(eq(circuitos.tesoreraId, input.id));
+        if (input.circuitoId) {
+          await db.update(circuitos)
+            .set({
+              tesoreraId: input.id,
+              ...(input.mercadoPagoAccessToken ? { mercadoPagoAccessToken: encryptMpToken(input.mercadoPagoAccessToken) } : {}),
+              ...(input.mercadoPagoCollectorId ? { mercadoPagoCollectorId: input.mercadoPagoCollectorId } : {}),
+            })
+            .where(eq(circuitos.id, input.circuitoId));
+        }
       }
       logger.info('admin.tesorera.actualizada', { actorId: ctx.user.id, userId: input.id });
       return { ok: true };
@@ -386,6 +414,17 @@ export const usuariosRouter = router({
   eliminarTesorera: roleProcedure('admin')
     .input(z.object({ id: z.string() }))
     .mutation(async ({ ctx, input }) => {
+      const tieneRegistros = await db.query.ingresosAdicionales.findFirst({
+        where: (ia, { eq }) => eq(ia.representanteId, input.id),
+      }) ?? await db.query.gastosCircuito.findFirst({
+        where: (g, { eq }) => eq(g.representanteId, input.id),
+      });
+      if (tieneRegistros) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: 'No se puede eliminar: el usuario tiene ingresos o gastos registrados. Desasígnalo del circuito en su lugar.',
+        });
+      }
       await db.update(circuitos).set({ tesoreraId: null }).where(eq(circuitos.tesoreraId, input.id));
       await db.delete(user).where(eq(user.id, input.id));
       logger.info('admin.tesorera.eliminada', { actorId: ctx.user.id, userId: input.id });

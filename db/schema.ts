@@ -120,7 +120,7 @@ export const pagos = pgTable('pagos', {
   id:                     uuid('id').defaultRandom().primaryKey(),
   perfilId:               uuid('perfil_id').references(() => perfilesResidente.id).notNull(),
   circuitoId:             uuid('circuito_id').references(() => circuitos.id),
-  representanteId:        text('representante_id').references(() => user.id),
+  representanteId:        text('representante_id').references(() => user.id, { onDelete: 'set null' }),
   mes:                    integer('mes').notNull(),
   anio:                   integer('anio').notNull(),
   monto:                  decimal('monto', { precision: 10, scale: 2 }).notNull(),
@@ -148,6 +148,9 @@ export const pagos = pgTable('pagos', {
   // Historial completo de un residente (miHistorial, historialDe).
   // El índice parcial de arriba no cubre búsquedas sin filtro de estado.
   index('idx_pagos_perfil_periodo').on(t.perfilId, t.mes, t.anio),
+
+  // Reportes financieros y de residentes filtran por circuito y periodo.
+  index('idx_pagos_circuito_periodo').on(t.circuitoId, t.mes, t.anio),
 
   // Ordenamiento cronológico en listados admin.
   index('idx_pagos_creado_en').on(t.creadoEn),

@@ -58,7 +58,7 @@ export type CorteData = {
 export interface PagoRepository {
   findByPerfilYMes(perfilId: string, mes: number, anio: number): Promise<PagoData | null>;
   findByPerfilId(perfilId: string, limit?: number): Promise<PagoData[]>;
-  findByCircuitoYMes(circuitoId: string, mes: number, anio: number): Promise<PagoData[]>;
+  findAllPagadosPorMes(mes: number, anio: number): Promise<PagoData[]>;
   findPagadosByMes(mes: number, anio: number): Promise<Array<{ perfilId: string }>>;
   createWithLock(perfilId: string, input: CrearPagoInput): Promise<PagoData>;
   findCorteActivo(perfilId: string): Promise<CorteData | null>;

@@ -28,8 +28,7 @@ export class ResumenMesHandler {
       perfiles = await residenteRepo.findByCircuito(miCircuito.id);
     }
 
-    const pagosDelMes = await pagoRepo.findByCircuitoYMes('', periodo.mes, periodo.anio);
-    // For admin we need all pagos del mes, not by circuito
+    const pagosDelMes = await pagoRepo.findAllPagadosPorMes(periodo.mes, periodo.anio);
     const todosLosPagos = await pagoRepo.findPagadosByMes(periodo.mes, periodo.anio);
     const idsPagados = new Set(todosLosPagos.map(p => p.perfilId));
 

@@ -1,11 +1,8 @@
 import { headers } from 'next/headers';
-import { eq } from 'drizzle-orm';
 
 import { db } from '@/db';
-import { tickets } from '@/db/schema';
 import { auth } from '@/lib/auth';
 import { generarTicketPDF } from '@/server/services/pdf';
-import { storageGet, storagePut } from '@/lib/storage';
 import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
@@ -60,29 +57,7 @@ export async function GET(
     return Response.json({ error: 'No autorizado' }, { status: 403 });
   }
 
-  // ── Cache hit: el PDF ya fue generado, buscarlo en Blob ─────────────────
-  if (ticket.pdfUrl) {
-    const cached = await storageGet(ticket.pdfUrl).catch((err) => {
-      logger.error('ticket.pdf.storage_get_error', err, { folio });
-      return null;
-    });
-
-    if (cached) {
-      logger.debug('ticket.pdf.cache_hit', { folio });
-      return new Response(new Uint8Array(cached), {
-        headers: {
-          'Content-Type':        'application/pdf',
-          'Content-Disposition': `attachment; filename="recibo-${folio}.pdf"`,
-          'Cache-Control':       CACHE_CONTROL,
-        },
-      });
-    }
-
-    // pdfUrl estaba en DB pero el blob ya no existe (expirado o eliminado)
-    logger.warn('ticket.pdf.storage_miss', { folio, url: ticket.pdfUrl });
-  }
-
-  // ── Cache miss: generar PDF ───────────────────────────────────────────────
+  // ── Generar PDF ───────────────────────────────────────────────────────────
   logger.info('ticket.pdf.generando', { folio });
 
   const pdf = await generarTicketPDF({
@@ -102,16 +77,6 @@ export async function GET(
     retencionIva:        ticket.pago.retencionIva,
     emailContacto:       process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? 'contacto@sistema-agua.local',
   });
-
-  // ── Subir a Vercel Blob y guardar URL en DB (no-fatal si falla) ──────────
-  try {
-    const blobUrl = await storagePut(folio, pdf);
-    await db.update(tickets).set({ pdfUrl: blobUrl }).where(eq(tickets.folio, folio));
-    logger.info('ticket.pdf.almacenado', { folio, blobUrl });
-  } catch (err) {
-    // Seguimos sirviendo el PDF aunque el upload o la DB fallen — next request regenera
-    logger.error('ticket.pdf.upload_fallo', err, { folio });
-  }
 
   return new Response(pdf, {
     headers: {
