@@ -77,29 +77,12 @@ export const usuariosRouter = router({
     return listarResidentesHandler.execute({ rol, userId: ctx.user.id });
   }),
 
-  cambiarRol: roleProcedure('admin', 'representante')
+  cambiarRol: roleProcedure('admin')
     .input(z.object({
       userId: z.string(),
       rol:    z.enum(['admin', 'representante', 'tesorera', 'cuadrilla_cortes', 'residente']),
     }))
     .mutation(async ({ ctx, input }) => {
-      const actorRole = (ctx.user as { role?: string }).role;
-      if (actorRole === 'representante') {
-        if (input.rol === 'admin' || input.rol === 'cuadrilla_cortes' || input.rol === 'representante') {
-          throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes permiso para asignar ese rol' });
-        }
-        const miCircuito = await db.query.circuitos.findFirst({
-          where: (c, { eq }) => eq(c.representanteId, ctx.user.id),
-        });
-        if (!miCircuito) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes un circuito asignado' });
-        const perfil = await db.query.perfilesResidente.findFirst({
-          where: (p, { eq }) => eq(p.userId, input.userId),
-        });
-        if (!perfil || perfil.circuitoId !== miCircuito.id) {
-          throw new TRPCError({ code: 'FORBIDDEN', message: 'Este usuario no pertenece a tu circuito' });
-        }
-      }
-
       logger.info('usuario.rol.cambiado', { actorId: ctx.user.id, userId: input.userId, rol: input.rol });
       const usuario = await db.query.user.findFirst({ where: (u, { eq }) => eq(u.id, input.userId) });
       if (!usuario) throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
@@ -112,6 +95,36 @@ export const usuariosRouter = router({
       }
 
       await db.update(user).set({ role: input.rol }).where(eq(user.id, input.userId));
+      return { ok: true };
+    }),
+
+  cambiarRolEnCircuito: roleProcedure('representante')
+    .input(z.object({
+      userId: z.string(),
+      rol:    z.enum(['residente', 'tesorera']),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const miCircuito = await db.query.circuitos.findFirst({
+        where: (c, { eq }) => eq(c.representanteId, ctx.user.id),
+      });
+      if (!miCircuito) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes un circuito asignado' });
+
+      const perfil = await db.query.perfilesResidente.findFirst({
+        where: (p, { eq }) => eq(p.userId, input.userId),
+      });
+      if (!perfil || perfil.circuitoId !== miCircuito.id) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Este usuario no pertenece a tu circuito' });
+      }
+
+      const usuario = await db.query.user.findFirst({ where: (u, { eq }) => eq(u.id, input.userId) });
+      if (!usuario) throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
+
+      if (usuario.role === 'tesorera' && input.rol !== 'tesorera') {
+        await db.update(circuitos).set({ tesoreraId: null }).where(eq(circuitos.tesoreraId, input.userId));
+      }
+
+      await db.update(user).set({ role: input.rol }).where(eq(user.id, input.userId));
+      logger.info('representante.rol.cambiado', { actorId: ctx.user.id, userId: input.userId, rol: input.rol });
       return { ok: true };
     }),
 

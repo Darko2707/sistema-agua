@@ -9,7 +9,6 @@ import {
   AlertTriangle,
   Building2,
   LogOut,
-  UserCog,
   Users,
   Wallet,
   Landmark,
@@ -138,14 +137,6 @@ export function AdminDashboard() {
           ))}
           <Button variant="outline" onClick={() => router.push('/admin/circuitos')}>
             Circuitos
-          </Button>
-          <Button
-            variant="outline"
-            className="flex items-center gap-2"
-            onClick={() => router.push('/admin/representantes')}
-          >
-            <UserCog className="h-4 w-4" />
-            Representantes
           </Button>
           <Button
             variant="outline"

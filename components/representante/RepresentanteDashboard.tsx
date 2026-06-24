@@ -41,7 +41,7 @@ export function RepresentanteDashboard() {
   const residentesQuery = trpcReact.usuarios.listarResidentes.useQuery();
   const personalQuery   = trpcReact.usuarios.listarPersonal.useQuery();
   const pagarMutation   = usePagar();
-  const cambiarRolMut   = trpcReact.usuarios.cambiarRol.useMutation();
+  const cambiarRolMut   = trpcReact.usuarios.cambiarRolEnCircuito.useMutation();
 
   const circuito   = circuitoQuery.data;
   const resumen    = resumenQuery.data;
@@ -71,7 +71,7 @@ export function RepresentanteDashboard() {
     try {
       await cambiarRolMut.mutateAsync({
         userId,
-        rol: rol as 'residente' | 'tesorera',
+        rol: rol as 'residente' | 'tesorera',  // zod enum en el servidor lo valida
       });
       setMensaje('Rol actualizado correctamente');
       void residentesQuery.refetch();
