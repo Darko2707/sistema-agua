@@ -7,9 +7,9 @@ import { RegistrarPagoManualHandler } from '@/src/application/pagos/commands/reg
 import { HistorialPagosHandler } from '@/src/application/pagos/queries/historial-pagos.handler';
 import { ResumenMesHandler } from '@/src/application/pagos/queries/resumen-mes.handler';
 import { db } from '@/db';
+import { pagos as pagosTable } from '@/db/schema';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
 import { calcularDesglosePagoManual, calcularMontoBase } from '@/src/domain/pagos/calculator';
-import { FolioVO } from '@/src/domain/pagos/folio.vo';
 import { logger } from '@/lib/logger';
 
 const registrarPagoManualHandler = new RegistrarPagoManualHandler({ residenteRepo, pagoRepo, circuitoRepo });
@@ -131,9 +131,11 @@ export const pagosRouter = router({
   registrarRetroactivo: roleProcedure('admin')
     .input(z.object({
       perfilId: z.uuid(),
-      mes:      z.number().int().min(1).max(12),
-      anio:     z.number().int().min(2020).max(2100),
-      metodo:   z.enum(['efectivo', 'transferencia']),
+      meses:    z.array(z.object({
+        mes:  z.number().int().min(1).max(12),
+        anio: z.number().int().min(2020).max(2100),
+      })).min(1).max(36),
+      metodo: z.enum(['efectivo', 'transferencia']),
     }))
     .mutation(async ({ ctx, input }) => {
       const perfil = await residenteRepo.findById(input.perfilId);
@@ -145,32 +147,47 @@ export const pagosRouter = router({
 
       const montoBase = calcularMontoBase(circuito.montoMensual, false, circuito.montoReconexion);
       const desglose  = calcularDesglosePagoManual(montoBase);
-      const folio     = FolioVO.generate().toString();
 
-      await pagoRepo.createWithLock(perfil.id, {
-        perfilId:               perfil.id,
-        circuitoId:             circuito.id,
-        representanteId:        circuito.representanteId ?? null,
-        mes:                    input.mes,
-        anio:                   input.anio,
-        monto:                  desglose.total,
-        montoBase:              desglose.montoBase,
-        iva:                    desglose.iva,
-        comisionMercadoPago:    desglose.comisionMercadoPago,
-        retencionIsr:           desglose.retencionIsr,
-        retencionIva:           desglose.retencionIva,
-        montoNetoRepresentante: desglose.montoNetoRepresentante,
-        mercadoPagoCollectorId: circuito.mercadoPagoCollectorId,
-        estado:                 'pagado',
-        metodo:                 input.metodo,
-        folio,
-        esReconexion:           false,
-        fechaPago:              new Date(),
-      });
+      const MESES_CORTO = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+      let registrados = 0;
+      const omitidos: string[] = [];
 
-      logger.info('pago.retroactivo.admin', {
-        folio, perfilId: perfil.id, adminId: ctx.user.id, mes: input.mes, anio: input.anio,
+      for (const { mes, anio } of input.meses) {
+        const yaPago = await db.query.pagos.findFirst({
+          where: (p, { eq, and }) =>
+            and(eq(p.perfilId, perfil.id), eq(p.mes, mes), eq(p.anio, anio), eq(p.estado, 'pagado')),
+        });
+        if (yaPago) {
+          omitidos.push(`${MESES_CORTO[mes - 1]} ${anio}`);
+          continue;
+        }
+
+        await db.insert(pagosTable).values({
+          perfilId:               perfil.id,
+          circuitoId:             circuito.id,
+          representanteId:        circuito.representanteId ?? null,
+          mes,
+          anio,
+          monto:                  desglose.total,
+          montoBase:              desglose.montoBase,
+          iva:                    desglose.iva,
+          comisionMercadoPago:    desglose.comisionMercadoPago,
+          retencionIsr:           desglose.retencionIsr,
+          retencionIva:           desglose.retencionIva,
+          montoNetoRepresentante: desglose.montoNetoRepresentante,
+          mercadoPagoCollectorId: circuito.mercadoPagoCollectorId,
+          estado:                 'pagado',
+          metodo:                 input.metodo,
+          folio:                  null,
+          esReconexion:           false,
+          fechaPago:              new Date(),
+        });
+        registrados++;
+      }
+
+      logger.info('pago.retroactivo.admin.lote', {
+        perfilId: perfil.id, adminId: ctx.user.id, registrados, omitidos: omitidos.length,
       });
-      return { folio, monto: desglose.total };
+      return { registrados, omitidos };
     }),
 });

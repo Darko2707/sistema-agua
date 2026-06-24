@@ -128,9 +128,12 @@ export function useAdmin() {
     setActualizando(null);
   }
 
-  async function registrarPagoRetroactivo(perfilId: string, mes: number, anio: number, metodo: 'efectivo' | 'transferencia'): Promise<string> {
-    const result = await trpc.pagos.registrarRetroactivo.mutate({ perfilId, mes, anio, metodo });
-    return result.folio;
+  async function registrarPagoRetroactivo(
+    perfilId: string,
+    meses: Array<{ mes: number; anio: number }>,
+    metodo: 'efectivo' | 'transferencia',
+  ): Promise<{ registrados: number; omitidos: string[] }> {
+    return trpc.pagos.registrarRetroactivo.mutate({ perfilId, meses, metodo });
   }
 
   async function salir() {

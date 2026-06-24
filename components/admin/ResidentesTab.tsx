@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,22 +8,41 @@ import { EstadoAguaBadge } from '@/components/domain/EstadoAguaBadge';
 import { ROLES, type Circuito, type ResidenteCompleto } from '@/hooks/useAdmin';
 
 const MESES_NOMBRE = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+const MESES_CORTO  = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 
-const ahora = new Date();
-// Años disponibles: 3 años atrás hasta el actual
-const ANIOS = Array.from({ length: 4 }, (_, i) => ahora.getFullYear() - 3 + i);
+// Genera los últimos N meses anteriores al mes actual
+function generarMesesPasados(n = 24): Array<{ mes: number; anio: number; label: string }> {
+  const items = [];
+  const now = new Date();
+  let d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  for (let i = 0; i < n; i++) {
+    const mes  = d.getMonth() + 1;
+    const anio = d.getFullYear();
+    items.push({ mes, anio, label: `${MESES_NOMBRE[mes - 1]} ${anio}` });
+    d = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+  }
+  return items;
+}
+
+const MESES_PASADOS = generarMesesPasados(24);
+
+type MesAnio = { mes: number; anio: number };
 
 type Props = {
-  residentesFiltrados:       ResidenteCompleto[];
-  circuitos:                 Circuito[];
-  filtroCircuito:            string;
-  setFiltroCircuito:         (v: string) => void;
-  filtroEstado:              string;
-  setFiltroEstado:           (v: string) => void;
-  actualizando:              string | null;
-  onCambiarRol:              (userId: string, rol: string) => void;
-  onRegistrarPagoRetroactivo: (perfilId: string, mes: number, anio: number, metodo: 'efectivo' | 'transferencia') => Promise<string>;
-  onLimpiarFiltros:          () => void;
+  residentesFiltrados:        ResidenteCompleto[];
+  circuitos:                  Circuito[];
+  filtroCircuito:             string;
+  setFiltroCircuito:          (v: string) => void;
+  filtroEstado:               string;
+  setFiltroEstado:            (v: string) => void;
+  actualizando:               string | null;
+  onCambiarRol:               (userId: string, rol: string) => void;
+  onRegistrarPagoRetroactivo: (
+    perfilId: string,
+    meses: MesAnio[],
+    metodo: 'efectivo' | 'transferencia',
+  ) => Promise<{ registrados: number; omitidos: string[] }>;
+  onLimpiarFiltros:           () => void;
 };
 
 export function ResidentesTab({
@@ -38,47 +57,65 @@ export function ResidentesTab({
   onRegistrarPagoRetroactivo,
   onLimpiarFiltros,
 }: Props) {
-  const mesAnterior = ahora.getMonth() === 0 ? 12 : ahora.getMonth();
-  const anioAnterior = ahora.getMonth() === 0 ? ahora.getFullYear() - 1 : ahora.getFullYear();
-
   const [modalResidente, setModalResidente] = useState<ResidenteCompleto | null>(null);
-  const [mesSel,         setMesSel]         = useState(mesAnterior);
-  const [anioSel,        setAnioSel]        = useState(anioAnterior);
+  const [mesesSel,       setMesesSel]       = useState<MesAnio[]>([]);
   const [metodoSel,      setMetodoSel]      = useState<'efectivo' | 'transferencia'>('efectivo');
   const [registrando,    setRegistrando]    = useState(false);
-  const [exito,          setExito]          = useState<string | null>(null);
+  const [resultado,      setResultado]      = useState<{ registrados: number; omitidos: string[] } | null>(null);
   const [errorModal,     setErrorModal]     = useState<string | null>(null);
 
   function abrirModal(r: ResidenteCompleto) {
     setModalResidente(r);
-    setMesSel(mesAnterior);
-    setAnioSel(anioAnterior);
+    setMesesSel([]);
     setMetodoSel('efectivo');
-    setExito(null);
+    setResultado(null);
     setErrorModal(null);
   }
 
   function cerrarModal() {
     if (registrando) return;
     setModalResidente(null);
-    setExito(null);
+    setResultado(null);
     setErrorModal(null);
   }
 
+  function toggleMes(mes: number, anio: number) {
+    setMesesSel(prev => {
+      const existe = prev.some(m => m.mes === mes && m.anio === anio);
+      if (existe) return prev.filter(m => !(m.mes === mes && m.anio === anio));
+      return [...prev, { mes, anio }];
+    });
+  }
+
+  function estaSeleccionado(mes: number, anio: number) {
+    return mesesSel.some(m => m.mes === mes && m.anio === anio);
+  }
+
   async function handleRegistrar() {
-    if (!modalResidente) return;
+    if (!modalResidente || mesesSel.length === 0) return;
     setRegistrando(true);
     setErrorModal(null);
-    setExito(null);
+    setResultado(null);
     try {
-      const folio = await onRegistrarPagoRetroactivo(modalResidente.id, mesSel, anioSel, metodoSel);
-      setExito(`Pago registrado. Folio: ${folio}`);
+      const res = await onRegistrarPagoRetroactivo(modalResidente.id, mesesSel, metodoSel);
+      setResultado(res);
+      setMesesSel([]);
     } catch (e: unknown) {
-      setErrorModal(e instanceof Error ? e.message : 'Error al registrar el pago');
+      setErrorModal(e instanceof Error ? e.message : 'Error al registrar los pagos');
     } finally {
       setRegistrando(false);
     }
   }
+
+  // Agrupa meses pasados por año para mostrarlos ordenados
+  const porAnio = useMemo(() => {
+    const mapa = new Map<number, typeof MESES_PASADOS>();
+    for (const item of MESES_PASADOS) {
+      if (!mapa.has(item.anio)) mapa.set(item.anio, []);
+      mapa.get(item.anio)!.push(item);
+    }
+    return Array.from(mapa.entries()).sort((a, b) => b[0] - a[0]);
+  }, []);
 
   return (
     <>
@@ -166,7 +203,7 @@ export function ResidentesTab({
                     className="text-xs"
                     onClick={() => abrirModal(r)}
                   >
-                    + Pago anterior
+                    + Pagos anteriores
                   </Button>
                   <select
                     value={r.usuario?.role || 'residente'}
@@ -188,55 +225,89 @@ export function ResidentesTab({
         </CardContent>
       </Card>
 
-      {/* ── Modal pago retroactivo ── */}
+      {/* ── Modal pagos retroactivos ── */}
       {modalResidente && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
           onClick={(e) => { if (e.target === e.currentTarget) cerrarModal(); }}
         >
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
-            <h2 className="text-lg font-bold text-slate-800">Registrar pago anterior</h2>
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+            <h2 className="text-lg font-bold text-slate-800">Registrar pagos anteriores</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              {modalResidente.usuario?.name || 'Sin nombre'} ·{' '}
-              {modalResidente.circuito?.nombre} · Edif. {modalResidente.edificio} · Depto. {modalResidente.departamento}
+              {modalResidente.usuario?.name} · {modalResidente.circuito?.nombre} · Edif.{' '}
+              {modalResidente.edificio} · Depto. {modalResidente.departamento}
+            </p>
+            <p className="mt-1 text-xs text-slate-400">
+              Los pagos retroactivos no generan folio ni afectan el estado del servicio.
             </p>
 
-            <div className="mt-5 space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-600">Mes</label>
-                  <select
-                    value={mesSel}
-                    onChange={(e) => setMesSel(Number(e.target.value))}
-                    disabled={registrando || !!exito}
-                    className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
-                  >
-                    {MESES_NOMBRE.map((m, i) => (
-                      <option key={i + 1} value={i + 1}>{m}</option>
-                    ))}
-                  </select>
+            <div className="mt-4 space-y-4">
+              {/* Selector de meses */}
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Selecciona los meses a registrar
+                  </label>
+                  <div className="flex gap-2 text-xs">
+                    <button
+                      type="button"
+                      className="text-sky-600 hover:underline"
+                      onClick={() => setMesesSel(MESES_PASADOS.map(({ mes, anio }) => ({ mes, anio })))}
+                    >
+                      Todos
+                    </button>
+                    <span className="text-slate-300">|</span>
+                    <button
+                      type="button"
+                      className="text-slate-500 hover:underline"
+                      onClick={() => setMesesSel([])}
+                    >
+                      Ninguno
+                    </button>
+                  </div>
                 </div>
-                <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-600">Año</label>
-                  <select
-                    value={anioSel}
-                    onChange={(e) => setAnioSel(Number(e.target.value))}
-                    disabled={registrando || !!exito}
-                    className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
-                  >
-                    {ANIOS.map((a) => (
-                      <option key={a} value={a}>{a}</option>
-                    ))}
-                  </select>
+
+                <div className="max-h-56 overflow-y-auto rounded-lg border divide-y">
+                  {porAnio.map(([anio, meses]) => (
+                    <div key={anio}>
+                      <p className="sticky top-0 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-500">{anio}</p>
+                      <div className="grid grid-cols-3 gap-px p-2">
+                        {meses.map(({ mes, anio: a }) => {
+                          const sel = estaSeleccionado(mes, a);
+                          return (
+                            <button
+                              key={`${a}-${mes}`}
+                              type="button"
+                              onClick={() => toggleMes(mes, a)}
+                              className={`rounded-lg px-2 py-1.5 text-sm font-medium transition-colors ${
+                                sel
+                                  ? 'bg-sky-600 text-white'
+                                  : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
+                              }`}
+                            >
+                              {MESES_CORTO[mes - 1]}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
                 </div>
+
+                {mesesSel.length > 0 && (
+                  <p className="mt-1.5 text-xs text-sky-700 font-medium">
+                    {mesesSel.length} {mesesSel.length === 1 ? 'mes seleccionado' : 'meses seleccionados'}
+                  </p>
+                )}
               </div>
 
+              {/* Método de pago */}
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-600">Método de pago</label>
                 <select
                   value={metodoSel}
                   onChange={(e) => setMetodoSel(e.target.value as 'efectivo' | 'transferencia')}
-                  disabled={registrando || !!exito}
+                  disabled={registrando}
                   className="w-full rounded-lg border bg-background px-3 py-2 text-sm"
                 >
                   <option value="efectivo">Efectivo</option>
@@ -250,20 +321,32 @@ export function ResidentesTab({
                 </div>
               )}
 
-              {exito && (
-                <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700">
-                  {exito}
+              {resultado && (
+                <div className="rounded-lg border border-green-200 bg-green-50 px-4 py-2 text-sm text-green-700 space-y-0.5">
+                  <p className="font-medium">
+                    {resultado.registrados} {resultado.registrados === 1 ? 'pago registrado' : 'pagos registrados'}
+                  </p>
+                  {resultado.omitidos.length > 0 && (
+                    <p className="text-amber-700">
+                      Omitidos (ya existían): {resultado.omitidos.join(', ')}
+                    </p>
+                  )}
                 </div>
               )}
             </div>
 
             <div className="mt-6 flex justify-end gap-3">
               <Button variant="outline" onClick={cerrarModal} disabled={registrando}>
-                {exito ? 'Cerrar' : 'Cancelar'}
+                {resultado ? 'Cerrar' : 'Cancelar'}
               </Button>
-              {!exito && (
-                <Button onClick={handleRegistrar} disabled={registrando}>
-                  {registrando ? 'Registrando...' : `Registrar ${MESES_NOMBRE[mesSel - 1]} ${anioSel}`}
+              {!resultado && (
+                <Button
+                  onClick={handleRegistrar}
+                  disabled={registrando || mesesSel.length === 0}
+                >
+                  {registrando
+                    ? 'Registrando...'
+                    : `Registrar ${mesesSel.length > 0 ? `${mesesSel.length} mes${mesesSel.length > 1 ? 'es' : ''}` : 'meses'}`}
                 </Button>
               )}
             </div>
