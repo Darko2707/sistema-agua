@@ -2,9 +2,10 @@ import { db } from '@/db';
 import { tickets, pagos, perfilesResidente, user } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 
-export default async function VerificarPage({ params }: { params: { folio: string } }) {
+export default async function VerificarPage({ params }: { params: Promise<{ folio: string }> }) {
+  const { folio } = await params;
   const ticket = await db.query.tickets.findFirst({
-    where: (t, { eq }) => eq(t.folio, params.folio),
+    where: (t, { eq }) => eq(t.folio, folio),
     with: {
       pago: {
         with: {
@@ -25,7 +26,7 @@ export default async function VerificarPage({ params }: { params: { folio: strin
           <div className="text-5xl">❌</div>
           <h1 className="text-xl font-semibold text-destructive">Ticket no válido</h1>
           <p className="text-sm text-muted-foreground">
-            El folio <strong>{params.folio}</strong> no existe en el sistema
+            El folio <strong>{folio}</strong> no existe en el sistema
           </p>
         </div>
       </div>

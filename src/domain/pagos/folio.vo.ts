@@ -1,7 +1,8 @@
 import { ValueObject } from '../shared/value-object';
-import { nanoid } from 'nanoid';
+import { customAlphabet } from 'nanoid';
 
 const FOLIO_REGEX = /^AGU-[A-Z0-9]{10}$/;
+const folioNanoid = customAlphabet('ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789', 10);
 
 export class FolioVO extends ValueObject<string> {
   private constructor(value: string) {
@@ -15,7 +16,7 @@ export class FolioVO extends ValueObject<string> {
   }
 
   static generate(): FolioVO {
-    return new FolioVO(`AGU-${nanoid(10).toUpperCase()}`);
+    return new FolioVO(`AGU-${folioNanoid()}`);
   }
 
   static fromString(value: string): FolioVO {

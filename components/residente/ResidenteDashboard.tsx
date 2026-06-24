@@ -74,16 +74,16 @@ export function ResidenteDashboard() {
               )}
               {miRol === 'tesorera' && (
                 <Button variant="secondary" onClick={() => router.push('/tesorera/reportes')} className="bg-white/20 text-white hover:bg-white/30">
-                  <UserCog className="mr-2 h-4 w-4" />Reportes
+                  <UserCog className="mr-2 h-4 w-4" />Tesorera-o
                 </Button>
               )}
               {miRol === 'cuadrilla_cortes' && (
                 <Button variant="secondary" onClick={() => router.push('/trabajador')} className="bg-white/20 text-white hover:bg-white/30">
-                  <UserCog className="mr-2 h-4 w-4" />Trabajador
+                  <UserCog className="mr-2 h-4 w-4" />Cuadrilla
                 </Button>
               )}
               <Button variant="secondary" onClick={() => router.push('/residente/folios')} className="bg-white/20 text-white hover:bg-white/30">
-                <FileText className="mr-2 h-4 w-4" />Folios
+                <FileText className="mr-2 h-4 w-4" />Recibos
               </Button>
               <Button variant="secondary" onClick={salir}><LogOut className="mr-2 h-4 w-4" />Salir</Button>
             </div>

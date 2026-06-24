@@ -33,7 +33,7 @@ export default function TesoreraReportesPage() {
               Volver
             </Button>
             <div>
-              <h1 className="text-lg font-semibold leading-none">Reportes</h1>
+              <h1 className="text-lg font-semibold leading-none">Tesorera-o</h1>
               {circuitoQuery.data?.nombre && (
                 <p className="text-xs text-muted-foreground mt-0.5">{circuitoQuery.data.nombre}</p>
               )}

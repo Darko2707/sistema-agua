@@ -267,8 +267,7 @@ export async function generarReporteFinancieroExcel(params: {
   // Hoja 1: Resumen  (2 columnas de datos)
   // ════════════════════════════════════════════
   const wsR = wb.addWorksheet('Resumen');
-  agregarLogo(wb, wsR, 2); // logo en col C (índice 2)
-
+  agregarLogo(wb, wsR, 3); // logo en col D (índice 3), fuera del merge A1:C1
   wsR.mergeCells('A1:C1');
   const t = wsR.getCell('A1');
   t.value = `Reporte Financiero — ${params.circuito}`;
@@ -332,7 +331,7 @@ export async function generarReporteFinancieroExcel(params: {
   // Hoja 2: Por Edificio  (5 columnas de datos)
   // ════════════════════════════════════════════
   const wsE = wb.addWorksheet('Por Edificio');
-  agregarLogo(wb, wsE, 5); // logo en col F (índice 5)
+  agregarLogo(wb, wsE, 6); // logo en col G (índice 6), fuera del merge A1:F1
 
   wsE.mergeCells('A1:F1');
   const te = wsE.getCell('A1');
@@ -387,7 +386,7 @@ export async function generarReporteFinancieroExcel(params: {
   // Hoja 3: Gastos  (4 columnas de datos)
   // ════════════════════════════════════════════
   const wsG = wb.addWorksheet('Gastos');
-  agregarLogo(wb, wsG, 4); // logo en col E (índice 4)
+  agregarLogo(wb, wsG, 5); // logo en col F (índice 5), fuera del merge A1:E1
 
   wsG.mergeCells('A1:E1');
   const tg = wsG.getCell('A1');
@@ -447,7 +446,7 @@ export async function generarReporteFinancieroExcel(params: {
   // Hoja 4: Ingresos Adicionales  (3 columnas)
   // ════════════════════════════════════════════
   const wsI = wb.addWorksheet('Ingresos Adicionales');
-  agregarLogo(wb, wsI, 3); // logo en col D (índice 3)
+  agregarLogo(wb, wsI, 4); // logo en col E (índice 4), fuera del merge A1:D1
 
   wsI.mergeCells('A1:D1');
   const ti = wsI.getCell('A1');

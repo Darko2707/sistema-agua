@@ -85,8 +85,8 @@ export default function FoliosPage() {
         <div className="rounded-3xl bg-gradient-to-r from-sky-600 to-cyan-600 p-6 text-white shadow-lg">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <h1 className="text-3xl font-bold">Folios</h1>
-              <p className="mt-1 text-sky-100">Tickets y comprobantes PDF de tus pagos</p>
+              <h1 className="text-3xl font-bold">Recibos</h1>
+              <p className="mt-1 text-sky-100">Recibos y comprobantes PDF de tus pagos</p>
             </div>
             <Button
               variant="secondary"
@@ -109,7 +109,7 @@ export default function FoliosPage() {
           {tickets.length === 0 && (
             <Card>
               <CardContent className="py-12 text-center text-muted-foreground">
-                No tienes folios registrados todavia.
+                No tienes recibos registrados todavia.
               </CardContent>
             </Card>
           )}
@@ -187,7 +187,7 @@ export default function FoliosPage() {
                     <Button variant="outline" asChild className="sm:w-auto">
                       <a href={`/verificar/${ticket.folio}`} target="_blank" rel="noreferrer">
                         <QrCode className="mr-2 h-4 w-4" />
-                        Verificar folio
+                        Verificar recibo
                       </a>
                     </Button>
                   </div>
