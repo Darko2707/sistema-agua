@@ -72,7 +72,7 @@ export async function GET(
       return new Response(new Uint8Array(cached), {
         headers: {
           'Content-Type':        'application/pdf',
-          'Content-Disposition': `inline; filename="folio-${folio}.pdf"`,
+          'Content-Disposition': `attachment; filename="recibo-${folio}.pdf"`,
           'Cache-Control':       CACHE_CONTROL,
         },
       });
@@ -83,11 +83,6 @@ export async function GET(
   }
 
   // ── Cache miss: generar PDF ───────────────────────────────────────────────
-  const requestOrigin = new URL(request.url).origin;
-  const baseUrl = requestOrigin.startsWith('http://localhost')
-    ? (process.env.NEXT_PUBLIC_APP_URL ?? requestOrigin)
-    : requestOrigin;
-
   logger.info('ticket.pdf.generando', { folio });
 
   const pdf = await generarTicketPDF({
@@ -106,7 +101,6 @@ export async function GET(
     retencionIsr:        ticket.pago.retencionIsr,
     retencionIva:        ticket.pago.retencionIva,
     emailContacto:       process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? 'contacto@sistema-agua.local',
-    verificarUrl:        `${baseUrl}/verificar/${ticket.folio}`,
   });
 
   // ── Subir a Vercel Blob y guardar URL en DB (no-fatal si falla) ──────────
@@ -122,7 +116,7 @@ export async function GET(
   return new Response(pdf, {
     headers: {
       'Content-Type':        'application/pdf',
-      'Content-Disposition': `inline; filename="folio-${folio}.pdf"`,
+      'Content-Disposition': `attachment; filename="recibo-${folio}.pdf"`,
       'Cache-Control':       CACHE_CONTROL,
     },
   });

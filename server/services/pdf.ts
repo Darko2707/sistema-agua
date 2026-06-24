@@ -1,25 +1,14 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
-import QRCode from 'qrcode';
 import fs from 'node:fs';
 import path from 'node:path';
 
 const MESES = [
-  'Enero',
-  'Febrero',
-  'Marzo',
-  'Abril',
-  'Mayo',
-  'Junio',
-  'Julio',
-  'Agosto',
-  'Septiembre',
-  'Octubre',
-  'Noviembre',
-  'Diciembre',
+  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ];
 
-const BRAND   = rgb(0.04, 0.39, 0.58);   // azul principal
-const BRAND_L = rgb(0.86, 0.95, 1);      // azul claro
+const BRAND   = rgb(0.04, 0.39, 0.58);
+const BRAND_L = rgb(0.86, 0.95, 1);
 const GRAY    = rgb(0.45, 0.45, 0.45);
 const GRAY_L  = rgb(0.82, 0.86, 0.9);
 const BLACK   = rgb(0.12, 0.12, 0.12);
@@ -42,7 +31,6 @@ export async function generarTicketPDF(data: {
   retencionIsr?: string | null;
   retencionIva?: string | null;
   emailContacto?: string;
-  verificarUrl?: string;
 }) {
   const doc  = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
@@ -55,15 +43,6 @@ export async function generarTicketPDF(data: {
 
   const fraccionamiento = data.fraccionamiento ?? 'Sistema de Agua';
   const emailContacto   = data.emailContacto   ?? 'contacto@sistema-agua.local';
-  const verificarUrl    = data.verificarUrl     ?? `http://localhost:3000/verificar/${data.folio}`;
-
-  // ── QR ──────────────────────────────────────────────────────────────────────
-  const qrBuf = await QRCode.toBuffer(verificarUrl, {
-    errorCorrectionLevel: 'M',
-    margin: 1,
-    width: 256,
-  });
-  const qrImg = await doc.embedPng(qrBuf);
 
   // ── Logo ─────────────────────────────────────────────────────────────────────
   let logoImg: Awaited<ReturnType<typeof doc.embedPng>> | null = null;
@@ -80,12 +59,10 @@ export async function generarTicketPDF(data: {
 
   page.drawRectangle({ x: 0, y: HEADER_Y, width: W, height: HEADER_H, color: BRAND });
 
-  // Círculo blanco detrás del logo
   if (logoImg) {
     const LOGO_S = 52;
     const LOGO_X = W - 74;
     const LOGO_Y = HEADER_Y + (HEADER_H - LOGO_S) / 2;
-    // Fondo blanco circular (radio 30) detrás del logo
     page.drawCircle({ x: LOGO_X + LOGO_S / 2, y: LOGO_Y + LOGO_S / 2, size: 30, color: WHITE });
     page.drawImage(logoImg, { x: LOGO_X, y: LOGO_Y, width: LOGO_S, height: LOGO_S });
   }
@@ -108,7 +85,6 @@ export async function generarTicketPDF(data: {
   page.drawText(data.folio, { x: 28, y, size: 14, font: bold, color: BLACK });
   page.drawText(data.circuito ?? 'Sin circuito', { x: 220, y, size: 13, font: bold, color: BLACK });
 
-  // Separador
   y -= 20;
   page.drawLine({ start: { x: 28, y }, end: { x: W - 28, y }, thickness: 0.5, color: GRAY_L });
   y -= 22;
@@ -132,7 +108,6 @@ export async function generarTicketPDF(data: {
     x: 28, y, size: 13, font: bold, color: BLACK,
   });
 
-  // Separador
   y -= 22;
   page.drawLine({ start: { x: 28, y }, end: { x: W - 28, y }, thickness: 0.5, color: GRAY_L });
   y -= 28;
@@ -156,19 +131,15 @@ export async function generarTicketPDF(data: {
   y -= TOTAL_BOX_H + 28;
 
   // ════════════════════════════════════════════════════════
-  // DESGLOSE + QR (lado a lado)
+  // DESGLOSE (ancho completo)
   // ════════════════════════════════════════════════════════
-  const COL_L = 28;
-  const COL_R = 340;
-  const QR_S  = 130;
-  const QR_Y  = y - 170;
+  const BOX_W = W - 56;
 
-  // Caja desglose
   page.drawRectangle({
-    x: COL_L, y: y - 180, width: 290, height: 185,
+    x: 28, y: y - 180, width: BOX_W, height: 185,
     borderColor: GRAY_L, borderWidth: 1,
   });
-  page.drawText('Desglose del pago', { x: COL_L + 14, y: y - 18, size: 11, font: bold, color: BLACK });
+  page.drawText('Desglose del pago', { x: 42, y: y - 18, size: 11, font: bold, color: BLACK });
 
   const filas: [string, string | null | undefined][] = [
     ['Cuota del circuito',    data.montoBase],
@@ -179,40 +150,30 @@ export async function generarTicketPDF(data: {
   ];
   let fy = y - 44;
   for (const [label, value] of filas) {
-    page.drawText(label, { x: COL_L + 14, y: fy, size: 9, font, color: rgb(0.35, 0.35, 0.35) });
+    page.drawText(label, { x: 42, y: fy, size: 9, font, color: rgb(0.35, 0.35, 0.35) });
     page.drawText(`$${Number(value ?? 0).toFixed(2)} MXN`, {
-      x: COL_L + 185, y: fy, size: 9, font: bold, color: BLACK,
+      x: 380, y: fy, size: 9, font: bold, color: BLACK,
     });
     fy -= 24;
   }
-  page.drawLine({ start: { x: COL_L + 14, y: fy + 12 }, end: { x: COL_L + 270, y: fy + 12 }, thickness: 0.5, color: GRAY_L });
+  page.drawLine({
+    start: { x: 42, y: fy + 12 }, end: { x: 28 + BOX_W - 14, y: fy + 12 },
+    thickness: 0.5, color: GRAY_L,
+  });
   fy -= 10;
-  page.drawText('Total', { x: COL_L + 14, y: fy, size: 10, font: bold, color: BLACK });
-  page.drawText(`$${data.monto} MXN`, { x: COL_L + 185, y: fy, size: 11, font: bold, color: BRAND });
-
-  // QR
-  page.drawImage(qrImg, { x: COL_R, y: QR_Y, width: QR_S, height: QR_S });
-  page.drawText('Escanea para verificar', {
-    x: COL_R + 8, y: QR_Y - 16, size: 9, font, color: GRAY,
-  });
-  page.drawText(data.folio, {
-    x: COL_R + (QR_S - data.folio.length * 5.5) / 2, y: QR_Y - 30, size: 9, font: bold, color: BLACK,
-  });
+  page.drawText('Total', { x: 42, y: fy, size: 10, font: bold, color: BLACK });
+  page.drawText(`$${data.monto} MXN`, { x: 380, y: fy, size: 11, font: bold, color: BRAND });
 
   // ════════════════════════════════════════════════════════
-  // URL DE VERIFICACIÓN
+  // SELLO PAGADO
   // ════════════════════════════════════════════════════════
-  const VER_Y = QR_Y - 55;
-  page.drawText('Verificación pública:', { x: 28, y: VER_Y, size: 8, font, color: GRAY });
-  page.drawText(verificarUrl, { x: 28, y: VER_Y - 14, size: 8, font, color: BRAND });
-
-  // Sello "PAGADO"
+  const STAMP_Y = y - 195;
   page.drawRectangle({
-    x: W - 120, y: VER_Y - 10, width: 90, height: 28,
+    x: W - 120, y: STAMP_Y, width: 92, height: 28,
     color: GREEN,
   });
   page.drawText('✓  PAGADO', {
-    x: W - 108, y: VER_Y - 1, size: 11, font: bold, color: WHITE,
+    x: W - 108, y: STAMP_Y + 9, size: 11, font: bold, color: WHITE,
   });
 
   // ════════════════════════════════════════════════════════

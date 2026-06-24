@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Download, FileText, Loader2, QrCode } from 'lucide-react';
+import { ArrowLeft, Download, FileText, Loader2 } from 'lucide-react';
 
 import { trpc } from '@/lib/trpc-client';
 import { Button } from '@/components/ui/button';
@@ -179,15 +179,9 @@ export default function FoliosPage() {
 
                   <div className="flex flex-col gap-2 sm:flex-row">
                     <Button asChild className="sm:w-auto">
-                      <a href={`/api/tickets/${ticket.folio}/pdf`} target="_blank" rel="noreferrer">
+                      <a href={`/api/tickets/${ticket.folio}/pdf`} download={`recibo-${ticket.folio}.pdf`}>
                         <Download className="mr-2 h-4 w-4" />
-                        Abrir PDF
-                      </a>
-                    </Button>
-                    <Button variant="outline" asChild className="sm:w-auto">
-                      <a href={`/verificar/${ticket.folio}`} target="_blank" rel="noreferrer">
-                        <QrCode className="mr-2 h-4 w-4" />
-                        Verificar recibo
+                        Descargar recibo
                       </a>
                     </Button>
                   </div>
