@@ -12,6 +12,14 @@ import { Droplets, CreditCard, LogOut, AlertTriangle, UserCog, FileText } from '
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
+const ROL_LABEL: Record<string, string> = {
+  residente:        'Residente',
+  cuadrilla_cortes: 'Cuadrilla',
+  tesorera:         'Tesorera/o',
+  representante:    'Representante',
+  admin:            'Admin',
+};
+
 export function ResidenteDashboard() {
   const router = useRouter();
   const { data: sessionData, isPending: sessionPending } = useSession();
@@ -62,7 +70,7 @@ export function ResidenteDashboard() {
             <div>
               <div className="flex items-center gap-3">
                 <h1 className="text-3xl font-bold">Mi Cuenta de Agua</h1>
-                <Badge variant="secondary" className="bg-white/20 text-white">{miRol}</Badge>
+                <Badge variant="secondary" className="bg-white/20 text-white">{ROL_LABEL[miRol] ?? miRol}</Badge>
               </div>
               <p className="mt-2 text-sky-100">{sessionData?.user?.name} · {perfil.edificio}, {perfil.departamento}</p>
             </div>

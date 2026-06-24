@@ -30,7 +30,7 @@ export default function TesoreraReportesPage() {
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="sm" onClick={() => router.push('/residente')} className="gap-1">
               <ArrowLeft className="h-4 w-4" />
-              Volver
+              Inicio
             </Button>
             <div>
               <h1 className="text-lg font-semibold leading-none">Tesorera-o</h1>

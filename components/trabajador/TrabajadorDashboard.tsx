@@ -72,7 +72,7 @@ export function TrabajadorDashboard() {
             </div>
             <div className="flex gap-2">
               <Button variant="secondary" onClick={() => router.push('/residente')} className="bg-white/20 text-white hover:bg-white/30 backdrop-blur-sm border-0">
-                <Home className="mr-2 h-4 w-4" />Mi cuenta
+                <Home className="mr-2 h-4 w-4" />Inicio
               </Button>
               <Button variant="secondary" onClick={salir}><LogOut className="mr-2 h-4 w-4" />Salir</Button>
             </div>
