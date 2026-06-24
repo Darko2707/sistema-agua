@@ -180,11 +180,15 @@ export const usuariosRouter = router({
       const circuito = await db.query.circuitos.findFirst({
         where: (c, { eq }) => eq(c.representanteId, ctx.user.id),
       });
-      if (!circuito?.tesoreraId) return [];
-      const tesorero = await db.query.user.findFirst({
-        where: (u, { eq }) => eq(u.id, circuito.tesoreraId!),
+      if (!circuito) return [];
+      // Busca por perfilesResidente: más robusto que depender solo de tesoreraId
+      const perfiles = await db.query.perfilesResidente.findMany({
+        where: (p, { eq }) => eq(p.circuitoId, circuito.id),
+        with: { usuario: true },
       });
-      return tesorero ? [tesorero] : [];
+      return perfiles
+        .filter(p => p.usuario?.role === 'tesorera')
+        .map(p => p.usuario!);
     }
     return db.query.user.findMany({
       where: (u, { ne }) => ne(u.role, 'residente'),

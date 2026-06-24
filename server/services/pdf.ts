@@ -1,5 +1,7 @@
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import QRCode from 'qrcode';
+import fs from 'node:fs';
+import path from 'node:path';
 
 const MESES = [
   'Enero',
@@ -47,6 +49,13 @@ export async function generarTicketPDF(data: {
   const qrBuf = await QRCode.toBuffer(verificarUrl);
   const qrImg = await doc.embedPng(qrBuf);
 
+  // Intentar incrustar el logo (no fatal si falta el archivo)
+  let logoImg: Awaited<ReturnType<typeof doc.embedPng>> | null = null;
+  try {
+    const logoBuf = fs.readFileSync(path.join(process.cwd(), 'public', 'logo2SIS4S.png'));
+    logoImg = await doc.embedPng(logoBuf);
+  } catch { /* logo opcional */ }
+
   page.drawRectangle({ x: 0, y: 690, width: 595, height: 70, color: rgb(0.04, 0.39, 0.58) });
   page.drawText('Comprobante de pago de agua', {
     x: 30,
@@ -62,6 +71,9 @@ export async function generarTicketPDF(data: {
     font,
     color: rgb(0.86, 0.95, 1),
   });
+  if (logoImg) {
+    page.drawImage(logoImg, { x: 530, y: 695, width: 52, height: 52 });
+  }
 
   page.drawText('Folio', { x: 30, y: 650, size: 9, font, color: rgb(0.45, 0.45, 0.45) });
   page.drawText(data.folio, { x: 30, y: 632, size: 15, font: bold });

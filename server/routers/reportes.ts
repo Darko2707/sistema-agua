@@ -4,7 +4,7 @@ import { eq, and, inArray } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 
 import { db } from '@/db';
-import { gastosCircuito, ingresosAdicionales } from '@/db/schema';
+import { gastosCircuito, ingresosAdicionales, circuitos } from '@/db/schema';
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 
@@ -37,11 +37,28 @@ function ultimos12Meses(): { mes: number; anio: number }[] {
 }
 
 async function getCircuitoDelTesorera(userId: string) {
-  const circuito = await db.query.circuitos.findFirst({
+  // Ruta principal: circuito con tesoreraId asignado
+  const byId = await db.query.circuitos.findFirst({
     where: (c, { eq }) => eq(c.tesoreraId, userId),
   });
-  if (!circuito) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes un circuito asignado.' });
-  return circuito;
+  if (byId) return byId;
+
+  // Fallback: buscar por perfilesResidente (datos previos al fix de tesoreraId)
+  const perfil = await db.query.perfilesResidente.findFirst({
+    where: (p, { eq }) => eq(p.userId, userId),
+  });
+  if (!perfil?.circuitoId) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes un circuito asignado.' });
+  }
+  const byPerfil = await db.query.circuitos.findFirst({
+    where: (c, { eq }) => eq(c.id, perfil.circuitoId!),
+  });
+  if (!byPerfil) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes un circuito asignado.' });
+  }
+  // Sincronizar tesoreraId para evitar el fallback en consultas futuras
+  await db.update(circuitos).set({ tesoreraId: userId }).where(eq(circuitos.id, byPerfil.id));
+  return byPerfil;
 }
 
 // ─── router ────────────────────────────────────────────────────────────────

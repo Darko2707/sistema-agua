@@ -1,5 +1,7 @@
 import { auth } from '@/lib/auth';
 import { db } from '@/db';
+import { eq } from 'drizzle-orm';
+import { circuitos } from '@/db/schema';
 import { generarReporteResidentesExcel } from '@/server/services/excel-reportes';
 
 function parsarDepto(depto: string) {
@@ -30,9 +32,22 @@ export async function GET(req: Request) {
   });
   if (dbUser?.role !== 'tesorera') return new Response('Prohibido', { status: 403 });
 
-  const circuito = await db.query.circuitos.findFirst({
+  let circuito = await db.query.circuitos.findFirst({
     where: (c, { eq }) => eq(c.tesoreraId, session.user.id),
   });
+  if (!circuito) {
+    const perfil = await db.query.perfilesResidente.findFirst({
+      where: (p, { eq }) => eq(p.userId, session.user.id),
+    });
+    if (perfil?.circuitoId) {
+      circuito = await db.query.circuitos.findFirst({
+        where: (c, { eq }) => eq(c.id, perfil.circuitoId!),
+      });
+      if (circuito) {
+        await db.update(circuitos).set({ tesoreraId: session.user.id }).where(eq(circuitos.id, circuito.id));
+      }
+    }
+  }
   if (!circuito) return new Response('Sin circuito asignado', { status: 404 });
 
   const url    = new URL(req.url);
