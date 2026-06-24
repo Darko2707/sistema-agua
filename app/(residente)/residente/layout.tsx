@@ -8,10 +8,9 @@ export default async function ResidenteLayout({ children }: { children: React.Re
 
   const role = session.user.role;
 
-  // Roles que no tienen perfil de residente — mandar a su propio panel
+  // Solo el admin no tiene perfil de residente — redirigir a su panel
   if (role === 'admin') redirect('/admin');
-  if (role === 'tesorera') redirect('/tesorera');
 
-  // residente, representante y cuadrilla_cortes pueden tener perfil de residente
+  // residente, representante, tesorera y cuadrilla_cortes pueden tener perfil de residente
   return <>{children}</>;
 }
