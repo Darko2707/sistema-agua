@@ -1,24 +1,26 @@
 'use client';
 
 import { useState } from 'react';
-import { ArrowLeft, FileBarChart, BarChart2 } from 'lucide-react';
+import { ArrowLeft, FileBarChart, BarChart2, Banknote } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { trpcReact } from '@/lib/trpc-react';
 
 import { Button }   from '@/components/ui/button';
 import { ReporteResidentes } from '@/components/representante/ReporteResidentes';
 import { ReporteFinanciero } from '@/components/representante/ReporteFinanciero';
+import { PagosTesorera }    from '@/components/tesorera/PagosTesorera';
 
-type TabId = 'residentes' | 'financiero';
+type TabId = 'pagos' | 'residentes' | 'financiero';
 
 const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
+  { id: 'pagos',      label: 'Pagos',       icon: <Banknote className="h-4 w-4" /> },
   { id: 'residentes', label: 'Residentes',  icon: <FileBarChart className="h-4 w-4" /> },
   { id: 'financiero', label: 'Financiero',  icon: <BarChart2 className="h-4 w-4" /> },
 ];
 
 export default function TesoreraReportesPage() {
   const router   = useRouter();
-  const [tab, setTab] = useState<TabId>('residentes');
+  const [tab, setTab] = useState<TabId>('pagos');
   const circuitoQuery = trpcReact.circuitos.miCircuitoTesorera.useQuery();
 
   return (
@@ -60,6 +62,7 @@ export default function TesoreraReportesPage() {
       </div>
 
       <div className="mx-auto max-w-7xl px-4 py-6">
+        {tab === 'pagos'      && <PagosTesorera />}
         {tab === 'residentes' && <ReporteResidentes />}
         {tab === 'financiero' && <ReporteFinanciero />}
       </div>

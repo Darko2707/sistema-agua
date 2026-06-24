@@ -7,10 +7,32 @@ import { RegistrarPagoManualHandler } from '@/src/application/pagos/commands/reg
 import { HistorialPagosHandler } from '@/src/application/pagos/queries/historial-pagos.handler';
 import { ResumenMesHandler } from '@/src/application/pagos/queries/resumen-mes.handler';
 import { db } from '@/db';
-import { pagos as pagosTable } from '@/db/schema';
+import { pagos as pagosTable, circuitos } from '@/db/schema';
+import { eq } from 'drizzle-orm';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
 import { calcularDesglosePagoManual, calcularMontoBase } from '@/src/domain/pagos/calculator';
+import { FolioVO } from '@/src/domain/pagos/folio.vo';
 import { logger } from '@/lib/logger';
+
+async function resolverCircuitoTesorera(tesoreraId: string) {
+  let circuito = await db.query.circuitos.findFirst({
+    where: (c, { eq }) => eq(c.tesoreraId, tesoreraId),
+  });
+  if (!circuito) {
+    const perfil = await db.query.perfilesResidente.findFirst({
+      where: (p, { eq }) => eq(p.userId, tesoreraId),
+    });
+    if (perfil?.circuitoId) {
+      circuito = await db.query.circuitos.findFirst({
+        where: (c, { eq }) => eq(c.id, perfil.circuitoId!),
+      });
+      if (circuito) {
+        await db.update(circuitos).set({ tesoreraId }).where(eq(circuitos.id, circuito.id));
+      }
+    }
+  }
+  return circuito ?? null;
+}
 
 const registrarPagoManualHandler = new RegistrarPagoManualHandler({ residenteRepo, pagoRepo, circuitoRepo });
 const historialPagosHandler = new HistorialPagosHandler({ pagoRepo, residenteRepo });
@@ -126,6 +148,88 @@ export const pagosRouter = router({
         with: { perfil: { with: { usuario: true } } },
         orderBy: (p, { desc }) => [desc(p.fechaPago)],
       });
+    }),
+
+  // ── Tesorera: listar residentes del circuito para registrar pagos ──────────
+  listarResidentesParaPago: roleProcedure('tesorera').query(async ({ ctx }) => {
+    const circuito = await resolverCircuitoTesorera(ctx.user.id);
+    if (!circuito) return { circuito: null, residentes: [] };
+
+    const periodo  = PeriodoVO.vigente();
+    const perfiles = await db.query.perfilesResidente.findMany({
+      where:  (p, { eq }) => eq(p.circuitoId, circuito.id),
+      with: {
+        usuario: true,
+        pagos: {
+          where: (pg, { eq, and }) =>
+            and(eq(pg.mes, periodo.mes), eq(pg.anio, periodo.anio), eq(pg.estado, 'pagado')),
+        },
+      },
+    });
+
+    return {
+      circuito: {
+        id:               circuito.id,
+        nombre:           circuito.nombre,
+        montoMensual:     circuito.montoMensual,
+        montoReconexion:  circuito.montoReconexion,
+      },
+      residentes: perfiles.map(p => ({
+        id:           p.id,
+        edificio:     p.edificio,
+        departamento: p.departamento,
+        estadoAgua:   p.estadoAgua,
+        usuario:      { id: p.usuario?.id, name: p.usuario?.name, email: p.usuario?.email },
+        pagoEsteMes:  p.pagos.length > 0,
+      })),
+    };
+  }),
+
+  // ── Tesorera: registrar pago en efectivo / transferencia ────────────────────
+  registrarManualTesorera: roleProcedure('tesorera')
+    .input(z.object({
+      perfilId: z.uuid(),
+      metodo:   z.enum(['efectivo', 'transferencia']),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const circuito = await resolverCircuitoTesorera(ctx.user.id);
+      if (!circuito)        throw new TRPCError({ code: 'FORBIDDEN',   message: 'No tienes circuito asignado' });
+      if (!circuito.activo) throw new TRPCError({ code: 'FORBIDDEN',   message: 'Tu circuito está inhabilitado' });
+
+      const perfil = await residenteRepo.findById(input.perfilId);
+      if (!perfil || perfil.circuitoId !== circuito.id) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Residente no encontrado en tu circuito' });
+      }
+
+      const periodo    = PeriodoVO.vigente();
+      const esReconexion = perfil.estadoAgua === 'cortado';
+      const montoBase  = calcularMontoBase(circuito.montoMensual, esReconexion, circuito.montoReconexion);
+      const desglose   = calcularDesglosePagoManual(montoBase);
+      const folio      = FolioVO.generate().toString();
+
+      await pagoRepo.createWithLock(perfil.id, {
+        perfilId:               perfil.id,
+        circuitoId:             circuito.id,
+        representanteId:        circuito.representanteId ?? null,
+        mes:                    periodo.mes,
+        anio:                   periodo.anio,
+        monto:                  desglose.total,
+        montoBase:              desglose.montoBase,
+        iva:                    desglose.iva,
+        comisionMercadoPago:    desglose.comisionMercadoPago,
+        retencionIsr:           desglose.retencionIsr,
+        retencionIva:           desglose.retencionIva,
+        montoNetoRepresentante: desglose.montoNetoRepresentante,
+        mercadoPagoCollectorId: circuito.mercadoPagoCollectorId,
+        estado:                 'pagado',
+        metodo:                 input.metodo,
+        folio,
+        esReconexion,
+        fechaPago:              new Date(),
+      });
+
+      logger.info('pago.tesorera.manual', { folio, perfilId: perfil.id, tesoreraId: ctx.user.id });
+      return { folio, monto: desglose.total, metodo: input.metodo };
     }),
 
   registrarRetroactivo: roleProcedure('admin')
