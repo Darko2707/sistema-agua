@@ -26,7 +26,7 @@ export default function TesoreraReportesPage() {
       <div className="border-b bg-background sticky top-0 z-10">
         <div className="mx-auto max-w-7xl px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={() => router.push('/tesorera')} className="gap-1">
+            <Button variant="ghost" size="sm" onClick={() => router.push('/residente')} className="gap-1">
               <ArrowLeft className="h-4 w-4" />
               Volver
             </Button>

@@ -73,8 +73,8 @@ export function ResidenteDashboard() {
                 </Button>
               )}
               {miRol === 'tesorera' && (
-                <Button variant="secondary" onClick={() => router.push('/tesorera')} className="bg-white/20 text-white hover:bg-white/30">
-                  <UserCog className="mr-2 h-4 w-4" />Tesorera
+                <Button variant="secondary" onClick={() => router.push('/tesorera/reportes')} className="bg-white/20 text-white hover:bg-white/30">
+                  <UserCog className="mr-2 h-4 w-4" />Reportes
                 </Button>
               )}
               {miRol === 'cuadrilla_cortes' && (

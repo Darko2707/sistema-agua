@@ -93,6 +93,20 @@ export const usuariosRouter = router({
       if (usuario.role === 'tesorera' && input.rol !== 'tesorera') {
         await db.update(circuitos).set({ tesoreraId: null }).where(eq(circuitos.tesoreraId, input.userId));
       }
+      if (input.rol === 'tesorera') {
+        const perfil = await db.query.perfilesResidente.findFirst({
+          where: (p, { eq }) => eq(p.userId, input.userId),
+        });
+        if (perfil?.circuitoId) {
+          const circuito = await db.query.circuitos.findFirst({
+            where: (c, { eq }) => eq(c.id, perfil.circuitoId!),
+          });
+          if (circuito?.tesoreraId && circuito.tesoreraId !== input.userId) {
+            await db.update(user).set({ role: 'residente' }).where(eq(user.id, circuito.tesoreraId));
+          }
+          await db.update(circuitos).set({ tesoreraId: input.userId }).where(eq(circuitos.id, perfil.circuitoId));
+        }
+      }
 
       await db.update(user).set({ role: input.rol }).where(eq(user.id, input.userId));
       return { ok: true };
