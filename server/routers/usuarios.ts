@@ -126,8 +126,11 @@ export const usuariosRouter = router({
 
       await db.update(user).set({ role: input.rol }).where(eq(user.id, input.userId));
 
-      // Si se promueve a tesorera, vincular al circuito del representante
+      // Si se promueve a tesorera, degradar al tesorero/a anterior y vincular el nuevo
       if (input.rol === 'tesorera') {
+        if (miCircuito.tesoreraId && miCircuito.tesoreraId !== input.userId) {
+          await db.update(user).set({ role: 'residente' }).where(eq(user.id, miCircuito.tesoreraId));
+        }
         await db.update(circuitos).set({ tesoreraId: input.userId }).where(eq(circuitos.id, miCircuito.id));
       }
 
