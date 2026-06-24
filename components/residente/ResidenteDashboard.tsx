@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
 import { useSession } from '@/hooks/useAuth';
 import { useMiHistorial, useCheckoutMP } from '@/hooks/usePagos';
+import { calcularDesglosePago, calcularMontoBase } from '@/src/domain/pagos/calculator';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -59,7 +60,11 @@ export function ResidenteDashboard() {
   const yaPagoEsteMes = pagos.some(p => p.mes === mesActual && p.anio === anioActual && p.estado === 'pagado');
   const montoMensual  = Number(perfil.circuito?.montoMensual ?? 50);
   const montoReconexion = Number(perfil.circuito?.montoReconexion ?? 300);
-  const montoAPagar   = (perfil.estadoAgua === 'cortado' ? montoMensual + montoReconexion : montoMensual).toFixed(2);
+  const esReconexion  = perfil.estadoAgua === 'cortado';
+  const montoBase     = calcularMontoBase(montoMensual, esReconexion, montoReconexion);
+  const desglose      = calcularDesglosePago(montoBase);
+  const montoAPagar   = montoBase.toFixed(2);
+  const totalConCargos = desglose.total;
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8">
@@ -104,7 +109,7 @@ export function ResidenteDashboard() {
               <AlertTriangle className="h-6 w-6 text-red-600" />
               <div>
                 <p className="font-semibold text-red-700">Tu servicio está suspendido</p>
-                <p className="mt-1 text-sm text-red-600">Debes pagar ${montoAPagar} MXN ({montoMensual.toFixed(2)} mensualidad + {montoReconexion.toFixed(2)} reconexión).</p>
+                <p className="mt-1 text-sm text-red-600">Debes pagar ${totalConCargos} MXN con tarjeta (${montoMensual.toFixed(2)} mensualidad + ${montoReconexion.toFixed(2)} reconexión + comisiones MP).</p>
               </div>
             </div>
           </div>
@@ -146,13 +151,18 @@ export function ResidenteDashboard() {
                 <Badge variant={yaPagoEsteMes ? 'default' : 'destructive'}>{yaPagoEsteMes ? 'Pagado' : 'Pendiente'}</Badge>
               </div>
               <div className="flex items-center justify-between">
-                <span>Monto a pagar</span>
-                <span className="text-2xl font-bold">${montoAPagar} MXN</span>
+                <span>Monto a pagar con tarjeta</span>
+                <div className="text-right">
+                  <span className="text-2xl font-bold">${totalConCargos} MXN</span>
+                  <p className="text-xs text-muted-foreground">
+                    Cuota ${montoAPagar} + comisión y retenciones MP
+                  </p>
+                </div>
               </div>
               {!yaPagoEsteMes && perfil.estadoAgua !== 'pendiente_reconexion' && (
                 <Button className="w-full h-12" onClick={() => checkout(perfil.estadoAgua === 'cortado')} disabled={pagando}>
                   <CreditCard className="mr-2 h-4 w-4" />
-                  {pagando ? 'Redirigiendo a Mercado Pago...' : `Pagar $${montoAPagar} con Mercado Pago`}
+                  {pagando ? 'Redirigiendo a Mercado Pago...' : `Pagar $${totalConCargos} con Mercado Pago`}
                 </Button>
               )}
               {perfil.estadoAgua === 'pendiente_reconexion' && (

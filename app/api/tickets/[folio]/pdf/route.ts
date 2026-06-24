@@ -62,7 +62,7 @@ export async function GET(
 
   const pdf = await generarTicketPDF({
     folio:               ticket.folio,
-    fraccionamiento:     process.env.NEXT_PUBLIC_FRACCIONAMIENTO_NOMBRE ?? 'Sistema de Agua',
+    fraccionamiento:     process.env.NEXT_PUBLIC_FRACCIONAMIENTO_NOMBRE ?? 'SIS4S',
     circuito:            ticket.pago.circuito?.nombre,
     nombre:              ticket.pago.perfil.usuario?.name ?? 'Residente',
     edificio:            ticket.pago.perfil.edificio,
@@ -75,7 +75,7 @@ export async function GET(
     comisionMercadoPago: ticket.pago.comisionMercadoPago,
     retencionIsr:        ticket.pago.retencionIsr,
     retencionIva:        ticket.pago.retencionIva,
-    emailContacto:       process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? 'contacto@sistema-agua.local',
+    emailContacto:       process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? 'contactoservicio4soles@gmail.com',
   });
 
   return new Response(pdf, {
