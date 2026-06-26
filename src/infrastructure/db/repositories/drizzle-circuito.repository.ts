@@ -9,6 +9,7 @@ function toData(row: typeof circuitos.$inferSelect): CircuitoData {
     id:                     row.id,
     nombre:                 row.nombre,
     representanteId:        row.representanteId ?? null,
+    tesoreraId:             row.tesoreraId ?? null,
     montoMensual:           row.montoMensual,
     montoReconexion:        row.montoReconexion,
     // Descifrar el token al leer — soporta valores cifrados y texto plano

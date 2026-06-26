@@ -35,7 +35,7 @@ function buildCsp(nonce: string): string {
   ].join('; ');
 }
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const pathname = req.nextUrl.pathname;
 
   // Rate limiting for specific API routes (returns early — no nonce needed for JSON responses)

@@ -2,6 +2,7 @@ export type CircuitoData = {
   id: string;
   nombre: string;
   representanteId: string | null;
+  tesoreraId: string | null;
   montoMensual: string;
   montoReconexion: string;
   mercadoPagoAccessToken: string | null;
