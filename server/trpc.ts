@@ -83,7 +83,7 @@ export const publicProcedure = t.procedure;
 // ── Procedures ─────────────────────────────────────────────────────────────────
 export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
   if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
-  if (!ctx.user.emailVerified) {
+  if (!ctx.user.emailVerified && ctx.user.role !== 'admin') {
     throw new TRPCError({
       code: 'UNAUTHORIZED',
       message: 'Verifica tu correo electrónico para continuar. Revisa tu bandeja de entrada.',
