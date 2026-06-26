@@ -9,8 +9,8 @@ export default defineConfig({
     testTimeout: 30_000,
     hookTimeout: 30_000,
     // Run sequentially — each test mutates shared DB fixtures
-    pool:        'forks',
-    poolOptions: { forks: { singleFork: true } },
+    pool:            'forks',
+    fileParallelism: false,
   },
   resolve: {
     alias: { '@': path.resolve(__dirname, '.') },

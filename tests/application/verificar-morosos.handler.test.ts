@@ -19,14 +19,14 @@ function makeDeps() {
     findByCircuitoYEstado: vi.fn(),
     create:                vi.fn(),
     updateEstado:          vi.fn(),
-    marcarMorososDelMes:   vi.fn<[], Promise<number>>().mockResolvedValue(0),
+    marcarMorososDelMes:   vi.fn<() => Promise<number>>().mockResolvedValue(0),
   } as unknown as ResidenteRepository;
 
   const pagoRepo = {
     findByPerfilYMes:     vi.fn(),
     findByPerfilId:       vi.fn(),
     findAllPagadosPorMes: vi.fn(),
-    findPagadosByMes:     vi.fn<[], Promise<{ perfilId: string }[]>>().mockResolvedValue([]),
+    findPagadosByMes:     vi.fn<() => Promise<{ perfilId: string }[]>>().mockResolvedValue([]),
     createWithLock:       vi.fn(),
     findCorteActivo:      vi.fn(),
     crearCorte:           vi.fn(),

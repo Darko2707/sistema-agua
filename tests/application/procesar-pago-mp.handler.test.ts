@@ -29,7 +29,7 @@ const PERFIL = {
 };
 
 const CIRCUITO = {
-  id: 'circ-001', nombre: 'Circuito A', representanteId: 'rep-001',
+  id: 'circ-001', nombre: 'Circuito A', representanteId: 'rep-001', tesoreraId: null,
   montoMensual: '100.00', montoReconexion: '300.00',
   mercadoPagoAccessToken: null, mercadoPagoCollectorId: 'col-circuito', activo: true,
 };
@@ -45,6 +45,8 @@ function makeDeps() {
     crearCorte:           vi.fn(),
     cerrarCorte:          vi.fn(),
     crearTicket:          vi.fn(),
+    marcarPendientesVencidos: vi.fn(),
+    getMetricasAdmin:     vi.fn(),
   };
   const residenteRepo: ResidenteRepository = {
     findById:             vi.fn().mockResolvedValue(PERFIL),
@@ -56,6 +58,8 @@ function makeDeps() {
     create:               vi.fn(),
     updateEstado:         vi.fn(),
     marcarMorososDelMes:  vi.fn(),
+    findAllPaginated:     vi.fn(),
+    findByCircuitoPaginated: vi.fn(),
   };
   const circuitoRepo: CircuitoRepository = {
     findById:                 vi.fn().mockResolvedValue(CIRCUITO),
@@ -66,6 +70,7 @@ function makeDeps() {
     updateActivo:             vi.fn(),
     updateMontos:             vi.fn(),
     updateRepresentante:      vi.fn(),
+    updateTesorera:           vi.fn(),
     updateRepresentanteWithMp: vi.fn(),
     updateTesoreraWithMp:     vi.fn(),
     clearRepresentanteByUserId: vi.fn(),

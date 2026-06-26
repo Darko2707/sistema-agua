@@ -58,7 +58,7 @@ vi.mock('mercadopago', () => {
 
 // ── Imports after mocks ────────────────────────────────────────────────────────
 import { POST } from '@/app/api/mercadopago/webhook/route';
-import { InvalidWebhookSignatureError, WebhookSignatureValidator } from 'mercadopago';
+import { InvalidWebhookSignatureError, WebhookSignatureValidator, SignatureFailureReason } from 'mercadopago';
 import { db } from '@/db';
 import { createMercadoPagoClients } from '@/lib/mercadopago';
 import { decryptTokenSafe } from '@/lib/crypto';
@@ -134,7 +134,7 @@ describe('POST /api/mercadopago/webhook', () => {
   describe('validación HMAC', () => {
     it('devuelve 401 cuando la firma es inválida', async () => {
       vi.mocked(WebhookSignatureValidator.validate).mockImplementationOnce(() => {
-        throw new InvalidWebhookSignatureError('ts mismatch');
+        throw new InvalidWebhookSignatureError(SignatureFailureReason.TimestampOutOfTolerance);
       });
       const res = await POST(makeRequest());
       expect(res.status).toBe(401);
@@ -202,7 +202,7 @@ describe('POST /api/mercadopago/webhook', () => {
     });
 
     it('devuelve 200 sin procesar si el perfil no existe en BD', async () => {
-      vi.mocked(db.query.perfilesResidente.findFirst).mockResolvedValue(null);
+      vi.mocked(db.query.perfilesResidente.findFirst).mockResolvedValue(undefined);
       vi.mocked(decryptTokenSafe).mockReturnValue(null);
       const res = await POST(makeRequest());
       expect(res.status).toBe(200);

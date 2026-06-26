@@ -5,7 +5,7 @@ import type { PagoRepository } from '@/src/application/ports/pago.repository';
 import type { CircuitoRepository } from '@/src/application/ports/circuito.repository';
 
 const mockCircuitoActivo = {
-  id: 'circ-001', nombre: 'Circuito A', representanteId: 'rep-001',
+  id: 'circ-001', nombre: 'Circuito A', representanteId: 'rep-001', tesoreraId: null,
   montoMensual: '50.00', montoReconexion: '300.00',
   mercadoPagoAccessToken: null, mercadoPagoCollectorId: null, activo: true,
 };
@@ -35,6 +35,8 @@ function makeDeps() {
     create: vi.fn(),
     updateEstado: vi.fn(),
     marcarMorososDelMes: vi.fn().mockResolvedValue(0),
+    findAllPaginated: vi.fn(),
+    findByCircuitoPaginated: vi.fn(),
   };
   const pagoRepo: PagoRepository = {
     findByPerfilYMes: vi.fn().mockResolvedValue(null),
@@ -46,6 +48,8 @@ function makeDeps() {
     crearCorte: vi.fn(),
     cerrarCorte: vi.fn(),
     crearTicket: vi.fn(),
+    marcarPendientesVencidos: vi.fn(),
+    getMetricasAdmin: vi.fn(),
   };
   const circuitoRepo: CircuitoRepository = {
     findById: vi.fn(),
@@ -56,6 +60,7 @@ function makeDeps() {
     updateActivo: vi.fn(),
     updateMontos: vi.fn(),
     updateRepresentante: vi.fn(),
+    updateTesorera: vi.fn(),
     updateRepresentanteWithMp: vi.fn(),
     updateTesoreraWithMp: vi.fn(),
     clearRepresentanteByUserId: vi.fn(),

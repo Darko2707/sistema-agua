@@ -25,6 +25,8 @@ function makeDeps() {
     create: vi.fn(),
     updateEstado: vi.fn().mockResolvedValue(undefined),
     marcarMorososDelMes: vi.fn().mockResolvedValue(0),
+    findAllPaginated: vi.fn(),
+    findByCircuitoPaginated: vi.fn(),
   };
   const pagoRepo: PagoRepository = {
     findByPerfilYMes: vi.fn(),
@@ -36,6 +38,8 @@ function makeDeps() {
     crearCorte: vi.fn().mockResolvedValue(mockCorte),
     cerrarCorte: vi.fn(),
     crearTicket: vi.fn(),
+    marcarPendientesVencidos: vi.fn(),
+    getMetricasAdmin: vi.fn(),
   };
   return { residenteRepo, pagoRepo };
 }

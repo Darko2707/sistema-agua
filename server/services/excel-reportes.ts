@@ -1,3 +1,4 @@
+import type ExcelJS from 'exceljs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { MESES_CORTO as MESES_ES } from '@/lib/meses';
