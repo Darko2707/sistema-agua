@@ -81,6 +81,13 @@ export const router          = t.router;
 export const publicProcedure = t.procedure;
 
 // ── Procedures ─────────────────────────────────────────────────────────────────
+// Requires a session but NOT email verification — use for onboarding flows
+// that run before the user has had a chance to click the verification link.
+export const authenticatedProcedure = t.procedure.use(({ ctx, next }) => {
+  if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
+  return next({ ctx: { user: ctx.user } });
+});
+
 export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
   if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
   if (!ctx.user.emailVerified && ctx.user.role !== 'admin') {

@@ -1,4 +1,4 @@
-import { router, publicProcedure, protectedProcedure, roleProcedure } from '../trpc';
+import { router, publicProcedure, protectedProcedure, authenticatedProcedure, roleProcedure } from '../trpc';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 
@@ -22,7 +22,7 @@ const cambiarRolCircuitoHandler = new CambiarRolEnCircuitoHandler({ userRepo });
 const listarPersonalHandler     = new ListarPersonalHandler({ userRepo, circuitoRepo });
 
 export const usuariosRouter = router({
-  crearPerfil: protectedProcedure
+  crearPerfil: authenticatedProcedure
     .input(z.object({
       telefono:            z.string().min(10),
       sexo:                z.enum(['masculino', 'femenino', 'otro']),

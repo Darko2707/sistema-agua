@@ -410,7 +410,7 @@ export default function RegistroPage() {
                   </div>
                 </div>
                 <p id="depto-preview" className="text-xs text-muted-foreground">
-                  Número + letra opcional:{' '}
+                  Número + letra:{' '}
                   <strong aria-live="polite">
                     {deptoNumero || '___'}{deptoLetra}
                   </strong>
