@@ -20,8 +20,8 @@ function makeLimiter(requests: number, window: `${number} ${'s' | 'm' | 'h' | 'd
   });
 }
 
-// Auth: 10 req/min por IP — bloquea fuerza bruta en login/registro/reset
-export const authLimiter = makeLimiter(10, '1 m');
+// Auth: 30 req/min por IP — bloquea fuerza bruta; margen para reintentos del cliente
+export const authLimiter = makeLimiter(30, '1 m');
 
 // tRPC: 120 req/min por IP — cubre dashboards con múltiples queries paralelas
 export const trpcLimiter = makeLimiter(120, '1 m');
