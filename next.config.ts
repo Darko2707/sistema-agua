@@ -12,8 +12,8 @@ const csp = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' blob: data: https:",
   "font-src 'self'",
-  // Sentry ingest + Mercado Pago APIs
-  "connect-src 'self' https://*.mercadopago.com https://*.ingest.sentry.io",
+  // Sentry ingest (global: *.ingest.sentry.io; US regional: *.ingest.us.sentry.io) + MP APIs
+  "connect-src 'self' https://*.mercadopago.com https://*.ingest.sentry.io https://*.ingest.us.sentry.io",
   "frame-src https://www.mercadopago.com.mx https://www.mercadopago.com https://www.mercadolibre.com",
   "frame-ancestors 'none'",
   "base-uri 'self'",
