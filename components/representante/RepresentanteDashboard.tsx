@@ -50,7 +50,7 @@ export function RepresentanteDashboard() {
 
   const circuito   = circuitoQuery.data;
   const resumen    = resumenQuery.data;
-  const residentes = residentesQuery.data ?? [];
+  const residentes = residentesQuery.data?.items ?? [];
   const personal   = personalQuery.data ?? [];
   const cargando   = sessionPending || circuitoQuery.isLoading || resumenQuery.isLoading || residentesQuery.isLoading;
   const queryError = circuitoQuery.error?.message ?? resumenQuery.error?.message ?? residentesQuery.error?.message ?? null;

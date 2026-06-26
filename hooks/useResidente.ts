@@ -14,7 +14,7 @@ export function useResidentesPorCircuito(circuitoId: string) {
   const query = trpcReact.usuarios.listarResidentes.useQuery(undefined, {
     enabled: !!circuitoId,
   });
-  const data = query.data?.filter((r) => r.circuito?.id === circuitoId) ?? [];
+  const data = query.data?.items?.filter((r) => r.circuito?.id === circuitoId) ?? [];
   return { ...query, data };
 }
 
