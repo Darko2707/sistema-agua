@@ -90,12 +90,6 @@ export const authenticatedProcedure = t.procedure.use(({ ctx, next }) => {
 
 export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
   if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
-  if (!ctx.user.emailVerified && ctx.user.role !== 'admin') {
-    throw new TRPCError({
-      code: 'UNAUTHORIZED',
-      message: 'Verifica tu correo electrónico para continuar. Revisa tu bandeja de entrada.',
-    });
-  }
   try {
     await verificarAcceso(ctx.user.id, ctx.user.role);
   } catch (e) {
