@@ -34,6 +34,7 @@ function makeDeps() {
     findByCircuitoYEstado: vi.fn(),
     create: vi.fn(),
     updateEstado: vi.fn(),
+    marcarMorososDelMes: vi.fn().mockResolvedValue(0),
   };
   const pagoRepo: PagoRepository = {
     findByPerfilYMes: vi.fn().mockResolvedValue(null),
@@ -49,10 +50,16 @@ function makeDeps() {
   const circuitoRepo: CircuitoRepository = {
     findById: vi.fn(),
     findByRepresentante: vi.fn().mockResolvedValue(mockCircuitoActivo),
+    findByTesorera: vi.fn(),
     findAll: vi.fn(),
+    findActivos: vi.fn(),
     updateActivo: vi.fn(),
     updateMontos: vi.fn(),
     updateRepresentante: vi.fn(),
+    updateRepresentanteWithMp: vi.fn(),
+    updateTesoreraWithMp: vi.fn(),
+    clearRepresentanteByUserId: vi.fn(),
+    clearTesoreraByUserId: vi.fn(),
   };
   return { residenteRepo, pagoRepo, circuitoRepo };
 }

@@ -1,4 +1,5 @@
 import { InvalidWebhookSignatureError, WebhookSignatureValidator } from 'mercadopago';
+import * as Sentry from '@sentry/nextjs';
 
 import { createMercadoPagoClients } from '@/lib/mercadopago';
 import { decryptTokenSafe } from '@/lib/crypto';
@@ -9,6 +10,11 @@ import { ProcesarPagoMpHandler } from '@/src/application/pagos/commands/procesar
 import { logger } from '@/lib/logger';
 
 const procesarPagoMpHandler = new ProcesarPagoMpHandler({ residenteRepo, pagoRepo, circuitoRepo });
+
+export function OPTIONS() {
+  // webhook is server-to-server only (MercadoPago → our server); browser access not supported
+  return new Response(null, { status: 405 });
+}
 
 async function getPaymentClientForReference(reference: ExternalReference | null) {
   if (!reference) return null;
@@ -29,6 +35,10 @@ export async function POST(request: Request) {
     // La firma es OBLIGATORIA. Sin MP_WEBHOOK_SECRET cualquiera podría
     // enviar webhooks falsos y acreditar pagos que no existen.
     if (!webhookSecret) {
+      Sentry.captureMessage('MP_WEBHOOK_SECRET no configurado — webhook deshabilitado', {
+        tags: { component: 'webhook', error_type: 'misconfigured' },
+        level: 'fatal',
+      });
       logger.error('mp.webhook.misconfigured', undefined, {
         message: 'MP_WEBHOOK_SECRET no está configurado — endpoint deshabilitado',
       });
@@ -79,10 +89,17 @@ export async function POST(request: Request) {
     return Response.json({ received: true });
   } catch (error) {
     if (error instanceof InvalidWebhookSignatureError) {
+      Sentry.captureException(error, {
+        tags: { component: 'webhook', error_type: 'signature_invalid' },
+        level: 'warning',
+      });
       logger.warn('mp.webhook.firma_invalida', { reason: error.reason });
       return Response.json({ error: 'Firma invalida' }, { status: 401 });
     }
+    Sentry.captureException(error, {
+      tags: { component: 'webhook', error_type: 'processing_error' },
+    });
     logger.error('mp.webhook.error', error);
-    throw error;
+    return new Response('Internal Server Error', { status: 500 });
   }
 }

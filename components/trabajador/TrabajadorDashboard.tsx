@@ -79,7 +79,7 @@ export function TrabajadorDashboard() {
           </div>
         </div>
 
-        {error && <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-600">{error}</div>}
+        {error && <div role="alert" aria-live="polite" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-600">{error}</div>}
 
         <div className="grid gap-4 md:grid-cols-2">
           <Card><CardContent className="flex items-center justify-between p-5"><div><p className="text-sm text-muted-foreground">Pendientes de corte</p><p className="text-3xl font-bold text-red-600">{pendientesCorte.length}</p></div><Scissors className="h-8 w-8 text-red-600" /></CardContent></Card>

@@ -10,7 +10,7 @@ import { Badge }    from '@/components/ui/badge';
 import { Input }    from '@/components/ui/input';
 import { Banknote, Search, Loader2, Droplets, CheckCircle2 } from 'lucide-react';
 
-const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+import { MESES_CORTO as MESES } from '@/lib/meses';
 
 type Filtro = 'todos' | 'pendientes';
 

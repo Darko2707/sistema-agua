@@ -127,7 +127,7 @@ function GastoModal({ open, onClose, titulo, inicial, mes, anio, onGuardar }: Ga
         <p className="text-sm text-muted-foreground">{MESES_FULL[mes - 1]} {anio}</p>
 
         {errMsg && (
-          <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
+          <div role="alert" aria-live="polite" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">
             {errMsg}
           </div>
         )}
@@ -241,7 +241,7 @@ function IngresoModal({ open, onClose, titulo, inicial, mes, anio, onGuardar }: 
         <p className="text-sm text-muted-foreground">{['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][mes - 1]} {anio}</p>
 
         {errMsg && (
-          <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">{errMsg}</div>
+          <div role="alert" aria-live="polite" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">{errMsg}</div>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -441,7 +441,7 @@ export function ReporteFinanciero() {
         </CardContent>
       </Card>
 
-      {error && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
+      {error && <div role="alert" aria-live="polite" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
 
       {cargando ? <Skeleton /> : reporte ? (
         <>

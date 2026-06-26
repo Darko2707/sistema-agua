@@ -43,6 +43,7 @@ export const user = pgTable('user', {
   role:          rolEnum('role').notNull().default('residente'),
   createdAt:     timestamp('created_at').notNull().defaultNow(),
   updatedAt:     timestamp('updated_at').notNull().defaultNow(),
+  deletedAt:     timestamp('deleted_at'),
 });
 
 export const session = pgTable('session', {
@@ -54,7 +55,9 @@ export const session = pgTable('session', {
   userId:    text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
-});
+}, (t) => [
+  index('idx_session_user_id').on(t.userId),
+]);
 
 export const account = pgTable('account', {
   id:           text('id').primaryKey(),
@@ -77,7 +80,9 @@ export const verification = pgTable('verification', {
   expiresAt:  timestamp('expires_at').notNull(),
   createdAt:  timestamp('created_at').defaultNow(),
   updatedAt:  timestamp('updated_at').defaultNow(),
-});
+}, (t) => [
+  index('idx_verification_identifier').on(t.identifier),
+]);
 
 // ─────────────────────────────────────────────
 // Estructura del fraccionamiento
@@ -91,7 +96,8 @@ export const circuitos = pgTable('circuitos', {
   montoReconexion:        decimal('monto_reconexion', { precision: 10, scale: 2 }).notNull().default('300.00'),
   mercadoPagoAccessToken: text('mercado_pago_access_token'),
   mercadoPagoCollectorId: text('mercado_pago_collector_id'),
-  activo:                 boolean('activo').notNull().default(true), // ✅ NUEVO CAMPO AGREGADO AQUÍ
+  activo:                 boolean('activo').notNull().default(true),
+  updatedAt:              timestamp('updated_at').notNull().defaultNow(),
 });
 
 // Perfil extendido del residente — 1:1 con user
@@ -119,7 +125,7 @@ export const perfilesResidente = pgTable('perfiles_residente', {
 export const pagos = pgTable('pagos', {
   id:                     uuid('id').defaultRandom().primaryKey(),
   perfilId:               uuid('perfil_id').references(() => perfilesResidente.id).notNull(),
-  circuitoId:             uuid('circuito_id').references(() => circuitos.id),
+  circuitoId:             uuid('circuito_id').references(() => circuitos.id).notNull(),
   representanteId:        text('representante_id').references(() => user.id, { onDelete: 'set null' }),
   mes:                    integer('mes').notNull(),
   anio:                   integer('anio').notNull(),
@@ -154,18 +160,31 @@ export const pagos = pgTable('pagos', {
 
   // Ordenamiento cronológico en listados admin.
   index('idx_pagos_creado_en').on(t.creadoEn),
+
+  // Cron limpiar-pendientes: WHERE estado='pendiente' AND creado_en < X
+  // El índice parcial evita full-scan de toda la tabla cada madrugada.
+  index('idx_pagos_pendiente_creado')
+    .on(t.creadoEn)
+    .where(sql`${t.estado} = 'pendiente'`),
+
+  // Dashboard de métricas: WHERE fecha_pago >= hace30dias AND estado='pagado'
+  // También cubre ORDER BY fecha_pago DESC en findAllPagadosPorMes.
+  index('idx_pagos_fecha_pago').on(t.fechaPago),
 ]);
 
 export const cortes = pgTable('cortes', {
   id:              uuid('id').defaultRandom().primaryKey(),
   perfilId:        uuid('perfil_id').references(() => perfilesResidente.id).notNull(),
-  trabajadorId:    text('trabajador_id').references(() => user.id),
+  trabajadorId:    text('trabajador_id').references(() => user.id).notNull(),
   motivo:          text('motivo').notNull(),
   activo:          boolean('activo').default(true),
   fechaCorte:      timestamp('fecha_corte').defaultNow(),
   fechaReconexion: timestamp('fecha_reconexion'),
   reconectadoPor:  text('reconectado_por').references(() => user.id),
-});
+  updatedAt:       timestamp('updated_at').notNull().defaultNow(),
+}, (t) => [
+  index('idx_cortes_perfil_activo').on(t.perfilId, t.activo),
+]);
 
 export const tickets = pgTable('tickets', {
   id:        uuid('id').defaultRandom().primaryKey(),

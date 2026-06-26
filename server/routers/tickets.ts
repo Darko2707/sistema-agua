@@ -1,5 +1,6 @@
 import { router, publicProcedure, protectedProcedure } from '../trpc';
 import { z } from 'zod';
+// eslint-disable-next-line no-restricted-imports -- relational ticket queries not yet in a repo
 import { db } from '@/db';
 import { TRPCError } from '@trpc/server';
 

@@ -1,19 +1,6 @@
-import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import fs from 'node:fs';
 import path from 'node:path';
-
-const MESES = [
-  'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-  'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
-];
-
-const BRAND   = rgb(0.04, 0.39, 0.58);
-const BRAND_L = rgb(0.86, 0.95, 1);
-const GRAY    = rgb(0.45, 0.45, 0.45);
-const GRAY_L  = rgb(0.82, 0.86, 0.9);
-const BLACK   = rgb(0.12, 0.12, 0.12);
-const WHITE   = rgb(1, 1, 1);
-const GREEN   = rgb(0.05, 0.60, 0.25);
+import { MESES_FULL as MESES } from '@/lib/meses';
 
 export async function generarTicketPDF(data: {
   folio: string;
@@ -32,6 +19,16 @@ export async function generarTicketPDF(data: {
   retencionIva?: string | null;
   emailContacto?: string;
 }) {
+  const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
+
+  const BRAND   = rgb(0.04, 0.39, 0.58);
+  const BRAND_L = rgb(0.86, 0.95, 1);
+  const GRAY    = rgb(0.45, 0.45, 0.45);
+  const GRAY_L  = rgb(0.82, 0.86, 0.9);
+  const BLACK   = rgb(0.12, 0.12, 0.12);
+  const WHITE   = rgb(1, 1, 1);
+  const GREEN   = rgb(0.05, 0.60, 0.25);
+
   const doc  = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);

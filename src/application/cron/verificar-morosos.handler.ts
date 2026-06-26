@@ -25,22 +25,21 @@ export class VerificarMorososHandler {
       };
     }
 
-    const pagados = await this.deps.pagoRepo.findPagadosByMes(mes, anio);
-    const idsPagados = pagados.map(p => p.perfilId);
-    const activos = await this.deps.residenteRepo.findByEstado('activo');
-    const morosos = activos.filter(p => !idsPagados.includes(p.id));
+    // Run in parallel: the UPDATE (with embedded NOT IN subquery) and the pagados
+    // count for reporting. They touch different tables and don't depend on each other.
+    const [totalMorosos, pagados] = await Promise.all([
+      this.deps.residenteRepo.marcarMorososDelMes(mes, anio),
+      this.deps.pagoRepo.findPagadosByMes(mes, anio),
+    ]);
+    const totalPagados = pagados.length;
 
-    for (const moroso of morosos) {
-      await this.deps.residenteRepo.updateEstado(moroso.id, 'pendiente_corte');
-    }
-
-    logger.info('morosos.actualizado', { mes, anio, totalPagados: pagados.length, totalMorosos: morosos.length });
+    logger.info('morosos.actualizado', { mes, anio, totalPagados, totalMorosos });
     return {
-      procesados:   morosos.length,
-      totalPagados: pagados.length,
-      totalMorosos: morosos.length,
+      procesados:   totalMorosos,
+      totalPagados,
+      totalMorosos,
       mes, anio, dia,
-      mensaje: `${morosos.length} residentes marcados como pendientes de corte`,
+      mensaje: `${totalMorosos} residentes marcados como pendientes de corte`,
     };
   }
 }

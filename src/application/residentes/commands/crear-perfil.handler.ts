@@ -12,6 +12,8 @@ export type CrearPerfilCommand = {
   circuitoId: string;
   edificio: string;
   departamento: string;
+  nombrePropietario?: string;
+  telefonoPropietario?: string;
 };
 
 type Deps = {
@@ -39,11 +41,16 @@ export class CrearPerfilHandler {
     logger.info('usuario.perfil.creado', { userId: cmd.userId, estadoInicial });
 
     return residenteRepo.create({
-      userId:       cmd.userId,
-      circuitoId:   cmd.circuitoId,
-      edificio:     cmd.edificio,
-      departamento: cmd.departamento,
-      estadoAgua:   estadoInicial,
+      userId:              cmd.userId,
+      circuitoId:          cmd.circuitoId,
+      edificio:            cmd.edificio,
+      departamento:        cmd.departamento,
+      estadoAgua:          estadoInicial,
+      telefono:            cmd.telefono,
+      sexo:                cmd.sexo,
+      tenencia:            cmd.tenencia,
+      nombrePropietario:   cmd.nombrePropietario ?? null,
+      telefonoPropietario: cmd.telefonoPropietario ?? null,
     });
   }
 }

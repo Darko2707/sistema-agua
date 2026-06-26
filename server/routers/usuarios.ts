@@ -1,25 +1,25 @@
 import { router, publicProcedure, protectedProcedure, roleProcedure } from '../trpc';
 import { z } from 'zod';
-import { eq } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
-import bcrypt from 'bcryptjs';
-import { nanoid } from 'nanoid';
 
-import { db } from '@/db';
-import { user, account, circuitos, perfilesResidente } from '@/db/schema';
-import { residenteRepo, circuitoRepo } from '@/src/infrastructure/db/repositories';
+import { residenteRepo, circuitoRepo, userRepo } from '@/src/infrastructure/db/repositories';
 import { CrearPerfilHandler } from '@/src/application/residentes/commands/crear-perfil.handler';
 import { ListarResidentesHandler } from '@/src/application/residentes/queries/listar-residentes.handler';
-import { encryptToken } from '@/lib/crypto';
-import { logger } from '@/lib/logger';
+import { CrearPersonalHandler } from '@/src/application/usuarios/commands/crear-personal.handler';
+import { ActualizarPersonalHandler } from '@/src/application/usuarios/commands/actualizar-personal.handler';
+import { EliminarPersonalHandler } from '@/src/application/usuarios/commands/eliminar-personal.handler';
+import { CambiarRolHandler } from '@/src/application/usuarios/commands/cambiar-rol.handler';
+import { CambiarRolEnCircuitoHandler } from '@/src/application/usuarios/commands/cambiar-rol-circuito.handler';
+import { ListarPersonalHandler } from '@/src/application/usuarios/queries/listar-personal.handler';
 
-function encryptMpToken(token: string | undefined): string | undefined {
-  if (!token) return undefined;
-  try { return encryptToken(token); } catch { return token; }
-}
-
-const crearPerfilHandler    = new CrearPerfilHandler({ residenteRepo, circuitoRepo });
-const listarResidentesHandler = new ListarResidentesHandler({ residenteRepo, circuitoRepo });
+const crearPerfilHandler        = new CrearPerfilHandler({ residenteRepo, circuitoRepo });
+const listarResidentesHandler   = new ListarResidentesHandler({ residenteRepo, circuitoRepo });
+const crearPersonalHandler      = new CrearPersonalHandler({ userRepo, circuitoRepo });
+const actualizarPersonalHandler = new ActualizarPersonalHandler({ userRepo, circuitoRepo });
+const eliminarPersonalHandler   = new EliminarPersonalHandler({ userRepo, circuitoRepo });
+const cambiarRolHandler         = new CambiarRolHandler({ userRepo });
+const cambiarRolCircuitoHandler = new CambiarRolEnCircuitoHandler({ userRepo });
+const listarPersonalHandler     = new ListarPersonalHandler({ userRepo, circuitoRepo });
 
 export const usuariosRouter = router({
   crearPerfil: protectedProcedure
@@ -29,7 +29,7 @@ export const usuariosRouter = router({
       tenencia:            z.enum(['propietario', 'inquilino']),
       circuitoId:          z.string().uuid(),
       edificio:            z.string().min(1),
-      departamento:        z.string().regex(/^\d+[abc]$/, 'El departamento debe ser un número seguido de a, b o c (ej: 314a)'),
+      departamento:        z.string().regex(/^\d+[a-zA-Z]?$/, 'El departamento debe ser un número con letra opcional (ej: 314 o 314a)'),
       nombrePropietario:   z.string().min(2).optional(),
       telefonoPropietario: z.string().min(10).optional(),
     }).refine(d => d.tenencia === 'propietario' || (!!d.nombrePropietario && !!d.telefonoPropietario), {
@@ -37,31 +37,7 @@ export const usuariosRouter = router({
       path: ['nombrePropietario'],
     }))
     .mutation(async ({ ctx, input }) => {
-      // crearPerfilHandler handles validation, but telefono/sexo/tenencia need DB insert
-      // Use direct DB insert to include those fields
-      const circuito = await circuitoRepo.findById(input.circuitoId);
-      if (!circuito?.activo) {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Este circuito está inhabilitado temporalmente.' });
-      }
-      const existente = await residenteRepo.findByUserId(ctx.user.id);
-      if (existente) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Ya tienes un perfil registrado' });
-      }
-      const estadoInicial = new Date().getDate() > 5 ? 'pendiente_corte' : 'activo';
-      logger.info('usuario.perfil.creado', { userId: ctx.user.id, estadoInicial });
-      const [perfil] = await db.insert(perfilesResidente).values({
-        userId:              ctx.user.id,
-        telefono:            input.telefono,
-        sexo:                input.sexo,
-        tenencia:            input.tenencia,
-        circuitoId:          input.circuitoId,
-        edificio:            input.edificio,
-        departamento:        input.departamento,
-        nombrePropietario:   input.nombrePropietario ?? null,
-        telefonoPropietario: input.telefonoPropietario ?? null,
-        estadoAgua:          estadoInicial,
-      }).returning();
-      return perfil;
+      return crearPerfilHandler.execute({ userId: ctx.user.id, ...input });
     }),
 
   miPerfil: protectedProcedure.query(async ({ ctx }) => {
@@ -69,159 +45,78 @@ export const usuariosRouter = router({
   }),
 
   listarCircuitos: publicProcedure.query(async () => {
-    return db.select({
-      id:              circuitos.id,
-      nombre:          circuitos.nombre,
-      activo:          circuitos.activo,
-      representanteId: circuitos.representanteId,
-    }).from(circuitos).where(eq(circuitos.activo, true));
+    return circuitoRepo.findActivos();
   }),
 
-  listarResidentes: roleProcedure('admin', 'representante').query(async ({ ctx }) => {
-    const rol = (ctx.user as { role?: string }).role as 'admin' | 'representante';
-    return listarResidentesHandler.execute({ rol, userId: ctx.user.id });
-  }),
+  listarResidentes: roleProcedure('admin', 'representante')
+    .input(z.object({
+      page:     z.number().int().min(1).default(1),
+      pageSize: z.number().int().min(1).max(200).default(50),
+    }).optional())
+    .query(async ({ ctx, input }) => {
+      return listarResidentesHandler.execute({
+        rol:      ctx.user.role as 'admin' | 'representante',
+        userId:   ctx.user.id,
+        page:     input?.page,
+        pageSize: input?.pageSize,
+      });
+    }),
 
   cambiarRol: roleProcedure('admin')
     .input(z.object({
-      userId: z.string(),
+      userId: z.string().min(1),
       rol:    z.enum(['admin', 'representante', 'tesorera', 'cuadrilla_cortes', 'residente']),
     }))
     .mutation(async ({ ctx, input }) => {
-      logger.info('usuario.rol.cambiado', { actorId: ctx.user.id, userId: input.userId, rol: input.rol });
-      const usuario = await db.query.user.findFirst({ where: (u, { eq }) => eq(u.id, input.userId) });
-      if (!usuario) throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
-
-      // Leer estado actual antes de la transacción
-      let nuevaCircuitoId: string | undefined;
-      let anteriorTesoreraId: string | undefined;
-      if (input.rol === 'tesorera') {
-        const perfil = await db.query.perfilesResidente.findFirst({
-          where: (p, { eq }) => eq(p.userId, input.userId),
-        });
-        if (perfil?.circuitoId) {
-          nuevaCircuitoId = perfil.circuitoId;
-          const circuito = await db.query.circuitos.findFirst({
-            where: (c, { eq }) => eq(c.id, perfil.circuitoId!),
-          });
-          if (circuito?.tesoreraId && circuito.tesoreraId !== input.userId) {
-            anteriorTesoreraId = circuito.tesoreraId;
-          }
-        }
-      }
-
-      await db.transaction(async (tx) => {
-        if (usuario.role === 'representante' && input.rol !== 'representante') {
-          await tx.update(circuitos).set({ representanteId: null }).where(eq(circuitos.representanteId, input.userId));
-        }
-        if (usuario.role === 'tesorera' && input.rol !== 'tesorera') {
-          await tx.update(circuitos).set({ tesoreraId: null }).where(eq(circuitos.tesoreraId, input.userId));
-        }
-        if (nuevaCircuitoId) {
-          if (anteriorTesoreraId) {
-            await tx.update(user).set({ role: 'residente' }).where(eq(user.id, anteriorTesoreraId));
-          }
-          await tx.update(circuitos).set({ tesoreraId: input.userId }).where(eq(circuitos.id, nuevaCircuitoId));
-        }
-        await tx.update(user).set({ role: input.rol }).where(eq(user.id, input.userId));
-      });
+      await cambiarRolHandler.execute({ actorId: ctx.user.id, userId: input.userId, nuevoRol: input.rol });
       return { ok: true };
     }),
 
   cambiarRolEnCircuito: roleProcedure('representante')
     .input(z.object({
-      userId: z.string(),
+      userId: z.string().min(1),
       rol:    z.enum(['residente', 'tesorera', 'cuadrilla_cortes']),
     }))
     .mutation(async ({ ctx, input }) => {
-      const miCircuito = await db.query.circuitos.findFirst({
-        where: (c, { eq }) => eq(c.representanteId, ctx.user.id),
-      });
+      const miCircuito = await circuitoRepo.findByRepresentante(ctx.user.id);
       if (!miCircuito) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes un circuito asignado' });
-
-      const perfil = await db.query.perfilesResidente.findFirst({
-        where: (p, { eq }) => eq(p.userId, input.userId),
+      await cambiarRolCircuitoHandler.execute({
+        actorId:    ctx.user.id,
+        userId:     input.userId,
+        nuevoRol:   input.rol,
+        circuitoId: miCircuito.id,
       });
-      if (!perfil || perfil.circuitoId !== miCircuito.id) {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Este usuario no pertenece a tu circuito' });
-      }
-
-      const usuario = await db.query.user.findFirst({ where: (u, { eq }) => eq(u.id, input.userId) });
-      if (!usuario) throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
-
-      await db.transaction(async (tx) => {
-        if (usuario.role === 'tesorera' && input.rol !== 'tesorera') {
-          await tx.update(circuitos).set({ tesoreraId: null }).where(eq(circuitos.tesoreraId, input.userId));
-        }
-        await tx.update(user).set({ role: input.rol }).where(eq(user.id, input.userId));
-        if (input.rol === 'tesorera') {
-          if (miCircuito.tesoreraId && miCircuito.tesoreraId !== input.userId) {
-            await tx.update(user).set({ role: 'residente' }).where(eq(user.id, miCircuito.tesoreraId));
-          }
-          await tx.update(circuitos).set({ tesoreraId: input.userId }).where(eq(circuitos.id, miCircuito.id));
-        }
-      });
-
-      logger.info('representante.rol.cambiado', { actorId: ctx.user.id, userId: input.userId, rol: input.rol });
       return { ok: true };
     }),
 
   asignarRepresentante: roleProcedure('admin')
     .input(z.object({
       circuitoId: z.string().uuid(),
-      userId:     z.string(),
+      userId:     z.string().min(1),
     }))
     .mutation(async ({ ctx, input }) => {
-      logger.info('usuario.representante.asignado', { actorId: ctx.user.id, circuitoId: input.circuitoId, userId: input.userId || null });
-      const circuito = await db.query.circuitos.findFirst({ where: (c, { eq }) => eq(c.id, input.circuitoId) });
+      const circuito = await circuitoRepo.findById(input.circuitoId);
       if (!circuito) throw new TRPCError({ code: 'NOT_FOUND', message: 'Circuito no encontrado' });
 
       if (!input.userId) {
-        await db.update(circuitos).set({ representanteId: null }).where(eq(circuitos.id, input.circuitoId));
+        await circuitoRepo.updateRepresentante(input.circuitoId, null);
         return { ok: true };
       }
 
-      const usuario = await db.query.user.findFirst({ where: (u, { eq }) => eq(u.id, input.userId) });
+      const usuario = await userRepo.findById(input.userId);
       if (!usuario) throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
-      await db.update(circuitos).set({ representanteId: input.userId }).where(eq(circuitos.id, input.circuitoId));
-      await db.update(user).set({ role: 'representante' }).where(eq(user.id, input.userId));
+
+      await circuitoRepo.updateRepresentante(input.circuitoId, input.userId);
+      await userRepo.updateRole(input.userId, 'representante');
       return { ok: true };
     }),
 
   listarPersonal: roleProcedure('admin', 'representante').query(async ({ ctx }) => {
-    const actorRole = (ctx.user as { role?: string }).role;
-    if (actorRole === 'representante') {
-      const circuito = await db.query.circuitos.findFirst({
-        where: (c, { eq }) => eq(c.representanteId, ctx.user.id),
-      });
-      if (!circuito) return [];
-      // Busca por perfilesResidente: más robusto que depender solo de tesoreraId
-      const perfiles = await db.query.perfilesResidente.findMany({
-        where: (p, { eq }) => eq(p.circuitoId, circuito.id),
-        with: { usuario: true },
-      });
-      return perfiles
-        .filter(p => p.usuario?.role && !['admin', 'representante', 'residente'].includes(p.usuario.role))
-        .map(p => p.usuario!);
-    }
-    return db.query.user.findMany({
-      where: (u, { ne }) => ne(u.role, 'residente'),
-      orderBy: (u, { desc }) => [desc(u.createdAt)],
-    });
+    return listarPersonalHandler.execute({ rol: ctx.user.role as 'admin' | 'representante', userId: ctx.user.id });
   }),
 
   listarRepresentantes: roleProcedure('admin').query(async () => {
-    const reps = await db.query.user.findMany({
-      where: (u, { eq }) => eq(u.role, 'representante'),
-      orderBy: (u, { asc }) => [asc(u.name)],
-    });
-    const todos = await db.query.circuitos.findMany();
-    return reps.map((r) => ({
-      id:      r.id,
-      name:    r.name,
-      email:   r.email,
-      circuito: todos.find((c) => c.representanteId === r.id) ?? null,
-    }));
+    return userRepo.listarRepresentantes();
   }),
 
   crearRepresentante: roleProcedure('admin')
@@ -234,36 +129,13 @@ export const usuariosRouter = router({
       mercadoPagoCollectorId: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const existe = await db.query.user.findFirst({ where: (u, { eq }) => eq(u.email, input.email) });
-      if (existe) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Ya existe un usuario con ese correo' });
-
-      const userId   = nanoid();
-      const hashed   = await bcrypt.hash(input.password, 10);
-
-      await db.insert(user).values({
-        id: userId, name: input.nombre, email: input.email, role: 'representante', emailVerified: false,
-      });
-      await db.insert(account).values({
-        id: nanoid(), accountId: input.email, providerId: 'credential',
-        userId, password: hashed,
-      });
-
-      if (input.circuitoId) {
-        await db.update(circuitos)
-          .set({
-            representanteId: userId,
-            ...(input.mercadoPagoAccessToken ? { mercadoPagoAccessToken: encryptMpToken(input.mercadoPagoAccessToken) } : {}),
-            ...(input.mercadoPagoCollectorId ? { mercadoPagoCollectorId: input.mercadoPagoCollectorId } : {}),
-          })
-          .where(eq(circuitos.id, input.circuitoId));
-      }
-      logger.info('admin.representante.creado', { actorId: ctx.user.id, userId });
+      await crearPersonalHandler.execute({ actorId: ctx.user.id, role: 'representante', ...input });
       return { ok: true };
     }),
 
   actualizarRepresentante: roleProcedure('admin')
     .input(z.object({
-      id:                     z.string(),
+      id:                     z.string().min(1),
       nombre:                 z.string().min(1).optional(),
       email:                  z.string().email().optional(),
       password:               z.string().min(8).optional(),
@@ -272,51 +144,14 @@ export const usuariosRouter = router({
       mercadoPagoCollectorId: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const userUpdates: Record<string, unknown> = {};
-      if (input.nombre) userUpdates.name  = input.nombre;
-      if (input.email)  userUpdates.email = input.email;
-      if (Object.keys(userUpdates).length) {
-        await db.update(user).set(userUpdates).where(eq(user.id, input.id));
-      }
-      if (input.password) {
-        const hashed = await bcrypt.hash(input.password, 10);
-        await db.update(account).set({ password: hashed })
-          .where(eq(account.userId, input.id));
-      }
-      // Solo modificar asignación si se envía circuitoId explícitamente (undefined = no tocar)
-      if (input.circuitoId !== undefined) {
-        await db.update(circuitos).set({ representanteId: null }).where(eq(circuitos.representanteId, input.id));
-        if (input.circuitoId) {
-          await db.update(circuitos)
-            .set({
-              representanteId: input.id,
-              ...(input.mercadoPagoAccessToken ? { mercadoPagoAccessToken: encryptMpToken(input.mercadoPagoAccessToken) } : {}),
-              ...(input.mercadoPagoCollectorId ? { mercadoPagoCollectorId: input.mercadoPagoCollectorId } : {}),
-            })
-            .where(eq(circuitos.id, input.circuitoId));
-        }
-      }
-      logger.info('admin.representante.actualizado', { actorId: ctx.user.id, userId: input.id });
+      await actualizarPersonalHandler.execute({ actorId: ctx.user.id, role: 'representante', ...input });
       return { ok: true };
     }),
 
   eliminarRepresentante: roleProcedure('admin')
-    .input(z.object({ id: z.string() }))
+    .input(z.object({ id: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
-      const tieneRegistros = await db.query.ingresosAdicionales.findFirst({
-        where: (ia, { eq }) => eq(ia.representanteId, input.id),
-      }) ?? await db.query.gastosCircuito.findFirst({
-        where: (g, { eq }) => eq(g.representanteId, input.id),
-      });
-      if (tieneRegistros) {
-        throw new TRPCError({
-          code: 'CONFLICT',
-          message: 'No se puede eliminar: el representante tiene ingresos o gastos registrados. Desasígnalo del circuito en su lugar.',
-        });
-      }
-      await db.update(circuitos).set({ representanteId: null }).where(eq(circuitos.representanteId, input.id));
-      await db.delete(user).where(eq(user.id, input.id));
-      logger.info('admin.representante.eliminado', { actorId: ctx.user.id, userId: input.id });
+      await eliminarPersonalHandler.execute({ actorId: ctx.user.id, id: input.id, role: 'representante' });
       return { ok: true };
     }),
 
@@ -324,17 +159,7 @@ export const usuariosRouter = router({
   // CRUD TESORERAS
   // ══════════════════════════════════════════════════════════════════════════
   listarTesoreras: roleProcedure('admin').query(async () => {
-    const tesoreras = await db.query.user.findMany({
-      where: (u, { eq }) => eq(u.role, 'tesorera'),
-      orderBy: (u, { asc }) => [asc(u.name)],
-    });
-    const todos = await db.query.circuitos.findMany();
-    return tesoreras.map((t) => ({
-      id:      t.id,
-      name:    t.name,
-      email:   t.email,
-      circuito: todos.find((c) => c.tesoreraId === t.id) ?? null,
-    }));
+    return userRepo.listarTesoreras();
   }),
 
   crearTesorera: roleProcedure('admin')
@@ -347,36 +172,13 @@ export const usuariosRouter = router({
       mercadoPagoCollectorId: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const existe = await db.query.user.findFirst({ where: (u, { eq }) => eq(u.email, input.email) });
-      if (existe) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Ya existe un usuario con ese correo' });
-
-      const userId = nanoid();
-      const hashed = await bcrypt.hash(input.password, 10);
-
-      await db.insert(user).values({
-        id: userId, name: input.nombre, email: input.email, role: 'tesorera', emailVerified: false,
-      });
-      await db.insert(account).values({
-        id: nanoid(), accountId: input.email, providerId: 'credential',
-        userId, password: hashed,
-      });
-
-      if (input.circuitoId) {
-        await db.update(circuitos)
-          .set({
-            tesoreraId: userId,
-            ...(input.mercadoPagoAccessToken ? { mercadoPagoAccessToken: encryptMpToken(input.mercadoPagoAccessToken) } : {}),
-            ...(input.mercadoPagoCollectorId ? { mercadoPagoCollectorId: input.mercadoPagoCollectorId } : {}),
-          })
-          .where(eq(circuitos.id, input.circuitoId));
-      }
-      logger.info('admin.tesorera.creada', { actorId: ctx.user.id, userId });
+      await crearPersonalHandler.execute({ actorId: ctx.user.id, role: 'tesorera', ...input });
       return { ok: true };
     }),
 
   actualizarTesorera: roleProcedure('admin')
     .input(z.object({
-      id:                     z.string(),
+      id:                     z.string().min(1),
       nombre:                 z.string().min(1).optional(),
       email:                  z.string().email().optional(),
       password:               z.string().min(8).optional(),
@@ -385,49 +187,14 @@ export const usuariosRouter = router({
       mercadoPagoCollectorId: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const userUpdates: Record<string, unknown> = {};
-      if (input.nombre) userUpdates.name  = input.nombre;
-      if (input.email)  userUpdates.email = input.email;
-      if (Object.keys(userUpdates).length) {
-        await db.update(user).set(userUpdates).where(eq(user.id, input.id));
-      }
-      if (input.password) {
-        const hashed = await bcrypt.hash(input.password, 10);
-        await db.update(account).set({ password: hashed }).where(eq(account.userId, input.id));
-      }
-      if (input.circuitoId !== undefined) {
-        await db.update(circuitos).set({ tesoreraId: null }).where(eq(circuitos.tesoreraId, input.id));
-        if (input.circuitoId) {
-          await db.update(circuitos)
-            .set({
-              tesoreraId: input.id,
-              ...(input.mercadoPagoAccessToken ? { mercadoPagoAccessToken: encryptMpToken(input.mercadoPagoAccessToken) } : {}),
-              ...(input.mercadoPagoCollectorId ? { mercadoPagoCollectorId: input.mercadoPagoCollectorId } : {}),
-            })
-            .where(eq(circuitos.id, input.circuitoId));
-        }
-      }
-      logger.info('admin.tesorera.actualizada', { actorId: ctx.user.id, userId: input.id });
+      await actualizarPersonalHandler.execute({ actorId: ctx.user.id, role: 'tesorera', ...input });
       return { ok: true };
     }),
 
   eliminarTesorera: roleProcedure('admin')
-    .input(z.object({ id: z.string() }))
+    .input(z.object({ id: z.string().min(1) }))
     .mutation(async ({ ctx, input }) => {
-      const tieneRegistros = await db.query.ingresosAdicionales.findFirst({
-        where: (ia, { eq }) => eq(ia.representanteId, input.id),
-      }) ?? await db.query.gastosCircuito.findFirst({
-        where: (g, { eq }) => eq(g.representanteId, input.id),
-      });
-      if (tieneRegistros) {
-        throw new TRPCError({
-          code: 'CONFLICT',
-          message: 'No se puede eliminar: el usuario tiene ingresos o gastos registrados. Desasígnalo del circuito en su lugar.',
-        });
-      }
-      await db.update(circuitos).set({ tesoreraId: null }).where(eq(circuitos.tesoreraId, input.id));
-      await db.delete(user).where(eq(user.id, input.id));
-      logger.info('admin.tesorera.eliminada', { actorId: ctx.user.id, userId: input.id });
+      await eliminarPersonalHandler.execute({ actorId: ctx.user.id, id: input.id, role: 'tesorera' });
       return { ok: true };
     }),
 });

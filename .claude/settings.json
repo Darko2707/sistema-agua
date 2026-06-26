@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C c:/src/sistema-agua log --all --oneline -- .env.local)",
+      "PowerShell(cd c:\\\\src\\\\sistema-agua; npx tsc --noEmit --skipLibCheck 2>&1 | Where-Object { $_ -match 'proxy\\\\.ts|next\\\\.config' })",
+      "Bash(grep -E \"\\(TEST-[A-Z0-9_]+|APP_USR-[0-9]|postgresql://|postgres://|neon\\\\.tech|[A-Za-z0-9+/]{40,}==?\\)\")",
+      "Bash(grep -E \"\\(re_[A-Za-z0-9]{20,}|sk_[A-Za-z0-9]{20,}|rk_[A-Za-z0-9]{20,}|Bearer [A-Za-z0-9._-]{20,}\\)\")",
+      "Bash(grep -E \"\\(secret|token|key|password|apikey\\)\\\\s*[=:]\\\\s*['\\\\\"][^'\\\\\"\\\\$\\\\{]{8,}\")",
+      "Bash(grep -iv \"process\\\\.env\\\\|'self'\\\\|sha512|sha256|aria|test.*label\\\\|placeholder\\\\|\\\\\\\\*\\\\*\\\\*\")",
+      "Bash(grep -Ei \"\\(url|key|secret|token|password\\)\\\\s*[=:]\\\\s*['\\\\\"][^'\\\\\"\\\\$\\\\{]{10,}\")",
+      "Bash(xargs grep -l \"BetterAuthAdvancedOptions\\\\|useSecureCookies\")",
+      "Bash(node -e \"const s = require\\('@sentry/nextjs'\\); console.log\\(typeof s.replayIntegration, typeof s.captureRequestError, typeof s.captureException\\)\")",
+      "Bash(node -e \"const {neonConfig}=require\\('@neondatabase/serverless'\\); console.log\\(JSON.stringify\\(Object.keys\\(neonConfig\\),null,2\\)\\)\")",
+      "Bash(grep -r \"^\\\\\\\\\\\\d\\\\|regex\\\\|validate\" /c/src/sistema-agua/src/application/residentes --include=\"*.ts\")",
+      "PowerShell(Get-ChildItem \"c:\\\\src\\\\sistema-agua\\\\app\\\\\\(residente\\)\" -Recurse | ForEach-Object { $_.FullName.Replace\\(\"c:\\\\src\\\\sistema-agua\\\\app\\\\\\(residente\\)\\\\\", \"\"\\) })"
+    ]
+  }
+}

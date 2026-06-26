@@ -4,6 +4,8 @@ import type { ResidenteRepository } from '../../ports/residente.repository';
 import type { PagoRepository } from '../../ports/pago.repository';
 import type { ConfirmarCorteCommand } from './confirmar-corte.command';
 import { aplicarTransicion, ACCIONES, type EstadoAgua } from '@/src/domain/agua/state-machine';
+import { eventBus } from '@/src/domain/shared/event-bus';
+import { CorteEjecutadoEvent } from '@/src/domain/residente/events/corte-ejecutado.event';
 
 type Deps = {
   residenteRepo: ResidenteRepository;
@@ -43,6 +45,7 @@ export class ConfirmarCorteHandler {
     }
 
     await residenteRepo.updateEstado(cmd.perfilId, resultado.nuevoEstado);
+    await eventBus.publish([new CorteEjecutadoEvent(cmd.perfilId, cmd.trabajadorId, new Date())]);
     return corteCreado;
   }
 }

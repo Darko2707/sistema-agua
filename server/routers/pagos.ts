@@ -6,37 +6,25 @@ import { residenteRepo, pagoRepo, circuitoRepo } from '@/src/infrastructure/db/r
 import { RegistrarPagoManualHandler } from '@/src/application/pagos/commands/registrar-pago-manual.handler';
 import { HistorialPagosHandler } from '@/src/application/pagos/queries/historial-pagos.handler';
 import { ResumenMesHandler } from '@/src/application/pagos/queries/resumen-mes.handler';
+import { MetricasAdminHandler } from '@/src/application/pagos/queries/metricas-admin.handler';
+import { ResolverCircuitoTesoreraService } from '@/src/application/circuitos/queries/resolver-circuito-tesorera.service';
+// eslint-disable-next-line no-restricted-imports -- inline MP webhook queries not yet in a repo
 import { db } from '@/db';
-import { pagos as pagosTable, circuitos } from '@/db/schema';
+// eslint-disable-next-line no-restricted-imports -- inline MP webhook queries not yet in a repo
+import { pagos as pagosTable } from '@/db/schema';
+// eslint-disable-next-line no-restricted-imports -- inline MP webhook queries not yet in a repo
 import { eq } from 'drizzle-orm';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
 import { calcularDesglosePagoManual, calcularMontoBase } from '@/src/domain/pagos/calculator';
 import { FolioVO } from '@/src/domain/pagos/folio.vo';
 import { logger } from '@/lib/logger';
 
-async function resolverCircuitoTesorera(tesoreraId: string) {
-  let circuito = await db.query.circuitos.findFirst({
-    where: (c, { eq }) => eq(c.tesoreraId, tesoreraId),
-  });
-  if (!circuito) {
-    const perfil = await db.query.perfilesResidente.findFirst({
-      where: (p, { eq }) => eq(p.userId, tesoreraId),
-    });
-    if (perfil?.circuitoId) {
-      circuito = await db.query.circuitos.findFirst({
-        where: (c, { eq }) => eq(c.id, perfil.circuitoId!),
-      });
-      if (circuito) {
-        await db.update(circuitos).set({ tesoreraId }).where(eq(circuitos.id, circuito.id));
-      }
-    }
-  }
-  return circuito ?? null;
-}
+const resolverCircuitoTesoreraService = new ResolverCircuitoTesoreraService({ circuitoRepo, residenteRepo });
 
 const registrarPagoManualHandler = new RegistrarPagoManualHandler({ residenteRepo, pagoRepo, circuitoRepo });
 const historialPagosHandler = new HistorialPagosHandler({ pagoRepo, residenteRepo });
 const resumenMesHandler = new ResumenMesHandler({ pagoRepo, residenteRepo, circuitoRepo });
+const metricasAdminHandler = new MetricasAdminHandler({ pagoRepo });
 
 export const pagosRouter = router({
   miHistorial: protectedProcedure.query(async ({ ctx }) => {
@@ -105,9 +93,20 @@ export const pagosRouter = router({
   }),
 
   resumenMes: roleProcedure('admin', 'representante').query(async ({ ctx }) => {
-    const rol = (ctx.user as { role?: string }).role as 'admin' | 'representante';
-    return resumenMesHandler.execute({ rol, userId: ctx.user.id });
+    return resumenMesHandler.execute({ rol: ctx.user.role as 'admin' | 'representante', userId: ctx.user.id });
   }),
+
+  metricasAdmin: roleProcedure('admin')
+    .input(z.object({
+      mes:  z.number().int().min(1).max(12).optional(),
+      anio: z.number().int().min(2020).max(2100).optional(),
+    }))
+    .query(async ({ input }) => {
+      const ahora = new Date();
+      const mes  = input.mes  ?? ahora.getMonth() + 1;
+      const anio = input.anio ?? ahora.getFullYear();
+      return metricasAdminHandler.execute(mes, anio);
+    }),
 
   reportePagos: roleProcedure('representante').query(async ({ ctx }) => {
     const miCircuito = await circuitoRepo.findByRepresentante(ctx.user.id);
@@ -131,10 +130,8 @@ export const pagosRouter = router({
       const { mes, anio } = periodo;
       const mesFiltro  = input.mes  || mes;
       const anioFiltro = input.anio || anio;
-      const rol = (ctx.user as { role?: string }).role;
-
       let targetCircuitoId = input.circuitoId;
-      if (rol !== 'admin') {
+      if (ctx.user.role !== 'admin') {
         const miCircuito = await circuitoRepo.findByRepresentante(ctx.user.id);
         if (!miCircuito) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes un circuito asignado.' });
         targetCircuitoId = miCircuito.id;
@@ -152,7 +149,7 @@ export const pagosRouter = router({
 
   // ── Tesorera: listar residentes del circuito para registrar pagos ──────────
   listarResidentesParaPago: roleProcedure('tesorera').query(async ({ ctx }) => {
-    const circuito = await resolverCircuitoTesorera(ctx.user.id);
+    const circuito = await resolverCircuitoTesoreraService.execute(ctx.user.id);
     if (!circuito) return { circuito: null, residentes: [] };
 
     const periodo  = PeriodoVO.vigente();
@@ -192,7 +189,7 @@ export const pagosRouter = router({
       metodo:   z.enum(['efectivo', 'transferencia']),
     }))
     .mutation(async ({ ctx, input }) => {
-      const circuito = await resolverCircuitoTesorera(ctx.user.id);
+      const circuito = await resolverCircuitoTesoreraService.execute(ctx.user.id);
       if (!circuito)        throw new TRPCError({ code: 'FORBIDDEN',   message: 'No tienes circuito asignado' });
       if (!circuito.activo) throw new TRPCError({ code: 'FORBIDDEN',   message: 'Tu circuito está inhabilitado' });
 

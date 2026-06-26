@@ -52,6 +52,6 @@ export function decryptTokenSafe(value: string | null | undefined): string | nul
   try {
     return isEncrypted(value) ? decryptToken(value) : value;
   } catch {
-    return value; // si falla el descifrado, devuelve el raw para no romper pagos
+    return null;
   }
 }

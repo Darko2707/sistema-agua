@@ -17,7 +17,7 @@ import {
   Search, Loader2, DollarSign, Shield, UserPlus, X,
 } from 'lucide-react';
 
-const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+import { MESES_CORTO as MESES } from '@/lib/meses';
 
 const ROL_LABEL: Record<string, string> = {
   tesorera:         'Tesorera/o',
@@ -144,7 +144,7 @@ export function RepresentanteDashboard() {
           </div>
         </div>
 
-        {queryError && <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-600">{queryError}</div>}
+        {queryError && <div role="alert" aria-live="polite" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-600">{queryError}</div>}
 
         {/* Métricas */}
         <div className="grid gap-4 md:grid-cols-4">
@@ -188,7 +188,7 @@ export function RepresentanteDashboard() {
         </div>
 
         {(mensaje || error) && (
-          <div className={`rounded-xl border p-4 text-sm font-medium ${error ? 'border-red-200 bg-red-50 text-red-600' : 'border-green-200 bg-green-50 text-green-700'}`}>
+          <div role={error ? 'alert' : 'status'} aria-live="polite" className={`rounded-xl border p-4 text-sm font-medium ${error ? 'border-red-200 bg-red-50 text-red-600' : 'border-green-200 bg-green-50 text-green-700'}`}>
             {error || mensaje}
           </div>
         )}
@@ -337,7 +337,7 @@ export function RepresentanteDashboard() {
               </div>
 
               {errorPersonal && (
-                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">{errorPersonal}</div>
+                <div role="alert" aria-live="polite" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">{errorPersonal}</div>
               )}
             </div>
 

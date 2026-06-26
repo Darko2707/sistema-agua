@@ -3,9 +3,10 @@ import { useRouter } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
 import { trpc } from '@/lib/trpc-client';
 
-// ─── Constantes de presentación ─────────────────────────────────────────────
+import { MESES_CORTO } from '@/lib/meses';
 
-export const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+// Re-exported for backward compat with AdminDashboard
+export const MESES = MESES_CORTO;
 
 export const ROLES = [
   { value: 'admin',            label: 'Administrador' },
@@ -46,13 +47,15 @@ export type ResidenteCompleto = {
   circuito?:            { id: string; nombre: string } | null;
 };
 
+export type PaginaMeta = { total: number; page: number; pageSize: number; totalPages: number };
+
 export type Circuito = {
   id:               string;
   nombre:           string;
   representanteId:  string | null;
 };
 
-export type AdminTab = 'resumen' | 'personal' | 'residentes' | 'pendientes';
+export type AdminTab = 'resumen' | 'métricas' | 'personal' | 'residentes' | 'pendientes';
 
 // ─── Hook ────────────────────────────────────────────────────────────────────
 
@@ -63,6 +66,7 @@ export function useAdmin() {
   const [resumen, setResumen]                   = useState<Resumen | null>(null);
   const [personal, setPersonal]                 = useState<Personal[]>([]);
   const [residentes, setResidentes]             = useState<ResidenteCompleto[]>([]);
+  const [paginaMeta, setPaginaMeta]             = useState<PaginaMeta>({ total: 0, page: 1, pageSize: 50, totalPages: 0 });
   const [circuitos, setCircuitos]               = useState<Circuito[]>([]);
   const [pendientesCorte, setPendientesCorte]   = useState<ResidenteCompleto[]>([]);
   const [pendientesReconexion, setPendientesReconexion] = useState<ResidenteCompleto[]>([]);
@@ -77,14 +81,16 @@ export function useAdmin() {
       const [resumenData, personalData, residentesData, circuitosData, cortesData, reconexionesData] = await Promise.all([
         trpc.pagos.resumenMes.query(),
         trpc.usuarios.listarPersonal.query(),
-        trpc.usuarios.listarResidentes.query(),
+        trpc.usuarios.listarResidentes.query({ page: 1, pageSize: 50 }),
         trpc.usuarios.listarCircuitos.query(),
         trpc.cortes.pendientesDeCorte.query(),
         trpc.cortes.pendientesDeReconexion.query(),
       ]);
       setResumen(resumenData as Resumen ?? null);
       setPersonal(personalData as Personal[]);
-      setResidentes(residentesData as ResidenteCompleto[]);
+      const rd = residentesData as { items: ResidenteCompleto[]; total: number; page: number; pageSize: number; totalPages: number };
+      setResidentes(rd.items);
+      setPaginaMeta({ total: rd.total, page: rd.page, pageSize: rd.pageSize, totalPages: rd.totalPages });
       setCircuitos(circuitosData as Circuito[]);
       setPendientesCorte(cortesData as ResidenteCompleto[]);
       setPendientesReconexion(reconexionesData as ResidenteCompleto[]);
@@ -163,6 +169,7 @@ export function useAdmin() {
     error,
     residentesFiltrados,
     morosos,
+    paginaMeta,
     cargarDatos,
     cambiarRol,
     asignarRepresentante,

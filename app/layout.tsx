@@ -30,8 +30,14 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <body className="min-h-screen bg-slate-50 font-sans antialiased">
-        <Providers> {/* 👈 Envolvemos la app aquí */}
-          <main className="min-h-screen">
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded focus:bg-white focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-primary focus:ring-2 focus:ring-primary focus:ring-offset-2"
+        >
+          Saltar al contenido principal
+        </a>
+        <Providers>
+          <main id="main-content" className="min-h-screen">
             {children}
           </main>
         </Providers>

@@ -8,6 +8,8 @@ import type { PagoRepository } from '../../ports/pago.repository';
 import type { CircuitoRepository } from '../../ports/circuito.repository';
 import { logger } from '@/lib/logger';
 import type { RegistrarPagoManualCommand } from './registrar-pago-manual.command';
+import { eventBus } from '@/src/domain/shared/event-bus';
+import { PagoRegistradoEvent } from '@/src/domain/residente/events/pago-registrado.event';
 
 type Deps = {
   residenteRepo: ResidenteRepository;
@@ -66,6 +68,8 @@ export class RegistrarPagoManualHandler {
       esReconexion,
       fechaPago:              new Date(),
     });
+
+    await eventBus.publish([new PagoRegistradoEvent(perfil.id, folio)]);
 
     logger.info('pago.manual.completado', {
       folio,

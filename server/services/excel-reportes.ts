@@ -1,8 +1,6 @@
-import ExcelJS from 'exceljs';
 import fs from 'node:fs';
 import path from 'node:path';
-
-const MESES_ES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+import { MESES_CORTO as MESES_ES } from '@/lib/meses';
 
 const COLOR_HEADER  = '1E4A6E';
 const COLOR_PAGADO  = 'D1FAE5';
@@ -72,6 +70,7 @@ export async function generarReporteResidentesExcel(params: {
   generadoEn: Date;
   residentes: ResidenteReporte[];
 }): Promise<Buffer> {
+  const ExcelJS = (await import('exceljs')).default;
   const wb = new ExcelJS.Workbook();
   wb.creator = 'SIS4S';
   wb.created = params.generadoEn;
@@ -257,6 +256,7 @@ export async function generarReporteFinancieroExcel(params: {
   gastos: GastoReporte[];
   ingresos?: IngresoAdicionalReporte[];
 }): Promise<Buffer> {
+  const ExcelJS = (await import('exceljs')).default;
   const wb = new ExcelJS.Workbook();
   wb.creator = 'SIS4S';
   wb.created = params.generadoEn;

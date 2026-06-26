@@ -32,11 +32,12 @@ const ESTADO_CONFIG: Record<EstadoAgua, EstadoConfig> = {
   },
 };
 
+// Text -800 on bg-100 achieves ≥ 5:1 contrast ratio (WCAG AA).
 const CLASES_VARIANTE: Record<VarianteSemántica, string> = {
-  success:     'border-green-200 bg-green-100 text-green-700',
-  warning:     'border-amber-200 bg-amber-100 text-amber-700',
-  destructive: 'border-red-200   bg-red-100   text-red-700',
-  info:        'border-sky-200   bg-sky-100   text-sky-700',
+  success:     'border-green-300 bg-green-100 text-green-800',
+  warning:     'border-amber-300 bg-amber-100 text-amber-800',
+  destructive: 'border-red-300   bg-red-100   text-red-800',
+  info:        'border-sky-300   bg-sky-100   text-sky-800',
 };
 
 type Props = {
@@ -49,7 +50,7 @@ export function EstadoAguaBadge({ estado, className }: Props) {
 
   if (!config) {
     return (
-      <Badge variant="outline" className={className}>
+      <Badge role="status" variant="outline" className={className}>
         {estado}
       </Badge>
     );
@@ -57,6 +58,8 @@ export function EstadoAguaBadge({ estado, className }: Props) {
 
   return (
     <Badge
+      role="status"
+      aria-label={`Estado del servicio: ${config.label}`}
       variant="outline"
       className={`font-medium ${CLASES_VARIANTE[config.variante]}${className ? ` ${className}` : ''}`}
     >

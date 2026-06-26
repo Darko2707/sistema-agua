@@ -18,11 +18,9 @@ type Tesorera = {
   email: string;
   circuito: {
     id: string;
-    nombre: string;
-    tesoreraId: string | null;
+    nombre: string | null;
     mercadoPagoCollectorId: string | null;
-    mercadoPagoAccessToken: string | null;
-  } | null | undefined;
+  } | null;
 };
 
 type FormState = {

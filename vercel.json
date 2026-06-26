@@ -1,0 +1,6 @@
+{
+  "crons": [
+    { "path": "/api/cron/cortes",             "schedule": "0 9 6 * *" },
+    { "path": "/api/cron/limpiar-pendientes", "schedule": "0 4 * * *" }
+  ]
+}

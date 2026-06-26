@@ -13,14 +13,13 @@ const pendientesCorteHandler    = new PendientesCorteHandler({ residenteRepo, ci
 export const cortesRouter = router({
   pendientesDeCorte: roleProcedure('representante', 'cuadrilla_cortes', 'admin')
     .query(async ({ ctx }) => {
-      const rol = (ctx.user as { role?: string }).role as 'representante' | 'cuadrilla_cortes' | 'admin';
-      return pendientesCorteHandler.execute({ rol, userId: ctx.user.id, tipo: 'corte' });
+      // roleProcedure already validated the role — cast narrows UserRole to the handler's expected subset
+      return pendientesCorteHandler.execute({ rol: ctx.user.role as 'representante' | 'cuadrilla_cortes' | 'admin', userId: ctx.user.id, tipo: 'corte' });
     }),
 
   pendientesDeReconexion: roleProcedure('cuadrilla_cortes', 'admin')
     .query(async ({ ctx }) => {
-      const rol = (ctx.user as { role?: string }).role as 'cuadrilla_cortes' | 'admin';
-      return pendientesCorteHandler.execute({ rol, userId: ctx.user.id, tipo: 'reconexion' });
+      return pendientesCorteHandler.execute({ rol: ctx.user.role as 'cuadrilla_cortes' | 'admin', userId: ctx.user.id, tipo: 'reconexion' });
     }),
 
   confirmarCorte: roleProcedure('cuadrilla_cortes', 'admin')

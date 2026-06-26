@@ -17,9 +17,8 @@ type Representante = {
   email: string;
   circuito: {
     id: string;
-    nombre: string;
-    representanteId: string | null;
-  } | null | undefined;
+    nombre: string | null;
+  } | null;
 };
 
 export default function AdminRepresentantesPage() {

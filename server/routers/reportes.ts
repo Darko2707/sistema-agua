@@ -1,9 +1,12 @@
 import { router, roleProcedure } from '../trpc';
 import { z } from 'zod';
+// eslint-disable-next-line no-restricted-imports -- complex financial aggregations not yet in a repo
 import { eq, and, inArray } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 
+// eslint-disable-next-line no-restricted-imports -- complex financial aggregations not yet in a repo
 import { db } from '@/db';
+// eslint-disable-next-line no-restricted-imports -- complex financial aggregations not yet in a repo
 import { gastosCircuito, ingresosAdicionales, circuitos } from '@/db/schema';
 
 // ─── helpers ───────────────────────────────────────────────────────────────

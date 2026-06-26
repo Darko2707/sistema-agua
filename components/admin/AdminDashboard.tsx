@@ -19,6 +19,7 @@ import { ResumenTab }    from './ResumenTab';
 import { PersonalTab }   from './PersonalTab';
 import { ResidentesTab } from './ResidentesTab';
 import { PendientesTab } from './PendientesTab';
+import { MetricasTab }   from './MetricasTab';
 
 const ahora = new Date();
 
@@ -118,14 +119,14 @@ export function AdminDashboard() {
 
         {/* Error global */}
         {error && (
-          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-600">
+          <div role="alert" aria-live="polite" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-600">
             {error}
           </div>
         )}
 
         {/* Navegación de tabs */}
         <div className="flex flex-wrap gap-2">
-          {(['resumen', 'personal', 'residentes', 'pendientes'] as const).map((t) => (
+          {(['resumen', 'métricas', 'personal', 'residentes', 'pendientes'] as const).map((t) => (
             <Button
               key={t}
               variant={tab === t ? 'default' : 'outline'}
@@ -152,6 +153,7 @@ export function AdminDashboard() {
         {tab === 'resumen' && (
           <ResumenTab porCircuito={resumen?.porCircuito ?? []} />
         )}
+        {tab === 'métricas' && <MetricasTab />}
         {tab === 'personal' && (
           <PersonalTab
             personal={personal}

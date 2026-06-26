@@ -47,12 +47,27 @@ export type CrearPagoInput = {
 export type CorteData = {
   id: string;
   perfilId: string;
-  trabajadorId: string | null;
+  trabajadorId: string;
   motivo: string;
   activo: boolean | null;
   fechaCorte: Date | null;
   fechaReconexion: Date | null;
   reconectadoPor: string | null;
+};
+
+export type MetricasDia = {
+  fecha: string; // ISO date string YYYY-MM-DD
+  cantidad: number;
+  monto: number;
+};
+
+export type MetricasAdmin = {
+  pagosPorDia: MetricasDia[];
+  revenueMes: number;
+  totalPagadosMes: number;
+  totalResidentes: number;
+  morosidadPct: number;
+  reconexionesMes: number;
 };
 
 export interface PagoRepository {
@@ -65,4 +80,6 @@ export interface PagoRepository {
   crearCorte(data: { perfilId: string; trabajadorId: string; motivo: string }): Promise<CorteData>;
   cerrarCorte(corteId: string, fecha: Date, reconectadoPor?: string): Promise<void>;
   crearTicket(pagoId: string, folio: string): Promise<void>;
+  marcarPendientesVencidos(antes: Date): Promise<number>;
+  getMetricasAdmin(mes: number, anio: number): Promise<MetricasAdmin>;
 }

@@ -1,8 +1,11 @@
+import { eq } from 'drizzle-orm';
 import { headers } from 'next/headers';
 
 import { db } from '@/db';
+import { tickets } from '@/db/schema';
 import { auth } from '@/lib/auth';
 import { generarTicketPDF } from '@/server/services/pdf';
+import { VercelBlobAdapter } from '@/src/infrastructure/storage/vercel-blob.adapter';
 import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
@@ -11,8 +14,10 @@ export const dynamic = 'force-dynamic';
 // private → el browser lo cachea, el CDN no (la auth se verifica en esta ruta).
 const CACHE_CONTROL = 'private, max-age=31536000, immutable';
 
+const storage = new VercelBlobAdapter();
+
 export async function GET(
-  request: Request,
+  _request: Request,
   ctx: { params: Promise<{ folio: string }> },
 ) {
   // ── Autenticación ──────────────────────────────────────────────────────────
@@ -57,7 +62,12 @@ export async function GET(
     return Response.json({ error: 'No autorizado' }, { status: 403 });
   }
 
-  // ── Generar PDF ───────────────────────────────────────────────────────────
+  // ── Servir desde Blob si ya existe ────────────────────────────────────────
+  if (ticket.pdfUrl) {
+    return Response.redirect(ticket.pdfUrl, 302);
+  }
+
+  // ── Generar PDF, subir a Blob y guardar URL ───────────────────────────────
   logger.info('ticket.pdf.generando', { folio });
 
   const pdf = await generarTicketPDF({
@@ -77,6 +87,15 @@ export async function GET(
     retencionIva:        ticket.pago.retencionIva,
     emailContacto:       process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? 'contactoservicio4soles@gmail.com',
   });
+
+  try {
+    const pdfUrl = await storage.upload(folio, pdf);
+    await db.update(tickets).set({ pdfUrl }).where(eq(tickets.folio, folio));
+    logger.info('ticket.pdf.cacheado', { folio, pdfUrl });
+  } catch (uploadError) {
+    // Si Blob falla, devolvemos el PDF de todas formas (no bloqueamos al usuario)
+    logger.error('ticket.pdf.upload_error', uploadError, { folio });
+  }
 
   return new Response(pdf, {
     headers: {

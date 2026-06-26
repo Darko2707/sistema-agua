@@ -7,6 +7,8 @@ export type ResidenteData = {
   edificio: string;
   departamento: string;
   estadoAgua: EstadoAgua;
+  telefono?: string | null;
+  sexo?: string | null;
   tenencia?: string | null;
   nombrePropietario?: string | null;
   telefonoPropietario?: string | null;
@@ -41,13 +43,24 @@ export type ResidenteConRelaciones = ResidenteData & {
   cortes?: CorteRef[];
 };
 
+export type PaginatedResult<T> = {
+  items: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+};
+
 export interface ResidenteRepository {
   findById(id: string): Promise<ResidenteData | null>;
   findByUserId(id: string): Promise<(ResidenteData & { circuito?: CircuitoRef | null }) | null>;
   findByCircuito(circuitoId: string): Promise<ResidenteConRelaciones[]>;
   findAll(): Promise<ResidenteConRelaciones[]>;
+  findAllPaginated(page: number, pageSize: number): Promise<PaginatedResult<ResidenteConRelaciones>>;
+  findByCircuitoPaginated(circuitoId: string, page: number, pageSize: number): Promise<PaginatedResult<ResidenteConRelaciones>>;
   findByEstado(estado: EstadoAgua): Promise<ResidenteConRelaciones[]>;
   findByCircuitoYEstado(circuitoId: string, estado: EstadoAgua): Promise<ResidenteConRelaciones[]>;
   create(data: Omit<ResidenteData, 'id' | 'creadoEn'>): Promise<ResidenteData>;
   updateEstado(id: string, estadoAgua: EstadoAgua): Promise<void>;
+  marcarMorososDelMes(mes: number, anio: number): Promise<number>;
 }

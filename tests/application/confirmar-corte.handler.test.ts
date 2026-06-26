@@ -24,6 +24,7 @@ function makeDeps() {
     findByCircuitoYEstado: vi.fn(),
     create: vi.fn(),
     updateEstado: vi.fn().mockResolvedValue(undefined),
+    marcarMorososDelMes: vi.fn().mockResolvedValue(0),
   };
   const pagoRepo: PagoRepository = {
     findByPerfilYMes: vi.fn(),

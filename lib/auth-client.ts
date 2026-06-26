@@ -20,9 +20,9 @@ export function useSession() {
 
   useEffect(() => {
     let active = true;
-    authClient.getSession().then((res: any) => {
+    authClient.getSession().then((res) => {
       if (active) {
-        setData(res?.data ?? null);
+        setData((res?.data as SessionData) ?? null);
         setIsPending(false);
       }
     });

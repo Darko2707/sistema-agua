@@ -1,6 +1,7 @@
 import { db } from '@/db';
 import { tickets, pagos, perfilesResidente, user } from '@/db/schema';
 import { eq } from 'drizzle-orm';
+import { MESES_FULL } from '@/lib/meses';
 
 export default async function VerificarPage({ params }: { params: Promise<{ folio: string }> }) {
   const { folio } = await params;
@@ -33,10 +34,7 @@ export default async function VerificarPage({ params }: { params: Promise<{ foli
     );
   }
 
-  const MESES = [
-    'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
-    'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
-  ];
+  const MESES = MESES_FULL;
 
   const pago = ticket.pago;
   const perfil = pago?.perfil;

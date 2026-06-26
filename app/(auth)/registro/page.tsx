@@ -1,133 +1,147 @@
 'use client';
 
 import { useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import { authClient } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { trpc } from '@/lib/trpc-client';
-import { trpcReact } from '@/lib/trpc-react';
+import { useCircuitos } from '@/hooks/useCircuito';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
-type LetraDepto = 'a' | 'b' | 'c';
+// ── Zod schemas ───────────────────────────────────────────────────────────────
 
-type PerfilForm = {
-  telefono: string;
-  sexo: 'masculino' | 'femenino' | 'otro';
-  tenencia: 'propietario' | 'inquilino';
-  circuitoId: string;
-  edificio: string;
-  deptoNumero: string;
-  deptoLetra: LetraDepto;
-  nombrePropietario: string;
-  telefonoPropietario: string;
-};
+const cuentaSchema = z.object({
+  nombre:   z.string().min(2, 'Ingresa tu nombre completo'),
+  email:    z.string().email('Correo electrónico inválido'),
+  password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres'),
+});
+type CuentaForm = z.infer<typeof cuentaSchema>;
 
+// U7: departamento = número + letra opcional (cualquier letra)
+const perfilSchema = z.object({
+  telefono:            z.string().min(10, 'Mínimo 10 dígitos').regex(/^\d+$/, 'Solo números'),
+  sexo:                z.enum(['masculino', 'femenino', 'otro']),
+  tenencia:            z.enum(['propietario', 'inquilino']),
+  circuitoId:          z.string().min(1, 'Selecciona tu circuito'),
+  edificio:            z.string().min(1, 'Ingresa el número de edificio'),
+  deptoNumero:         z.string().min(1, 'Ingresa el número de departamento').regex(/^\d+$/, 'Solo dígitos'),
+  deptoLetra:          z.string().regex(/^[a-zA-Z]?$/, 'Solo una letra (opcional)').optional(),
+  nombrePropietario:   z.string().optional(),
+  telefonoPropietario: z.string().optional(),
+}).superRefine((data, ctx) => {
+  if (data.tenencia === 'inquilino') {
+    if (!data.nombrePropietario || data.nombrePropietario.trim().length < 2) {
+      ctx.addIssue({ code: 'custom', message: 'Ingresa el nombre del propietario', path: ['nombrePropietario'] });
+    }
+    if (!data.telefonoPropietario || data.telefonoPropietario.trim().length < 10) {
+      ctx.addIssue({ code: 'custom', message: 'Teléfono del propietario (mínimo 10 dígitos)', path: ['telefonoPropietario'] });
+    }
+  }
+});
+type PerfilForm = z.infer<typeof perfilSchema>;
+
+// ── Shared select class ───────────────────────────────────────────────────────
 const SELECT_CLASS =
   'flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring';
 
+// ── Error message component ───────────────────────────────────────────────────
+function FieldError({ id, message }: { id: string; message?: string }) {
+  if (!message) return null;
+  return (
+    <p id={id} role="alert" className="mt-1 text-xs text-red-700" aria-live="polite">
+      {message}
+    </p>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 export default function RegistroPage() {
   const router = useRouter();
+  const [paso, setPaso]           = useState<1 | 2>(1);
+  const [serverError, setError]   = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  const [paso, setPaso]       = useState<1 | 2>(1);
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState('');
-
-  const [cuenta, setCuenta] = useState({ nombre: '', email: '', password: '' });
-
-  const [perfil, setPerfil] = useState<PerfilForm>({
-    telefono:            '',
-    sexo:                'masculino',
-    tenencia:            'propietario',
-    circuitoId:          '',
-    edificio:            '',
-    deptoNumero:         '',
-    deptoLetra:          'a',
-    nombrePropietario:   '',
-    telefonoPropietario: '',
-  });
-
-  const circuitosQuery = trpcReact.usuarios.listarCircuitos.useQuery();
+  const circuitosQuery = useCircuitos();
   const circuitos      = circuitosQuery.data ?? [];
 
-  const esInquilino = perfil.tenencia === 'inquilino';
+  // ── Paso 1 form ────────────────────────────────────────────────────────────
+  const cuenta = useForm<CuentaForm>({
+    resolver: zodResolver(cuentaSchema),
+    mode: 'onTouched',
+  });
 
-  function set<K extends keyof PerfilForm>(key: K, value: PerfilForm[K]) {
-    setPerfil(p => ({ ...p, [key]: value }));
-  }
+  // ── Paso 2 form ────────────────────────────────────────────────────────────
+  const perfil = useForm<PerfilForm>({
+    resolver: zodResolver(perfilSchema),
+    mode: 'onTouched',
+    defaultValues: {
+      sexo:     'masculino',
+      tenencia: 'propietario',
+      deptoLetra: '',
+    },
+  });
+  const tenencia     = perfil.watch('tenencia');
+  const esInquilino  = tenencia === 'inquilino';
+  const deptoNumero  = perfil.watch('deptoNumero') ?? '';
+  const deptoLetra   = perfil.watch('deptoLetra') ?? '';
 
-  // ── Paso 1: validar datos de cuenta ───────────────────────────────────────
-  async function handleCrearCuenta(e: React.FormEvent) {
-    e.preventDefault();
+  // ── Paso 1 submit ──────────────────────────────────────────────────────────
+  async function handleCrearCuenta(data: CuentaForm) {
     setError('');
-    if (cuenta.password.length < 8) {
-      setError('La contraseña debe tener al menos 8 caracteres');
-      return;
-    }
+    void data; // validation passed — move to step 2 storing values via RHF
     setPaso(2);
   }
 
-  // ── Paso 2: validar perfil, crear cuenta y guardar ────────────────────────
-  async function handleCompletarPerfil(e: React.FormEvent) {
-    e.preventDefault();
+  // ── Paso 2 submit ──────────────────────────────────────────────────────────
+  async function handleCompletarPerfil(data: PerfilForm) {
     setError('');
+    setSubmitting(true);
 
-    // Validaciones de cliente
-    if (!perfil.deptoNumero.trim() || isNaN(Number(perfil.deptoNumero))) {
-      setError('El número de departamento debe ser un número válido');
-      return;
-    }
-    if (esInquilino && !perfil.nombrePropietario.trim()) {
-      setError('Ingresa el nombre del propietario');
-      return;
-    }
-    if (esInquilino && perfil.telefonoPropietario.trim().length < 10) {
-      setError('Ingresa el teléfono del propietario (mínimo 10 dígitos)');
-      return;
-    }
+    const cuentaData = cuenta.getValues();
+    const departamento = `${data.deptoNumero.trim()}${(data.deptoLetra ?? '').trim()}`;
 
-    setLoading(true);
     try {
-      // 1. Crear cuenta
       const { error: signUpError } = await authClient.signUp.email({
-        email:    cuenta.email,
-        password: cuenta.password,
-        name:     cuenta.nombre,
+        email:    cuentaData.email,
+        password: cuentaData.password,
+        name:     cuentaData.nombre,
       });
       if (signUpError) {
         setPaso(1);
         throw new Error(signUpError.message ?? 'No se pudo crear la cuenta. El correo podría estar registrado.');
       }
 
-      // 2. Iniciar sesión
       const { error: signInError } = await authClient.signIn.email({
-        email:    cuenta.email,
-        password: cuenta.password,
+        email:    cuentaData.email,
+        password: cuentaData.password,
       });
       if (signInError) throw new Error('Cuenta creada, pero no se pudo iniciar sesión automáticamente.');
 
-      // 3. Guardar perfil
       await trpc.usuarios.crearPerfil.mutate({
-        telefono:            perfil.telefono,
-        sexo:                perfil.sexo,
-        tenencia:            perfil.tenencia,
-        circuitoId:          perfil.circuitoId,
-        edificio:            perfil.edificio,
-        departamento:        `${perfil.deptoNumero.trim()}${perfil.deptoLetra}`,
+        telefono:    data.telefono,
+        sexo:        data.sexo,
+        tenencia:    data.tenencia,
+        circuitoId:  data.circuitoId,
+        edificio:    data.edificio,
+        departamento,
         ...(esInquilino && {
-          nombrePropietario:   perfil.nombrePropietario.trim(),
-          telefonoPropietario: perfil.telefonoPropietario.trim(),
+          nombrePropietario:   data.nombrePropietario?.trim(),
+          telefonoPropietario: data.telefonoPropietario?.trim(),
         }),
       });
 
-      router.push('/residente');
+      router.push('/verificar-email');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Error desconocido');
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   }
 
@@ -144,57 +158,71 @@ export default function RegistroPage() {
               <CardTitle className="text-3xl">Crear cuenta</CardTitle>
               <CardDescription>Paso 1 de 2</CardDescription>
             </div>
-            <div className="h-2 w-full rounded-full bg-muted">
+            <div className="h-2 w-full rounded-full bg-muted" role="progressbar" aria-valuenow={50} aria-valuemin={0} aria-valuemax={100} aria-label="Progreso de registro: paso 1 de 2">
               <div className="h-2 w-1/2 rounded-full bg-primary" />
             </div>
           </CardHeader>
 
           <CardContent>
-            <form onSubmit={handleCrearCuenta} className="space-y-5">
-              <div className="space-y-2">
-                <Label>Nombre completo</Label>
+            <form onSubmit={cuenta.handleSubmit(handleCrearCuenta)} className="space-y-5" noValidate aria-label="Formulario de creación de cuenta">
+              <div className="space-y-1">
+                <Label htmlFor="nombre">Nombre completo</Label>
                 <Input
+                  id="nombre"
                   placeholder="Juan Pérez"
-                  value={cuenta.nombre}
-                  onChange={e => setCuenta(p => ({ ...p, nombre: e.target.value }))}
-                  required
+                  autoComplete="name"
+                  aria-required="true"
+                  aria-describedby={cuenta.formState.errors.nombre ? 'nombre-error' : undefined}
+                  aria-invalid={!!cuenta.formState.errors.nombre}
+                  {...cuenta.register('nombre')}
                 />
+                <FieldError id="nombre-error" message={cuenta.formState.errors.nombre?.message} />
               </div>
 
-              <div className="space-y-2">
-                <Label>Correo electrónico</Label>
+              <div className="space-y-1">
+                <Label htmlFor="email">Correo electrónico</Label>
                 <Input
+                  id="email"
                   type="email"
                   placeholder="tu@correo.com"
-                  value={cuenta.email}
-                  onChange={e => setCuenta(p => ({ ...p, email: e.target.value }))}
-                  required
+                  autoComplete="email"
+                  aria-required="true"
+                  aria-describedby={cuenta.formState.errors.email ? 'email-error' : undefined}
+                  aria-invalid={!!cuenta.formState.errors.email}
+                  {...cuenta.register('email')}
                 />
+                <FieldError id="email-error" message={cuenta.formState.errors.email?.message} />
               </div>
 
-              <div className="space-y-2">
-                <Label>Contraseña</Label>
+              <div className="space-y-1">
+                <Label htmlFor="password">Contraseña</Label>
                 <Input
+                  id="password"
                   type="password"
                   placeholder="mínimo 8 caracteres"
-                  value={cuenta.password}
-                  onChange={e => setCuenta(p => ({ ...p, password: e.target.value }))}
-                  minLength={8}
-                  required
+                  autoComplete="new-password"
+                  aria-required="true"
+                  aria-describedby={cuenta.formState.errors.password ? 'password-error' : 'password-hint'}
+                  aria-invalid={!!cuenta.formState.errors.password}
+                  {...cuenta.register('password')}
                 />
+                <p id="password-hint" className="text-xs text-muted-foreground">Mínimo 8 caracteres.</p>
+                <FieldError id="password-error" message={cuenta.formState.errors.password?.message} />
               </div>
 
-              {error && (
-                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">{error}</div>
+              {serverError && (
+                <div role="alert" aria-live="assertive" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+                  {serverError}
+                </div>
               )}
 
-              <Button type="submit" className="w-full h-11" disabled={loading}>
-                {loading ? 'Cargando...' : 'Continuar'}
+              <Button type="submit" className="w-full h-11">
+                Continuar
               </Button>
 
               <p className="text-center text-sm text-muted-foreground">
                 ¿Ya tienes cuenta?{' '}
-                <button type="button" className="font-semibold text-primary" onClick={() => router.push('/login')}>
+                <button type="button" className="font-semibold text-primary underline-offset-4 hover:underline" onClick={() => router.push('/login')}>
                   Inicia sesión
                 </button>
               </p>
@@ -215,29 +243,43 @@ export default function RegistroPage() {
           </div>
           <CardTitle className="text-3xl text-center">Completa tu perfil</CardTitle>
           <CardDescription className="text-center">Paso 2 de 2</CardDescription>
-          <div className="h-2 w-full rounded-full bg-muted">
+          <div className="h-2 w-full rounded-full bg-muted" role="progressbar" aria-valuenow={100} aria-valuemin={0} aria-valuemax={100} aria-label="Progreso de registro: paso 2 de 2">
             <div className="h-2 w-full rounded-full bg-primary" />
           </div>
         </CardHeader>
 
         <CardContent>
-          <form onSubmit={handleCompletarPerfil} className="space-y-5">
-
+          <form
+            onSubmit={perfil.handleSubmit(handleCompletarPerfil)}
+            className="space-y-5"
+            noValidate
+            aria-label="Formulario de perfil de residente"
+          >
             {/* Teléfono + Sexo */}
             <div className="grid md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Teléfono</Label>
+              <div className="space-y-1">
+                <Label htmlFor="telefono">Teléfono</Label>
                 <Input
+                  id="telefono"
                   type="tel"
                   placeholder="2281234567"
-                  value={perfil.telefono}
-                  onChange={e => set('telefono', e.target.value)}
-                  required
+                  autoComplete="tel"
+                  aria-required="true"
+                  aria-describedby={perfil.formState.errors.telefono ? 'telefono-error' : undefined}
+                  aria-invalid={!!perfil.formState.errors.telefono}
+                  {...perfil.register('telefono')}
                 />
+                <FieldError id="telefono-error" message={perfil.formState.errors.telefono?.message} />
               </div>
-              <div className="space-y-2">
-                <Label>Sexo</Label>
-                <select className={SELECT_CLASS} value={perfil.sexo} onChange={e => set('sexo', e.target.value as PerfilForm['sexo'])}>
+
+              <div className="space-y-1">
+                <Label htmlFor="sexo">Sexo</Label>
+                <select
+                  id="sexo"
+                  className={SELECT_CLASS}
+                  aria-required="true"
+                  {...perfil.register('sexo')}
+                >
                   <option value="masculino">Masculino</option>
                   <option value="femenino">Femenino</option>
                   <option value="otro">Otro</option>
@@ -247,100 +289,143 @@ export default function RegistroPage() {
 
             {/* Tenencia + Circuito */}
             <div className="grid md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Tenencia</Label>
-                <select className={SELECT_CLASS} value={perfil.tenencia} onChange={e => set('tenencia', e.target.value as PerfilForm['tenencia'])}>
+              <div className="space-y-1">
+                <Label htmlFor="tenencia">Tenencia</Label>
+                <select
+                  id="tenencia"
+                  className={SELECT_CLASS}
+                  aria-required="true"
+                  {...perfil.register('tenencia')}
+                >
                   <option value="propietario">Propietario</option>
                   <option value="inquilino">Inquilino</option>
                 </select>
               </div>
-              <div className="space-y-2">
-                <Label>Circuito</Label>
-                <select className={SELECT_CLASS} value={perfil.circuitoId} onChange={e => set('circuitoId', e.target.value)} required>
+
+              <div className="space-y-1">
+                <Label htmlFor="circuitoId">Circuito</Label>
+                <select
+                  id="circuitoId"
+                  className={SELECT_CLASS}
+                  aria-required="true"
+                  aria-describedby={perfil.formState.errors.circuitoId ? 'circuito-error' : undefined}
+                  aria-invalid={!!perfil.formState.errors.circuitoId}
+                  {...perfil.register('circuitoId')}
+                >
                   <option value="">Selecciona tu circuito</option>
                   {circuitos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
                 </select>
+                <FieldError id="circuito-error" message={perfil.formState.errors.circuitoId?.message} />
               </div>
             </div>
 
             {/* Datos del propietario (solo inquilino) */}
             {esInquilino && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-4">
-                <p className="text-sm font-medium text-amber-800">
+              <fieldset className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-4">
+                <legend className="text-sm font-medium text-amber-800 px-1">
                   Como inquilino, necesitamos los datos del propietario del departamento.
-                </p>
+                </legend>
                 <div className="grid md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label>Nombre del propietario</Label>
+                  <div className="space-y-1">
+                    <Label htmlFor="nombrePropietario">Nombre del propietario</Label>
                     <Input
+                      id="nombrePropietario"
                       placeholder="Nombre completo del dueño"
-                      value={perfil.nombrePropietario}
-                      onChange={e => set('nombrePropietario', e.target.value)}
-                      required={esInquilino}
+                      aria-required="true"
+                      aria-describedby={perfil.formState.errors.nombrePropietario ? 'nombre-prop-error' : undefined}
+                      aria-invalid={!!perfil.formState.errors.nombrePropietario}
+                      {...perfil.register('nombrePropietario')}
                     />
+                    <FieldError id="nombre-prop-error" message={perfil.formState.errors.nombrePropietario?.message} />
                   </div>
-                  <div className="space-y-2">
-                    <Label>Teléfono del propietario</Label>
+                  <div className="space-y-1">
+                    <Label htmlFor="telefonoPropietario">Teléfono del propietario</Label>
                     <Input
+                      id="telefonoPropietario"
                       type="tel"
                       placeholder="2281234567"
-                      value={perfil.telefonoPropietario}
-                      onChange={e => set('telefonoPropietario', e.target.value)}
-                      required={esInquilino}
+                      aria-required="true"
+                      aria-describedby={perfil.formState.errors.telefonoPropietario ? 'tel-prop-error' : undefined}
+                      aria-invalid={!!perfil.formState.errors.telefonoPropietario}
+                      {...perfil.register('telefonoPropietario')}
                     />
+                    <FieldError id="tel-prop-error" message={perfil.formState.errors.telefonoPropietario?.message} />
                   </div>
                 </div>
-              </div>
+              </fieldset>
             )}
 
             {/* Edificio + Departamento */}
             <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Edificio</Label>
+              <div className="space-y-1">
+                <Label htmlFor="edificio">Edificio</Label>
                 <Input
+                  id="edificio"
                   type="number"
                   min="1"
                   placeholder="8"
-                  value={perfil.edificio}
-                  onChange={e => set('edificio', e.target.value)}
-                  required
+                  aria-required="true"
+                  aria-describedby={perfil.formState.errors.edificio ? 'edificio-error' : undefined}
+                  aria-invalid={!!perfil.formState.errors.edificio}
+                  {...perfil.register('edificio')}
                 />
+                <FieldError id="edificio-error" message={perfil.formState.errors.edificio?.message} />
               </div>
 
-              <div className="space-y-2">
-                <Label>Departamento</Label>
+              {/* U7: letra ahora es texto libre opcional (cualquier letra) */}
+              <div className="space-y-1">
+                <Label htmlFor="deptoNumero">Departamento</Label>
                 <div className="flex gap-2">
-                  <Input
-                    type="number"
-                    min="1"
-                    placeholder="314"
-                    className="flex-1"
-                    value={perfil.deptoNumero}
-                    onChange={e => set('deptoNumero', e.target.value)}
-                    required
-                  />
-                  <select
-                    className="h-10 w-20 rounded-md border border-input bg-background px-2 text-sm font-medium focus:outline-none focus:ring-1 focus:ring-ring"
-                    value={perfil.deptoLetra}
-                    onChange={e => set('deptoLetra', e.target.value as LetraDepto)}
-                  >
-                    <option value="a">A — P1</option>
-                    <option value="b">B — P2</option>
-                    <option value="c">C — P3</option>
-                  </select>
+                  <div className="flex-1">
+                    <Input
+                      id="deptoNumero"
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="314"
+                      aria-required="true"
+                      aria-describedby="depto-preview depto-num-error"
+                      aria-invalid={!!perfil.formState.errors.deptoNumero}
+                      {...perfil.register('deptoNumero')}
+                    />
+                    <FieldError id="depto-num-error" message={perfil.formState.errors.deptoNumero?.message} />
+                  </div>
+                  <div>
+                    <Input
+                      id="deptoLetra"
+                      type="text"
+                      maxLength={1}
+                      placeholder="a"
+                      className="w-16 uppercase"
+                      aria-label="Letra del departamento (opcional)"
+                      aria-describedby="depto-preview depto-letra-error"
+                      aria-invalid={!!perfil.formState.errors.deptoLetra}
+                      {...perfil.register('deptoLetra', {
+                        onChange: (e) => {
+                          // Force uppercase display
+                          e.target.value = e.target.value.toUpperCase();
+                        },
+                      })}
+                    />
+                    <FieldError id="depto-letra-error" message={perfil.formState.errors.deptoLetra?.message} />
+                  </div>
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  Número + piso: <strong>{perfil.deptoNumero || '___'}{perfil.deptoLetra}</strong>
+                <p id="depto-preview" className="text-xs text-muted-foreground">
+                  Número + letra opcional:{' '}
+                  <strong aria-live="polite">
+                    {deptoNumero || '___'}{deptoLetra}
+                  </strong>
                 </p>
               </div>
             </div>
 
-            {error && (
-              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">{error}</div>
+            {serverError && (
+              <div role="alert" aria-live="assertive" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+                {serverError}
+              </div>
             )}
 
-            <Button type="submit" className="w-full h-11" disabled={loading}>
-              {loading ? 'Guardando...' : 'Finalizar registro'}
+            <Button type="submit" className="w-full h-11" disabled={submitting} aria-busy={submitting}>
+              {submitting ? 'Guardando...' : 'Finalizar registro'}
             </Button>
           </form>
         </CardContent>

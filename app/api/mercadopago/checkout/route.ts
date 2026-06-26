@@ -11,9 +11,28 @@ import { db } from '@/db';
 
 const checkoutSchema = z.object({ esReconexion: z.boolean().optional() });
 
+const ALLOWED_ORIGINS = [
+  process.env.NEXT_PUBLIC_APP_URL,
+  process.env.BETTER_AUTH_URL,
+  'https://sistema-agua.vercel.app',
+  // localhost allowed in dev only
+  ...(process.env.NODE_ENV === 'development' ? ['http://localhost:3000'] : []),
+].filter(Boolean).map(o => (o as string).replace(/\/$/, ''));
+
+export function OPTIONS() {
+  // checkout is same-origin only; cross-origin preflight is not supported
+  return new Response(null, { status: 405 });
+}
+
 export async function POST(request: Request) {
+  const origin = request.headers.get('origin');
+  if (origin && !ALLOWED_ORIGINS.includes(origin)) {
+    return Response.json({ error: 'Origen no permitido' }, { status: 403 });
+  }
+
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return Response.json({ error: 'No autorizado' }, { status: 401 });
+  if (!session.user.emailVerified) return Response.json({ error: 'Verifica tu correo electronico antes de realizar pagos' }, { status: 403 });
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.BETTER_AUTH_URL;
   if (!appUrl) return Response.json({ error: 'Falta configurar NEXT_PUBLIC_APP_URL' }, { status: 500 });
