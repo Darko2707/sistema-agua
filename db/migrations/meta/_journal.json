@@ -94,6 +94,27 @@
       "breakpoints": true
     },
     {
+      "idx": 13,
+      "version": "7",
+      "when": 1782440000000,
+      "tag": "0013_soft_delete_users",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1782440001000,
+      "tag": "0014_pagos_circuito_not_null",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1782440002000,
+      "tag": "0015_cortes_trabajador_not_null",
+      "breakpoints": true
+    },
+    {
       "idx": 16,
       "version": "7",
       "when": 1750870800000,
