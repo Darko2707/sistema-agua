@@ -10,8 +10,21 @@ function getIp(req: NextRequest): string {
   );
 }
 
+// Only rate-limit auth endpoints that accept credentials or trigger emails.
+// get-session / sign-out / verify-email are called constantly by the client
+// and must NOT be throttled — a 429 on get-session causes an infinite retry loop.
+const AUTH_SENSITIVE = new Set([
+  '/api/auth/sign-in/email',
+  '/api/auth/sign-up/email',
+  '/api/auth/forget-password',
+  '/api/auth/reset-password',
+  '/api/auth/change-password',
+  '/api/auth/change-email',
+  '/api/auth/delete-user',
+]);
+
 function pickLimiter(pathname: string): Ratelimit | null {
-  if (pathname.startsWith('/api/auth/'))       return authLimiter;
+  if (AUTH_SENSITIVE.has(pathname))            return authLimiter;
   if (pathname === '/api/mercadopago/checkout') return checkoutLimiter;
   if (pathname.startsWith('/api/trpc/'))       return trpcLimiter;
   return null;
@@ -46,7 +59,13 @@ export async function proxy(req: NextRequest) {
 
 export const config = {
   matcher: [
-    '/api/auth/:path*',
+    '/api/auth/sign-in/:path*',
+    '/api/auth/sign-up/:path*',
+    '/api/auth/forget-password',
+    '/api/auth/reset-password',
+    '/api/auth/change-password',
+    '/api/auth/change-email',
+    '/api/auth/delete-user',
     '/api/trpc/:path*',
     '/api/mercadopago/checkout',
   ],
