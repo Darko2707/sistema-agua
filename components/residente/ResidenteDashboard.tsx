@@ -277,8 +277,16 @@ export function ResidenteDashboard() {
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', justifyContent: 'center', fontFamily: FM, color: C.textMain }}>
-      <div style={{ width: '100%', maxWidth: 460, paddingBottom: 48 }}>
+    <div className="sis4s-outer" style={{ minHeight: '100vh', background: C.bg, display: 'flex', justifyContent: 'center', fontFamily: FM, color: C.textMain }}>
+      <style>{`
+        @keyframes sis4s-glow{0%,100%{opacity:.55}50%{opacity:.85}}
+        @media(min-width:680px){
+          .sis4s-outer{background:#E8E2D2!important;align-items:flex-start;padding-top:48px;padding-bottom:80px}
+          .sis4s-inner{border-radius:32px;background:#F4EEE0;box-shadow:0 24px 64px rgba(120,90,30,.16);overflow:visible!important}
+          .sis4s-header{border-radius:32px 32px 36px 36px!important}
+        }
+      `}</style>
+      <div className="sis4s-inner" style={{ width: '100%', maxWidth: 460, paddingBottom: 48 }}>
 
         {/* ── Post-MP result banner ── */}
         {resultInfo && (
@@ -297,13 +305,14 @@ export function ResidenteDashboard() {
         )}
 
         {/* ── Header ── */}
-        <div style={{ position: 'relative', background: C.header, padding: '18px 22px 26px', borderRadius: '0 0 36px 36px', overflow: 'hidden' }}>
-          {/* Sunburst */}
-          <div style={{ position: 'absolute', top: -80, right: -60, width: 240, height: 240, borderRadius: '50%', background: 'radial-gradient(circle,#F8C84E 0%,rgba(248,200,78,0) 68%)', opacity: 0.65, pointerEvents: 'none', animation: 'sis4s-glow 5s ease-in-out infinite' }} />
-          <style>{`@keyframes sis4s-glow{0%,100%{opacity:.55}50%{opacity:.85}}`}</style>
+        <div className="sis4s-header" style={{ position: 'relative', background: C.header, padding: '18px 22px 26px', borderRadius: '0 0 36px 36px' }}>
+          {/* Sunburst — clipped en su propio layer para no afectar el dropdown */}
+          <div aria-hidden="true" style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none', borderRadius: 'inherit', zIndex: 0 }}>
+            <div style={{ position: 'absolute', top: -80, right: -60, width: 240, height: 240, borderRadius: '50%', background: 'radial-gradient(circle,#F8C84E 0%,rgba(248,200,78,0) 68%)', opacity: 0.65, animation: 'sis4s-glow 5s ease-in-out infinite' }} />
+          </div>
 
           {/* Brand row + avatar */}
-          <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ position: 'relative', zIndex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             {/* Brand */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
               <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 6px 16px rgba(120,90,30,.16)' }}>
@@ -365,7 +374,7 @@ export function ResidenteDashboard() {
           </div>
 
           {/* Greeting */}
-          <div style={{ position: 'relative', marginTop: 22 }}>
+          <div style={{ position: 'relative', zIndex: 1, marginTop: 22 }}>
             <div style={{ fontFamily: FB, fontSize: 29, fontWeight: 800, color: C.green, lineHeight: 1.08 }}>
               Hola, {userName.split(' ')[0]}
             </div>
@@ -464,13 +473,20 @@ export function ResidenteDashboard() {
               <>
                 {/* Amount box */}
                 <div style={{ background: C.header, borderRadius: 18, padding: '16px 18px', marginTop: 14 }}>
-                  <div style={{ fontSize: 12.5, color: C.textWarm, fontWeight: 700 }}>Monto a pagar con tarjeta</div>
+                  <div style={{ fontSize: 12.5, color: C.textWarm, fontWeight: 700 }}>
+                    {esReconexion ? 'Cuota + reconexión' : 'Cuota mensual'}
+                  </div>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, marginTop: 5 }}>
-                    <span id="monto-label" style={{ fontFamily: FB, fontSize: 46, fontWeight: 800, color: C.green, letterSpacing: '-.02em', lineHeight: 1 }}>
-                      ${totalConCargos}
+                    <span style={{ fontFamily: FB, fontSize: 46, fontWeight: 800, color: C.green, letterSpacing: '-.02em', lineHeight: 1 }}>
+                      ${desgloseVigente?.montoBase ?? montoMensual.toFixed(2)}
                     </span>
                     <span style={{ fontSize: 15, fontWeight: 700, color: C.textWarm2 }}>MXN</span>
                   </div>
+                  {desgloseVigente && (
+                    <div style={{ fontSize: 12.5, color: '#C98A0E', marginTop: 5, fontWeight: 600 }}>
+                      Con tarjeta: <strong>${totalConCargos} MXN</strong> · incluye comisiones MP
+                    </div>
+                  )}
 
                   {/* Collapsible breakdown */}
                   {desgloseVigente && (
@@ -480,7 +496,7 @@ export function ResidenteDashboard() {
                         onClick={() => setBreakdownOpen(v => !v)}
                         aria-expanded={breakdownOpen}
                         aria-controls="desglose-cargos"
-                        style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', padding: '12px 0 0', cursor: 'pointer', color: '#C98A0E', fontFamily: FM, fontSize: 13, fontWeight: 700 }}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', padding: '8px 0 0', cursor: 'pointer', color: '#C98A0E', fontFamily: FM, fontSize: 13, fontWeight: 700 }}
                       >
                         Ver desglose
                         <Chevron up={breakdownOpen} color="#C98A0E" />
@@ -513,7 +529,6 @@ export function ResidenteDashboard() {
                   type="button"
                   onClick={() => checkout(esReconexion)}
                   disabled={pagando}
-                  aria-describedby="monto-label"
                   aria-busy={pagando}
                   style={{
                     width: '100%', marginTop: 14,
