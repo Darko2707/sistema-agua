@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { authLimiter, trpcLimiter, checkoutLimiter } from '@/lib/ratelimit';
+import { authLimiter, checkoutLimiter } from '@/lib/ratelimit';
 import type { Ratelimit } from '@upstash/ratelimit';
+// tRPC endpoints are already protected by auth — no Redis rate-limit needed there.
 
 function getIp(req: NextRequest): string {
   return (
@@ -26,7 +27,6 @@ const AUTH_SENSITIVE = new Set([
 function pickLimiter(pathname: string): Ratelimit | null {
   if (AUTH_SENSITIVE.has(pathname))            return authLimiter;
   if (pathname === '/api/mercadopago/checkout') return checkoutLimiter;
-  if (pathname.startsWith('/api/trpc/'))       return trpcLimiter;
   return null;
 }
 
@@ -34,7 +34,16 @@ export async function proxy(req: NextRequest) {
   const limiter = pickLimiter(req.nextUrl.pathname);
   if (!limiter) return NextResponse.next();
 
-  const { success, limit, remaining, reset } = await limiter.limit(getIp(req));
+  let result: { success: boolean; limit: number; remaining: number; reset: number };
+  try {
+    result = await limiter.limit(getIp(req));
+  } catch {
+    // Redis unavailable (Upstash down, quota exceeded, network error) — fail open
+    // so users are never locked out due to infrastructure issues.
+    return NextResponse.next();
+  }
+
+  const { success, limit, remaining, reset } = result;
   const rlHeaders = {
     'X-RateLimit-Limit':     String(limit),
     'X-RateLimit-Remaining': String(remaining),
@@ -66,7 +75,6 @@ export const config = {
     '/api/auth/change-password',
     '/api/auth/change-email',
     '/api/auth/delete-user',
-    '/api/trpc/:path*',
     '/api/mercadopago/checkout',
   ],
 };

@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Geist, Geist_Mono } from 'next/font/google'
+import { Geist, Geist_Mono, Mulish, Bricolage_Grotesque } from 'next/font/google'
 import { Providers } from '@/components/providers'
 import './globals.css'
 
@@ -10,6 +10,16 @@ const geistSans = Geist({
 
 const geistMono = Geist_Mono({
   variable: '--font-geist-mono',
+  subsets: ['latin'],
+})
+
+const mulish = Mulish({
+  variable: '--font-mulish',
+  subsets: ['latin'],
+})
+
+const bricolage = Bricolage_Grotesque({
+  variable: '--font-bricolage',
   subsets: ['latin'],
 })
 
@@ -26,7 +36,7 @@ export default function RootLayout({
   return (
     <html
       lang="es"
-      className={`${geistSans.variable} ${geistMono.variable}`}
+      className={`${geistSans.variable} ${geistMono.variable} ${mulish.variable} ${bricolage.variable}`}
       suppressHydrationWarning
     >
       <body className="min-h-screen bg-slate-50 font-sans antialiased">
