@@ -305,11 +305,6 @@ export function ResidenteDashboard() {
 
         {/* ── Header ── */}
         <div className="sis4s-header" style={{ position: 'relative', background: C.header, padding: '18px 22px 26px', borderRadius: '0 0 36px 36px' }}>
-          {/* Sunburst — clipped en su propio layer para no afectar el dropdown */}
-          <div aria-hidden="true" style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none', borderRadius: 'inherit', zIndex: 0 }}>
-            <div style={{ position: 'absolute', top: -80, right: -60, width: 240, height: 240, borderRadius: '50%', background: 'radial-gradient(circle,#F8C84E 0%,rgba(248,200,78,0) 68%)', opacity: 0.65, animation: 'sis4s-glow 5s ease-in-out infinite' }} />
-          </div>
-
           {/* Brand row + avatar */}
           <div style={{ position: 'relative', zIndex: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
             {/* Brand */}
@@ -579,7 +574,9 @@ export function ResidenteDashboard() {
           {/* ── Service status ── */}
           <div style={{ background: '#fff', borderRadius: 22, padding: '16px 18px', display: 'flex', alignItems: 'center', gap: 13, boxShadow: '0 6px 18px rgba(120,90,30,.07)' }}>
             <span style={{ flexShrink: 0, width: 48, height: 48, borderRadius: '50%', background: C.greenBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }} aria-hidden="true">
-              <LogoMark size={31} />
+              <svg width="22" height="22" viewBox="0 0 24 24" fill={C.green} aria-hidden="true">
+                <path d="M12 2C12 2 4 9 4 15a8 8 0 0016 0C20 9 12 2 12 2Z"/>
+              </svg>
             </span>
             <div style={{ flex: 1 }}>
               <div style={{ fontFamily: FB, fontSize: 15, fontWeight: 700, color: C.textMain }}>Servicio de agua</div>
@@ -622,9 +619,7 @@ export function ResidenteDashboard() {
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 0', borderBottom: i < historyItems.length - 1 ? `1px solid ${C.border2}` : 'none' }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <span style={{ flexShrink: 0, width: 34, height: 34, borderRadius: '50%', background: C.greenBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }} aria-hidden="true">
-                        <CheckIcon />
-                      </span>
+                      <CheckCircle2 size={32} color={C.green2} style={{ flexShrink: 0 }} aria-hidden="true" />
                       <div>
                         <div style={{ fontSize: 14, fontWeight: 700, color: C.textMain }}>{MESES[p.mes - 1]} {p.anio}</div>
                         <div style={{ fontSize: 12, color: C.textWarm2, marginTop: 2 }}>

@@ -62,7 +62,6 @@ export async function generarTicketPDF(data: {
   page.drawRectangle({ x: 18, y: 18, width: W - 36, height: H - 36, color: WHITE });
   page.drawRectangle({ x: 18, y: HEADER_Y, width: W - 36, height: HEADER_H, color: CREAM_L });
   page.drawRectangle({ x: 18, y: HEADER_Y, width: W - 36, height: 6, color: GOLD });
-  page.drawCircle({ x: W - 66, y: H - 28, size: 78, color: GOLD_L, opacity: 0.28 });
 
   if (logoImg) {
     const LOGO_S = 52;
@@ -177,15 +176,20 @@ export async function generarTicketPDF(data: {
   // ════════════════════════════════════════════════════════
   // SELLO PAGADO
   // ════════════════════════════════════════════════════════
-  const STAMP_Y = y - 172;
+  // Position below the desglose box (bottom edge = y - 156) with margin
+  const STAMP_Y = y - 156 - 22 - 36;
+  const STAMP_X = W - 28 - 130;
   page.drawRectangle({
-    x: W - 120, y: STAMP_Y, width: 92, height: 28,
+    x: STAMP_X, y: STAMP_Y, width: 130, height: 36,
     color: GREEN,
     borderColor: GOLD,
-    borderWidth: 1,
+    borderWidth: 1.5,
   });
+  // Checkmark: two lines forming a ✓
+  page.drawLine({ start: { x: STAMP_X + 12, y: STAMP_Y + 18 }, end: { x: STAMP_X + 19, y: STAMP_Y + 11 }, thickness: 2, color: GOLD_L });
+  page.drawLine({ start: { x: STAMP_X + 19, y: STAMP_Y + 11 }, end: { x: STAMP_X + 30, y: STAMP_Y + 23 }, thickness: 2, color: GOLD_L });
   page.drawText('PAGADO', {
-    x: W - 104, y: STAMP_Y + 9, size: 11, font: bold, color: GOLD_L,
+    x: STAMP_X + 36, y: STAMP_Y + 13, size: 13, font: bold, color: GOLD_L,
   });
 
   // ════════════════════════════════════════════════════════
