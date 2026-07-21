@@ -174,7 +174,7 @@ export default function FoliosPage() {
           </div>
           {cuenta && (
             <div style={{ position: 'relative', zIndex: 1, fontSize: 13, color: '#8C7E62', marginTop: 6, fontWeight: 600, marginLeft: 52 }}>
-              Cuenta {cuenta} · historial completo
+              {cuenta} · Historial
             </div>
           )}
         </div>
