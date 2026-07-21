@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Geist, Geist_Mono, Mulish, Bricolage_Grotesque } from 'next/font/google'
+import { Geist, Geist_Mono, Mulish, Bricolage_Grotesque, Manrope, Space_Grotesk } from 'next/font/google'
 import { Providers } from '@/components/providers'
 import './globals.css'
 
@@ -23,6 +23,16 @@ const bricolage = Bricolage_Grotesque({
   subsets: ['latin'],
 })
 
+const manrope = Manrope({
+  variable: '--font-manrope',
+  subsets: ['latin'],
+})
+
+const spaceGrotesk = Space_Grotesk({
+  variable: '--font-space-grotesk',
+  subsets: ['latin'],
+})
+
 export const metadata: Metadata = {
   title: 'Sistema de Agua',
   description: 'Sistema de gestión de pagos de agua',
@@ -36,7 +46,7 @@ export default function RootLayout({
   return (
     <html
       lang="es"
-      className={`${geistSans.variable} ${geistMono.variable} ${mulish.variable} ${bricolage.variable}`}
+      className={`${geistSans.variable} ${geistMono.variable} ${mulish.variable} ${bricolage.variable} ${manrope.variable} ${spaceGrotesk.variable}`}
       suppressHydrationWarning
     >
       <body className="min-h-screen bg-slate-50 font-sans antialiased">

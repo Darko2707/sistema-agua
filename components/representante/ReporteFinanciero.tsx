@@ -119,10 +119,7 @@ function GastoModal({ open, onClose, titulo, inicial, mes, anio, onGuardar }: Ga
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div
-        className="bg-background rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4"
-        onClick={e => e.stopPropagation()}
-      >
+      <div className="bg-background rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
         <h2 className="text-lg font-semibold">{titulo}</h2>
         <p className="text-sm text-muted-foreground">{MESES_FULL[mes - 1]} {anio}</p>
 
@@ -135,56 +132,27 @@ function GastoModal({ open, onClose, titulo, inicial, mes, anio, onGuardar }: Ga
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1">
             <Label htmlFor="concepto">Concepto *</Label>
-            <Input
-              id="concepto"
-              placeholder="Ej. Reparación de tubería"
-              value={concepto}
-              onChange={e => setConcepto(e.target.value)}
-            />
+            <Input id="concepto" placeholder="Ej. Reparación de tubería" value={concepto} onChange={e => setConcepto(e.target.value)} />
           </div>
-
           <div className="space-y-1">
             <Label htmlFor="monto">Monto (MXN) *</Label>
-            <Input
-              id="monto"
-              type="number"
-              min="0.01"
-              step="0.01"
-              placeholder="0.00"
-              value={monto || ''}
-              onChange={e => setMonto(parseFloat(e.target.value) || 0)}
-            />
+            <Input id="monto" type="number" min="0.01" step="0.01" placeholder="0.00" value={monto || ''} onChange={e => setMonto(parseFloat(e.target.value) || 0)} />
           </div>
-
           <div className="space-y-1">
             <Label htmlFor="categoria">Categoría *</Label>
-            <select
-              id="categoria"
-              className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
-              value={categoria}
-              onChange={e => setCategoria(e.target.value as CatGasto)}
-            >
+            <select id="categoria" className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring" value={categoria} onChange={e => setCategoria(e.target.value as CatGasto)}>
               <option value="mantenimiento">Mantenimiento</option>
               <option value="administracion">Administración</option>
               <option value="servicios">Servicios</option>
               <option value="otros">Otros</option>
             </select>
           </div>
-
           <div className="space-y-1">
             <Label htmlFor="fecha">Fecha *</Label>
-            <Input
-              id="fecha"
-              type="date"
-              value={fecha}
-              onChange={e => setFecha(e.target.value)}
-            />
+            <Input id="fecha" type="date" value={fecha} onChange={e => setFecha(e.target.value)} />
           </div>
-
           <div className="flex gap-2 justify-end pt-2">
-            <Button type="button" variant="outline" onClick={onClose} disabled={guardando}>
-              Cancelar
-            </Button>
+            <Button type="button" variant="outline" onClick={onClose} disabled={guardando}>Cancelar</Button>
             <Button type="submit" disabled={guardando} className="gap-2">
               {guardando && <Loader2 className="h-4 w-4 animate-spin" />}
               Guardar
@@ -238,7 +206,7 @@ function IngresoModal({ open, onClose, titulo, inicial, mes, anio, onGuardar }: 
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
       <div className="bg-background rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
         <h2 className="text-lg font-semibold">{titulo}</h2>
-        <p className="text-sm text-muted-foreground">{['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][mes - 1]} {anio}</p>
+        <p className="text-sm text-muted-foreground">{MESES_FULL[mes - 1]} {anio}</p>
 
         {errMsg && (
           <div role="alert" aria-live="polite" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">{errMsg}</div>
@@ -270,7 +238,134 @@ function IngresoModal({ open, onClose, titulo, inicial, mes, anio, onGuardar }: 
   );
 }
 
-// ─── Notificación toast simple ────────────────────────────────────────────────
+// ─── Modal de rango para Excel ────────────────────────────────────────────────
+
+interface ExcelRangoModalProps {
+  open:          boolean;
+  onClose:       () => void;
+  mesActual:     number;
+  anioActual:    number;
+  onExportar:    (desde: { mes: number; anio: number }, hasta: { mes: number; anio: number }) => Promise<void>;
+}
+
+function ExcelRangoModal({ open, onClose, mesActual, anioActual, onExportar }: ExcelRangoModalProps) {
+  const hoy       = new Date();
+  const aniosOpts = Array.from({ length: 5 }, (_, i) => hoy.getFullYear() - 2 + i);
+
+  const [mesDesde,  setMesDesde]  = useState(mesActual);
+  const [anioDesde, setAnioDesde] = useState(anioActual);
+  const [mesHasta,  setMesHasta]  = useState(mesActual);
+  const [anioHasta, setAnioHasta] = useState(anioActual);
+  const [exportando, setExportando] = useState(false);
+  const [errMsg,     setErrMsg]   = useState('');
+
+  if (!open) return null;
+
+  const desdeNum = anioDesde * 100 + mesDesde;
+  const hastaNum = anioHasta * 100 + mesHasta;
+  const rangoValido = hastaNum >= desdeNum;
+
+  async function handleExportar() {
+    if (!rangoValido) { setErrMsg('La fecha de inicio debe ser anterior o igual a la fecha de fin'); return; }
+    setExportando(true);
+    setErrMsg('');
+    try {
+      await onExportar({ mes: mesDesde, anio: anioDesde }, { mes: mesHasta, anio: anioHasta });
+      onClose();
+    } catch (err: unknown) {
+      setErrMsg(err instanceof Error ? err.message : 'Error al generar Excel');
+    } finally {
+      setExportando(false);
+    }
+  }
+
+  const periodosLabel = desdeNum === hastaNum
+    ? `${MESES_FULL[mesDesde - 1]} ${anioDesde}`
+    : `${MESES_FULL[mesDesde - 1]} ${anioDesde} — ${MESES_FULL[mesHasta - 1]} ${anioHasta}`;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+      <div className="bg-background rounded-xl shadow-2xl w-full max-w-sm p-6 space-y-5" onClick={e => e.stopPropagation()}>
+        <div>
+          <h2 className="text-lg font-semibold">Exportar Excel</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">Selecciona el rango de meses a incluir en el reporte.</p>
+        </div>
+
+        {errMsg && (
+          <div role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">{errMsg}</div>
+        )}
+
+        {/* Desde */}
+        <div className="space-y-2">
+          <Label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Desde</Label>
+          <div className="flex gap-2">
+            <select
+              className="flex-1 h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              value={mesDesde}
+              onChange={e => setMesDesde(parseInt(e.target.value, 10))}
+            >
+              {MESES_FULL.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+            </select>
+            <select
+              className="w-24 h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              value={anioDesde}
+              onChange={e => setAnioDesde(parseInt(e.target.value, 10))}
+            >
+              {aniosOpts.map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {/* Hasta */}
+        <div className="space-y-2">
+          <Label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Hasta</Label>
+          <div className="flex gap-2">
+            <select
+              className="flex-1 h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              value={mesHasta}
+              onChange={e => setMesHasta(parseInt(e.target.value, 10))}
+            >
+              {MESES_FULL.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+            </select>
+            <select
+              className="w-24 h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
+              value={anioHasta}
+              onChange={e => setAnioHasta(parseInt(e.target.value, 10))}
+            >
+              {aniosOpts.map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {/* Preview */}
+        {rangoValido && (
+          <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-700 font-medium">
+            Reporte: {periodosLabel}
+          </div>
+        )}
+        {!rangoValido && (
+          <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-700">
+            El mes de inicio debe ser anterior al mes de fin.
+          </div>
+        )}
+
+        <div className="flex gap-2 justify-end pt-1">
+          <Button type="button" variant="outline" onClick={onClose} disabled={exportando}>Cancelar</Button>
+          <Button
+            onClick={handleExportar}
+            disabled={exportando || !rangoValido}
+            className="gap-2 bg-green-700 hover:bg-green-800"
+          >
+            {exportando ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+            Descargar Excel
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Toast ────────────────────────────────────────────────────────────────────
 
 function useToast() {
   const [toast, setToast] = useState<{ msg: string; tipo: 'ok' | 'error' } | null>(null);
@@ -288,15 +383,15 @@ export function ReporteFinanciero() {
   const [mes,  setMes]  = useState(hoy.getMonth() + 1);
   const [anio, setAnio] = useState(hoy.getFullYear());
 
-  const [modalAbierto,       setModalAbierto]       = useState(false);
-  const [gastoEditando,      setGastoEditando]       = useState<null | {
+  const [modalAbierto,        setModalAbierto]        = useState(false);
+  const [gastoEditando,       setGastoEditando]        = useState<null | {
     id: string; concepto: string; monto: number; categoria: CatGasto; fecha: string;
   }>(null);
-  const [ingresoModalAbierto, setIngresoModalAbierto] = useState(false);
-  const [ingresoEditando,     setIngresoEditando]     = useState<IngresoEditing>(null);
-  const [descargando,         setDescargando]         = useState(false);
-  const [eliminandoId,        setEliminandoId]        = useState<string | null>(null);
-  const [eliminandoIngresoId, setEliminandoIngresoId] = useState<string | null>(null);
+  const [ingresoModalAbierto, setIngresoModalAbierto]  = useState(false);
+  const [ingresoEditando,     setIngresoEditando]      = useState<IngresoEditing>(null);
+  const [excelModalAbierto,   setExcelModalAbierto]    = useState(false);
+  const [eliminandoId,        setEliminandoId]         = useState<string | null>(null);
+  const [eliminandoIngresoId, setEliminandoIngresoId]  = useState<string | null>(null);
   const { toast, mostrar } = useToast();
 
   const utils = trpcReact.useUtils();
@@ -307,12 +402,10 @@ export function ReporteFinanciero() {
     onSuccess: () => { utils.reportes.reporteFinanciero.invalidate(); mostrar('Gasto registrado correctamente'); },
     onError:   (e) => mostrar(e.message, 'error'),
   });
-
   const editarMutation   = trpcReact.reportes.editarGasto.useMutation({
     onSuccess: () => { utils.reportes.reporteFinanciero.invalidate(); mostrar('Gasto actualizado correctamente'); },
     onError:   (e) => mostrar(e.message, 'error'),
   });
-
   const eliminarMutation = trpcReact.reportes.eliminarGasto.useMutation({
     onSuccess: () => { utils.reportes.reporteFinanciero.invalidate(); mostrar('Gasto eliminado'); },
     onError:   (e) => mostrar(e.message, 'error'),
@@ -335,26 +428,19 @@ export function ReporteFinanciero() {
   const cargando = reporteQuery.isLoading;
   const error    = reporteQuery.error?.message;
 
-  // Años disponibles (3 años anteriores + actual + 1 futuro)
   const aniosOpts = Array.from({ length: 5 }, (_, i) => hoy.getFullYear() - 2 + i);
 
   async function handleAgregarGasto(d: { concepto: string; monto: number; categoria: CatGasto; fecha: string }) {
     await agregarMutation.mutateAsync({ ...d, mes, anio });
   }
-
   async function handleEditarGasto(d: { concepto: string; monto: number; categoria: CatGasto; fecha: string }) {
     if (!gastoEditando) return;
     await editarMutation.mutateAsync({ id: gastoEditando.id, ...d });
   }
-
   async function handleEliminarGasto(id: string) {
     if (!confirm('¿Eliminar este gasto? Esta acción no se puede deshacer.')) return;
     setEliminandoId(id);
-    try {
-      await eliminarMutation.mutateAsync({ id });
-    } finally {
-      setEliminandoId(null);
-    }
+    try { await eliminarMutation.mutateAsync({ id }); } finally { setEliminandoId(null); }
   }
 
   async function handleAgregarIngreso(d: { concepto: string; monto: number; fecha: string }) {
@@ -367,30 +453,32 @@ export function ReporteFinanciero() {
   async function handleEliminarIngreso(id: string) {
     if (!confirm('¿Eliminar este ingreso? Esta acción no se puede deshacer.')) return;
     setEliminandoIngresoId(id);
-    try {
-      await eliminarIngresoMutation.mutateAsync({ id });
-    } finally {
-      setEliminandoIngresoId(null);
-    }
+    try { await eliminarIngresoMutation.mutateAsync({ id }); } finally { setEliminandoIngresoId(null); }
   }
 
-  async function exportarExcel() {
-    setDescargando(true);
-    try {
-      const res  = await fetch(`/api/reportes/financiero?mes=${mes}&anio=${anio}`);
-      if (!res.ok) throw new Error('Error al generar Excel');
-      const blob = await res.blob();
-      const url  = URL.createObjectURL(blob);
-      const a    = document.createElement('a');
-      a.href     = url;
-      a.download = `reporte-financiero-${mes}-${anio}.xlsx`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      mostrar('No se pudo generar el Excel. Intenta nuevamente.', 'error');
-    } finally {
-      setDescargando(false);
-    }
+  async function exportarExcel(
+    desde: { mes: number; anio: number },
+    hasta: { mes: number; anio: number },
+  ) {
+    const params = new URLSearchParams({
+      mesDesde:  String(desde.mes),
+      anioDesde: String(desde.anio),
+      mesHasta:  String(hasta.mes),
+      anioHasta: String(hasta.anio),
+    });
+    const res = await fetch(`/api/reportes/financiero?${params}`);
+    if (!res.ok) throw new Error('Error al generar Excel');
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    const label = desde.anio === hasta.anio && desde.mes === hasta.mes
+      ? `${desde.mes}-${desde.anio}`
+      : `${desde.mes}-${desde.anio}_a_${hasta.mes}-${hasta.anio}`;
+    a.download = `reporte-financiero-${label}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+    mostrar('Excel generado correctamente');
   }
 
   return (
@@ -414,9 +502,7 @@ export function ReporteFinanciero() {
                   value={mes}
                   onChange={e => setMes(parseInt(e.target.value, 10))}
                 >
-                  {MESES_FULL.map((m, i) => (
-                    <option key={i} value={i + 1}>{m}</option>
-                  ))}
+                  {MESES_FULL.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
                 </select>
               </div>
               <div className="space-y-1">
@@ -432,9 +518,14 @@ export function ReporteFinanciero() {
             </div>
 
             <div className="md:ml-auto">
-              <Button onClick={exportarExcel} disabled={descargando || cargando} variant="outline" className="gap-2">
-                {descargando ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
-                Exportar Excel
+              <Button
+                onClick={() => setExcelModalAbierto(true)}
+                disabled={cargando}
+                variant="outline"
+                className="gap-2"
+              >
+                <FileDown className="h-4 w-4" />
+                Generar Excel
               </Button>
             </div>
           </div>
@@ -447,30 +538,10 @@ export function ReporteFinanciero() {
         <>
           {/* KPIs */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <KpiCard
-              icon={<DollarSign className="h-4 w-4" />}
-              label="Total recaudado"
-              value={mxn(reporte.totalRecaudado)}
-              color="text-green-600"
-            />
-            <KpiCard
-              icon={<Users className="h-4 w-4" />}
-              label="Residentes"
-              value={String(reporte.totalResidentes)}
-              sub={`${reporte.totalPagaron} pagaron`}
-            />
-            <KpiCard
-              icon={<AlertTriangle className="h-4 w-4" />}
-              label="Morosos"
-              value={String(reporte.totalMorosos)}
-              color={reporte.totalMorosos > 0 ? 'text-red-600' : 'text-green-600'}
-            />
-            <KpiCard
-              icon={<TrendingUp className="h-4 w-4" />}
-              label="% Cobranza"
-              value={`${reporte.porcentajeCobranza.toFixed(1)}%`}
-              color={reporte.porcentajeCobranza >= 80 ? 'text-green-600' : 'text-amber-600'}
-            />
+            <KpiCard icon={<DollarSign className="h-4 w-4" />} label="Total recaudado" value={mxn(reporte.totalRecaudado)} color="text-green-600" />
+            <KpiCard icon={<Users className="h-4 w-4" />} label="Residentes" value={String(reporte.totalResidentes)} sub={`${reporte.totalPagaron} pagaron`} />
+            <KpiCard icon={<AlertTriangle className="h-4 w-4" />} label="Morosos" value={String(reporte.totalMorosos)} color={reporte.totalMorosos > 0 ? 'text-red-600' : 'text-green-600'} />
+            <KpiCard icon={<TrendingUp className="h-4 w-4" />} label="% Cobranza" value={`${reporte.porcentajeCobranza.toFixed(1)}%`} color={reporte.porcentajeCobranza >= 80 ? 'text-green-600' : 'text-amber-600'} />
           </div>
 
           {/* Saldo */}
@@ -495,9 +566,7 @@ export function ReporteFinanciero() {
 
           {/* Desglose por edificio */}
           <Card>
-            <CardHeader>
-              <CardTitle>Desglose por edificio</CardTitle>
-            </CardHeader>
+            <CardHeader><CardTitle>Desglose por edificio</CardTitle></CardHeader>
             <CardContent className="p-0">
               <Table>
                 <TableHeader>
@@ -517,18 +586,12 @@ export function ReporteFinanciero() {
                       <TableCell className="text-center">{ed.cantidadPagos}</TableCell>
                       <TableCell className="text-center text-green-600">{ed.residentesActivos}</TableCell>
                       <TableCell className="text-center">
-                        <span className={ed.residentesMorosos > 0 ? 'text-red-600 font-medium' : 'text-muted-foreground'}>
-                          {ed.residentesMorosos}
-                        </span>
+                        <span className={ed.residentesMorosos > 0 ? 'text-red-600 font-medium' : 'text-muted-foreground'}>{ed.residentesMorosos}</span>
                       </TableCell>
                     </TableRow>
                   ))}
                   {reporte.porEdificio.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">
-                        Sin datos para este período.
-                      </TableCell>
-                    </TableRow>
+                    <TableRow><TableCell colSpan={5} className="py-8 text-center text-muted-foreground">Sin datos para este período.</TableCell></TableRow>
                   )}
                 </TableBody>
               </Table>
@@ -540,13 +603,8 @@ export function ReporteFinanciero() {
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Gastos del período</CardTitle>
-                <Button
-                  size="sm"
-                  className="gap-2"
-                  onClick={() => { setGastoEditando(null); setModalAbierto(true); }}
-                >
-                  <Plus className="h-4 w-4" />
-                  Agregar gasto
+                <Button size="sm" className="gap-2" onClick={() => { setGastoEditando(null); setModalAbierto(true); }}>
+                  <Plus className="h-4 w-4" />Agregar gasto
                 </Button>
               </div>
             </CardHeader>
@@ -565,14 +623,9 @@ export function ReporteFinanciero() {
                   {reporte.gastos.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
-                        Sin gastos registrados para {MESES_FULL[mes - 1]} {anio}.
+                        Sin gastos para {MESES_FULL[mes - 1]} {anio}.
                         <br />
-                        <Button
-                          variant="link"
-                          size="sm"
-                          className="mt-1"
-                          onClick={() => { setGastoEditando(null); setModalAbierto(true); }}
-                        >
+                        <Button variant="link" size="sm" className="mt-1" onClick={() => { setGastoEditando(null); setModalAbierto(true); }}>
                           Registrar primer gasto
                         </Button>
                       </TableCell>
@@ -581,48 +634,21 @@ export function ReporteFinanciero() {
                   {reporte.gastos.map(g => (
                     <TableRow key={g.id}>
                       <TableCell className="font-medium">{g.concepto}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="text-xs">
-                          {CAT_LABEL[g.categoria as CatGasto] ?? g.categoria}
-                        </Badge>
-                      </TableCell>
+                      <TableCell><Badge variant="outline" className="text-xs">{CAT_LABEL[g.categoria as CatGasto] ?? g.categoria}</Badge></TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {new Date(g.fecha!).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })}
                       </TableCell>
-                      <TableCell className="text-right font-medium text-red-600">
-                        {mxn(Number(g.monto))}
-                      </TableCell>
+                      <TableCell className="text-right font-medium text-red-600">{mxn(Number(g.monto))}</TableCell>
                       <TableCell>
                         <div className="flex gap-1 justify-end">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 p-0"
-                            onClick={() => {
-                              setGastoEditando({
-                                id:        g.id,
-                                concepto:  g.concepto,
-                                monto:     Number(g.monto),
-                                categoria: g.categoria as CatGasto,
-                                fecha:     g.fecha
-                                  ? new Date(g.fecha).toISOString().split('T')[0]
-                                  : new Date().toISOString().split('T')[0],
-                              });
-                              setModalAbierto(true);
-                            }}
-                          >
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => {
+                            setGastoEditando({ id: g.id, concepto: g.concepto, monto: Number(g.monto), categoria: g.categoria as CatGasto, fecha: g.fecha ? new Date(g.fecha).toISOString().split('T')[0] : new Date().toISOString().split('T')[0] });
+                            setModalAbierto(true);
+                          }}>
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
-                            disabled={eliminandoId === g.id}
-                            onClick={() => handleEliminarGasto(g.id)}
-                          >
-                            {eliminandoId === g.id
-                              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                              : <Trash2 className="h-3.5 w-3.5" />}
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50" disabled={eliminandoId === g.id} onClick={() => handleEliminarGasto(g.id)}>
+                            {eliminandoId === g.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                           </Button>
                         </div>
                       </TableCell>
@@ -630,7 +656,6 @@ export function ReporteFinanciero() {
                   ))}
                 </TableBody>
               </Table>
-
               {reporte.gastos.length > 0 && (
                 <div className="flex justify-end items-center gap-2 border-t px-4 py-3">
                   <span className="text-sm text-muted-foreground">Total gastos:</span>
@@ -650,13 +675,8 @@ export function ReporteFinanciero() {
                     Ingresos cobrados fuera del sistema (cuotas históricas, pagos en efectivo previos, etc.)
                   </p>
                 </div>
-                <Button
-                  size="sm"
-                  className="gap-2 bg-green-600 hover:bg-green-700"
-                  onClick={() => { setIngresoEditando(null); setIngresoModalAbierto(true); }}
-                >
-                  <Plus className="h-4 w-4" />
-                  Agregar ingreso
+                <Button size="sm" className="gap-2 bg-green-600 hover:bg-green-700" onClick={() => { setIngresoEditando(null); setIngresoModalAbierto(true); }}>
+                  <Plus className="h-4 w-4" />Agregar ingreso
                 </Button>
               </div>
             </CardHeader>
@@ -674,7 +694,7 @@ export function ReporteFinanciero() {
                   {(reporte.ingresos ?? []).length === 0 && (
                     <TableRow>
                       <TableCell colSpan={4} className="py-10 text-center text-muted-foreground">
-                        Sin ingresos adicionales para {['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][mes - 1]} {anio}.
+                        Sin ingresos adicionales para {MESES_FULL[mes - 1]} {anio}.
                         <br />
                         <Button variant="link" size="sm" className="mt-1" onClick={() => { setIngresoEditando(null); setIngresoModalAbierto(true); }}>
                           Registrar primer ingreso adicional
@@ -688,30 +708,16 @@ export function ReporteFinanciero() {
                       <TableCell className="text-sm text-muted-foreground">
                         {new Date(ing.fecha!).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })}
                       </TableCell>
-                      <TableCell className="text-right font-medium text-green-700">
-                        {mxn(Number(ing.monto))}
-                      </TableCell>
+                      <TableCell className="text-right font-medium text-green-700">{mxn(Number(ing.monto))}</TableCell>
                       <TableCell>
                         <div className="flex gap-1 justify-end">
-                          <Button
-                            variant="ghost" size="sm" className="h-7 w-7 p-0"
-                            onClick={() => {
-                              setIngresoEditando({
-                                id:       ing.id,
-                                concepto: ing.concepto,
-                                monto:    Number(ing.monto),
-                                fecha:    ing.fecha ? new Date(ing.fecha).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-                              });
-                              setIngresoModalAbierto(true);
-                            }}
-                          >
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => {
+                            setIngresoEditando({ id: ing.id, concepto: ing.concepto, monto: Number(ing.monto), fecha: ing.fecha ? new Date(ing.fecha).toISOString().split('T')[0] : new Date().toISOString().split('T')[0] });
+                            setIngresoModalAbierto(true);
+                          }}>
                             <Pencil className="h-3.5 w-3.5" />
                           </Button>
-                          <Button
-                            variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50"
-                            disabled={eliminandoIngresoId === ing.id}
-                            onClick={() => handleEliminarIngreso(ing.id)}
-                          >
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50" disabled={eliminandoIngresoId === ing.id} onClick={() => handleEliminarIngreso(ing.id)}>
                             {eliminandoIngresoId === ing.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
                           </Button>
                         </div>
@@ -720,7 +726,6 @@ export function ReporteFinanciero() {
                   ))}
                 </TableBody>
               </Table>
-
               {(reporte.ingresos ?? []).length > 0 && (
                 <div className="flex justify-end items-center gap-2 border-t px-4 py-3">
                   <span className="text-sm text-muted-foreground">Total ingresos adicionales:</span>
@@ -732,26 +737,29 @@ export function ReporteFinanciero() {
         </>
       ) : null}
 
-      {/* Modal agregar/editar gasto */}
+      {/* Modales */}
       <GastoModal
         open={modalAbierto}
         onClose={() => { setModalAbierto(false); setGastoEditando(null); }}
         titulo={gastoEditando ? 'Editar gasto' : 'Agregar gasto'}
         inicial={gastoEditando ?? undefined}
-        mes={mes}
-        anio={anio}
+        mes={mes} anio={anio}
         onGuardar={gastoEditando ? handleEditarGasto : handleAgregarGasto}
       />
-
-      {/* Modal agregar/editar ingreso adicional */}
       <IngresoModal
         open={ingresoModalAbierto}
         onClose={() => { setIngresoModalAbierto(false); setIngresoEditando(null); }}
         titulo={ingresoEditando ? 'Editar ingreso adicional' : 'Agregar ingreso adicional'}
         inicial={ingresoEditando ?? undefined}
-        mes={mes}
-        anio={anio}
+        mes={mes} anio={anio}
         onGuardar={ingresoEditando ? handleEditarIngreso : handleAgregarIngreso}
+      />
+      <ExcelRangoModal
+        open={excelModalAbierto}
+        onClose={() => setExcelModalAbierto(false)}
+        mesActual={mes}
+        anioActual={anio}
+        onExportar={exportarExcel}
       />
     </div>
   );

@@ -6,45 +6,158 @@ import { useRouter } from 'next/navigation';
 import { useSession } from '@/hooks/useAuth';
 import { useActualizarEstadoAgua } from '@/hooks/useResidente';
 import { trpcReact } from '@/lib/trpc-react';
-import { EstadoAguaBadge } from '@/components/domain/EstadoAguaBadge';
 
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { LogOut, Scissors, RotateCcw, Droplets, AlertTriangle, Home } from 'lucide-react';
+// ── Design tokens ─────────────────────────────────────────────────────────────
+const C = {
+  bgOuter:    '#F0EEE6',
+  bgHeader:   '#15493A',
+  headerCard: '#0F3B2D',
+  card:       '#fff',
+  cardBorder: '#E4E1D5',
+  textMain:   '#1F2A22',
+  textMuted:  '#8A8879',
+  gold:       '#F4B223',
+  goldLight:  '#F8C84E',
+  danger:     '#C0453F',
+  dangerBg:   '#FBEAE9',
+  ok:         '#4C9B62',
+  okBg:       '#E7F2EA',
+  alertBg:    '#FEF3CD',
+  alertText:  '#7A5800',
+};
 
+const FM = "var(--font-manrope), 'Manrope', sans-serif";
+const FS = "var(--font-space-grotesk), 'Space Grotesk', sans-serif";
+
+type FilterType = 'todos' | 'corte' | 'reconexion';
+
+type ResidenteJob = {
+  id: string;
+  usuario?: { name: string } | null;
+  circuito?: { nombre: string } | null;
+  edificio: string;
+  departamento: string;
+};
+
+// ── Sub-components ────────────────────────────────────────────────────────────
+function StatCard({ value, label, color }: { value: number; label: string; color: string }) {
+  return (
+    <div style={{ flex: 1, background: C.headerCard, borderRadius: 14, padding: 12 }}>
+      <div style={{ fontFamily: FS, fontSize: 22, fontWeight: 700, color }}>{value}</div>
+      <div style={{ fontSize: 11.5, color: '#9FC2AC', marginTop: 2 }}>{label}</div>
+    </div>
+  );
+}
+
+function FilterBtn({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        background: active ? C.gold : '#fff',
+        color:      active ? C.bgHeader : '#6C7268',
+        border:     active ? 'none' : '1px solid #DEDACB',
+        borderRadius: 20, padding: '8px 14px',
+        fontSize: 12.5, fontWeight: 700, fontFamily: FM, cursor: 'pointer',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
+interface JobCardProps {
+  job:       ResidenteJob;
+  tipo:      'corte' | 'reconexion';
+  procesando: boolean;
+  onAction:  () => void;
+}
+
+function JobCard({ job, tipo, procesando, onAction }: JobCardProps) {
+  const isCorte = tipo === 'corte';
+  const color   = isCorte ? C.danger : C.ok;
+  const badgeBg = isCorte ? C.dangerBg : C.okBg;
+  const label   = isCorte ? 'Corte' : 'Reconexión';
+  const desc    = isCorte
+    ? 'Falta de pago — corte físico pendiente'
+    : 'Pagó reconexión — reconexión física pendiente';
+  const btnLabel = procesando
+    ? 'Procesando...'
+    : isCorte ? 'Confirmar corte' : 'Confirmar reconexión';
+  const btnBg = procesando ? '#888' : isCorte ? C.danger : C.ok;
+
+  return (
+    <div style={{ background: C.card, borderRadius: 18, padding: 15, borderLeft: `3px solid ${color}`, boxShadow: '0 4px 14px rgba(20,40,30,.06)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontFamily: FS, fontSize: 15, fontWeight: 700, color: C.textMain, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {job.usuario?.name ?? 'Sin nombre'}
+          </div>
+          <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2 }}>
+            {job.circuito?.nombre ?? ''} · Edif. {job.edificio}, Depto {job.departamento}
+          </div>
+        </div>
+        <span style={{ fontSize: 11, fontWeight: 700, padding: '5px 10px', borderRadius: 20, background: badgeBg, color, whiteSpace: 'nowrap', flexShrink: 0 }}>
+          {label}
+        </span>
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, gap: 8 }}>
+        <span style={{ fontSize: 12, color: C.textMuted, lineHeight: 1.4 }}>{desc}</span>
+        <button
+          onClick={onAction}
+          disabled={procesando}
+          aria-busy={procesando}
+          style={{
+            background: btnBg, color: '#fff', border: 'none', borderRadius: 12,
+            padding: '8px 14px', fontSize: 12.5, fontWeight: 700, fontFamily: FM,
+            cursor: procesando ? 'not-allowed' : 'pointer', flexShrink: 0,
+            opacity: procesando ? 0.7 : 1,
+          }}
+        >
+          {btnLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Dashboard ─────────────────────────────────────────────────────────────────
 export function TrabajadorDashboard() {
-  const router = useRouter();
+  const router  = useRouter();
   const { data: session, isPending: sessionPending } = useSession();
-  const [tab, setTab]             = useState<'cortes' | 'reconexiones'>('cortes');
+  const [filter, setFilter]       = useState<FilterType>('todos');
   const [procesando, setProcesando] = useState<string | null>(null);
   const [error, setError]         = useState<string | null>(null);
 
-  const pendientesCorteQuery      = trpcReact.cortes.pendientesDeCorte.useQuery();
-  const pendientesReconexionQuery = trpcReact.cortes.pendientesDeReconexion.useQuery();
+  const cortesQ      = trpcReact.cortes.pendientesDeCorte.useQuery();
+  const reconexionesQ = trpcReact.cortes.pendientesDeReconexion.useQuery();
   const { confirmarCorte, confirmarReconexion } = useActualizarEstadoAgua();
 
-  const cargando          = sessionPending || pendientesCorteQuery.isLoading || pendientesReconexionQuery.isLoading;
-  const pendientesCorte    = pendientesCorteQuery.data ?? [];
-  const pendientesReconexion = pendientesReconexionQuery.data ?? [];
+  const cargando           = sessionPending || cortesQ.isLoading || reconexionesQ.isLoading;
+  const pendientesCorte    = (cortesQ.data ?? []) as ResidenteJob[];
+  const pendientesReconexion = (reconexionesQ.data ?? []) as ResidenteJob[];
+  const total              = pendientesCorte.length + pendientesReconexion.length;
 
-  async function handleConfirmarCorte(perfilId: string) {
+  async function handleCorte(perfilId: string) {
     setProcesando(perfilId);
     setError(null);
     try {
       await confirmarCorte({ perfilId });
-    } catch (err: unknown) {
+    } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al confirmar corte');
     } finally {
       setProcesando(null);
     }
   }
 
-  async function handleConfirmarReconexion(perfilId: string) {
+  async function handleReconexion(perfilId: string) {
     setProcesando(perfilId);
     setError(null);
     try {
       await confirmarReconexion({ perfilId });
-    } catch (err: unknown) {
+    } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al confirmar reconexión');
     } finally {
       setProcesando(null);
@@ -56,104 +169,132 @@ export function TrabajadorDashboard() {
     router.push('/login');
   }
 
+  // Derive initials + shift date
+  const nombre   = session?.user?.name ?? '';
+  const initials = nombre.trim().split(/\s+/).map((n: string) => n[0]).slice(0, 2).join('').toUpperCase() || 'OP';
+  const hoy      = new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
+
+  // Apply filter
+  const corteItems    = pendientesCorte.map(j => ({ job: j, tipo: 'corte' as const }));
+  const reconexItems  = pendientesReconexion.map(j => ({ job: j, tipo: 'reconexion' as const }));
+  const visibleJobs =
+    filter === 'corte'      ? corteItems :
+    filter === 'reconexion' ? reconexItems :
+    [...corteItems, ...reconexItems];
+
   if (cargando) {
-    return <div className="min-h-screen flex items-center justify-center"><p className="text-muted-foreground">Cargando...</p></div>;
+    return (
+      <div style={{ minHeight: '100vh', background: C.bgOuter, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: FM }}>
+        <div style={{ color: '#9FC2AC', fontSize: 15, fontWeight: 600 }}>Cargando turno...</div>
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-8">
-      <div className="mx-auto max-w-6xl space-y-6">
+    <div className="cuad-outer" style={{ minHeight: '100vh', background: C.bgOuter, display: 'flex', justifyContent: 'center', fontFamily: FM, color: C.textMain }}>
+      <style>{`
+        @media(min-width:680px){
+          .cuad-outer{align-items:flex-start;padding-top:48px;padding-bottom:80px}
+          .cuad-inner{border-radius:32px;overflow:hidden;box-shadow:0 24px 64px rgba(20,40,30,.18)}
+        }
+      `}</style>
+      <div className="cuad-inner" style={{ width: '100%', maxWidth: 460, paddingBottom: 32 }}>
 
-        <div className="rounded-3xl bg-gradient-to-r from-sky-600 to-cyan-600 p-6 text-white shadow-lg">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h1 className="text-3xl font-bold">Cuadrilla de Cortes</h1>
-              <p className="mt-2 text-sky-100">{session?.user?.name}</p>
+        {/* ── Dark green header ── */}
+        <div style={{ background: C.bgHeader, padding: '18px 20px 20px' }}>
+
+          {/* Brand + avatar */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ width: 36, height: 36, borderRadius: 10, background: C.gold, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={C.bgHeader} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M3 21h18M5 21V9l7-5 7 5v12M9 21v-6h6v6" />
+                </svg>
+              </span>
+              <div style={{ fontFamily: FS, fontSize: 16, fontWeight: 700, color: '#fff', letterSpacing: '.02em' }}>Cuadrilla SIS4S</div>
             </div>
-            <div className="flex gap-2">
-              <Button variant="secondary" onClick={() => router.push('/residente')} className="bg-white/20 text-white hover:bg-white/30 backdrop-blur-sm border-0">
-                <Home className="mr-2 h-4 w-4" />Inicio
-              </Button>
-              <Button variant="secondary" onClick={salir}><LogOut className="mr-2 h-4 w-4" />Salir</Button>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button
+                onClick={() => router.push('/residente')}
+                aria-label="Ir a inicio"
+                style={{ background: C.headerCard, border: 'none', borderRadius: 10, padding: '6px 10px', cursor: 'pointer', color: '#9FC2AC', fontSize: 12, fontWeight: 700, fontFamily: FM }}
+              >
+                Inicio
+              </button>
+              <button
+                onClick={salir}
+                aria-label="Cerrar sesión"
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4 }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9FC2AC" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M10 4H6a2 2 0 00-2 2v12a2 2 0 002 2h4M16 8l4 4-4 4M20 12H9"/>
+                </svg>
+              </button>
+              <span style={{ width: 36, height: 36, borderRadius: '50%', background: C.headerCard, color: C.goldLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13, fontFamily: FS }}>
+                {initials}
+              </span>
             </div>
+          </div>
+
+          {/* Shift label + stat cards */}
+          <div style={{ marginTop: 18, fontSize: 12, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: '#B9D6C4' }}>
+            Turno de hoy · {hoy}
+          </div>
+          <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+            <StatCard value={pendientesCorte.length}    label="Cortes pendientes" color="#fff" />
+            <StatCard value={pendientesReconexion.length} label="Reconexiones"     color={C.gold} />
+            <StatCard value={total}                     label="Total en turno"    color="#8FD19E" />
           </div>
         </div>
 
-        {error && <div role="alert" aria-live="polite" className="rounded-2xl border border-red-200 bg-red-50 p-4 text-red-600">{error}</div>}
+        {/* ── Body ── */}
+        <div style={{ padding: '16px 14px 0', display: 'flex', flexDirection: 'column', gap: 10 }}>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <Card><CardContent className="flex items-center justify-between p-5"><div><p className="text-sm text-muted-foreground">Pendientes de corte</p><p className="text-3xl font-bold text-red-600">{pendientesCorte.length}</p></div><Scissors className="h-8 w-8 text-red-600" /></CardContent></Card>
-          <Card><CardContent className="flex items-center justify-between p-5"><div><p className="text-sm text-muted-foreground">Pendientes de reconexión</p><p className="text-3xl font-bold text-amber-600">{pendientesReconexion.length}</p></div><RotateCcw className="h-8 w-8 text-amber-600" /></CardContent></Card>
-        </div>
+          {error && (
+            <div role="alert" aria-live="assertive" style={{ background: C.dangerBg, border: '1px solid #F3BFBF', borderRadius: 14, padding: '10px 14px', fontSize: 13, color: C.danger, fontWeight: 600 }}>
+              {error}
+            </div>
+          )}
 
-        <div className="flex gap-2">
-          <Button variant={tab === 'cortes' ? 'default' : 'outline'} onClick={() => setTab('cortes')}>Cortes pendientes ({pendientesCorte.length})</Button>
-          <Button variant={tab === 'reconexiones' ? 'default' : 'outline'} onClick={() => setTab('reconexiones')}>Reconexiones pendientes ({pendientesReconexion.length})</Button>
-        </div>
+          {/* Filter tabs */}
+          <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
+            <FilterBtn active={filter === 'todos'}     onClick={() => setFilter('todos')}     label={`Todos (${total})`} />
+            <FilterBtn active={filter === 'corte'}     onClick={() => setFilter('corte')}     label={`Corte (${pendientesCorte.length})`} />
+            <FilterBtn active={filter === 'reconexion'} onClick={() => setFilter('reconexion')} label={`Reconexión (${pendientesReconexion.length})`} />
+          </div>
 
-        {tab === 'cortes' && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Residentes que deben ser cortados</CardTitle>
-              <p className="text-sm text-muted-foreground">La cuadrilla debe ir a cortar físicamente el servicio</p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {pendientesCorte.length === 0 && (
-                <div className="rounded-xl border border-green-200 bg-green-50 p-8 text-center"><Droplets className="mx-auto mb-3 h-10 w-10 text-green-600" /><p className="font-medium text-green-700">Sin cortes pendientes</p></div>
-              )}
-              {pendientesCorte.map(c => (
-                <div key={c.id} className="flex flex-col gap-4 rounded-xl border p-4 md:flex-row md:items-center md:justify-between">
-                  <div className="flex items-start gap-3">
-                    <div className="rounded-xl bg-red-100 p-3"><AlertTriangle className="h-5 w-5 text-red-600" /></div>
-                    <div>
-                      <p className="font-medium">{c.usuario?.name}</p>
-                      <p className="text-sm text-muted-foreground">{c.circuito?.nombre} · {c.edificio} · {c.departamento}</p>
-                      <p className="text-sm text-red-600">Falta de pago</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <EstadoAguaBadge estado="pendiente_corte" />
-                    <Button disabled={procesando === c.id} onClick={() => handleConfirmarCorte(c.id)}>
-                      {procesando === c.id ? 'Procesando...' : 'Confirmar corte'}
-                    </Button>
-                  </div>
+          {/* Job list */}
+          {visibleJobs.length === 0 ? (
+            <div style={{ background: '#fff', borderRadius: 18, padding: '32px 20px', textAlign: 'center', boxShadow: '0 4px 14px rgba(20,40,30,.06)' }}>
+              <span style={{ width: 52, height: 52, borderRadius: '50%', background: C.okBg, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }} aria-hidden="true">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={C.ok} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 12l4 4 10-11"/>
+                </svg>
+              </span>
+              <p style={{ fontSize: 14, color: C.textMuted, fontWeight: 600 }}>
+                {filter === 'corte' ? 'Sin cortes pendientes' : filter === 'reconexion' ? 'Sin reconexiones pendientes' : 'Sin trabajo pendiente'}
+              </p>
+            </div>
+          ) : (
+            <div role="list" aria-label="Lista de trabajos pendientes" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {visibleJobs.map(({ job, tipo }) => (
+                <div key={`${tipo}-${job.id}`} role="listitem">
+                  <JobCard
+                    job={job}
+                    tipo={tipo}
+                    procesando={procesando === job.id}
+                    onAction={() => tipo === 'corte' ? handleCorte(job.id) : handleReconexion(job.id)}
+                  />
                 </div>
               ))}
-            </CardContent>
-          </Card>
-        )}
+            </div>
+          )}
 
-        {tab === 'reconexiones' && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Residentes que deben ser reconectados</CardTitle>
-              <p className="text-sm text-muted-foreground">Ya pagaron, la cuadrilla debe ir a reconectar el servicio</p>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {pendientesReconexion.length === 0 && (
-                <div className="rounded-xl border border-green-200 bg-green-50 p-8 text-center"><Droplets className="mx-auto mb-3 h-10 w-10 text-green-600" /><p className="font-medium text-green-700">Sin reconexiones pendientes</p></div>
-              )}
-              {pendientesReconexion.map(c => (
-                <div key={c.id} className="flex flex-col gap-4 rounded-xl border p-4 md:flex-row md:items-center md:justify-between">
-                  <div className="flex items-start gap-3">
-                    <div className="rounded-xl bg-amber-100 p-3"><RotateCcw className="h-5 w-5 text-amber-600" /></div>
-                    <div>
-                      <p className="font-medium">{c.usuario?.name}</p>
-                      <p className="text-sm text-muted-foreground">{c.circuito?.nombre} · {c.edificio} · {c.departamento}</p>
-                      <p className="text-sm text-amber-600">Pagó reconexión — pendiente de reconexión física</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <EstadoAguaBadge estado="pendiente_reconexion" />
-                    <Button disabled={procesando === c.id} onClick={() => handleConfirmarReconexion(c.id)} className="bg-green-600 hover:bg-green-700">
-                      {procesando === c.id ? 'Procesando...' : 'Confirmar reconexión'}
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        )}
+          <div style={{ textAlign: 'center', fontSize: 11, color: '#A6A399', marginTop: 6, lineHeight: 1.5, paddingBottom: 4 }}>
+            SIS4S · Panel de Cuadrilla
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -506,3 +506,373 @@ export async function generarReporteFinancieroExcel(params: {
 
   return Buffer.from(await wb.xlsx.writeBuffer() as ArrayBuffer);
 }
+
+// ─────────────────────────────────────────────────────────────────
+// REPORTE FINANCIERO — RANGO DE MESES
+// ─────────────────────────────────────────────────────────────────
+
+export interface MesResumen {
+  mes:   number;
+  anio:  number;
+  totalPagos:               number;
+  totalIngresosAdicionales: number;
+  totalRecaudado:           number;
+  totalGastos:              number;
+  saldo:                    number;
+  cantidadPagos:            number;
+}
+
+export interface GastoRangoReporte extends GastoReporte {
+  mes:  number;
+  anio: number;
+}
+
+export interface IngresoRangoReporte extends IngresoAdicionalReporte {
+  mes:  number;
+  anio: number;
+}
+
+export async function generarReporteFinancieroRangoExcel(params: {
+  circuito:    string;
+  mesDesde:    number;
+  anioDesde:   number;
+  mesHasta:    number;
+  anioHasta:   number;
+  generadoEn:  Date;
+  totalRecaudado:            number;
+  totalPagos:                number;
+  totalIngresosAdicionales:  number;
+  totalGastos:               number;
+  saldo:                     number;
+  totalResidentes:           number;
+  porEdificio:  EdificioFinanciero[];
+  gastos:       GastoRangoReporte[];
+  ingresos:     IngresoRangoReporte[];
+  porMes:       MesResumen[];
+}): Promise<Buffer> {
+  const ExcelJS  = (await import('exceljs')).default;
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'SIS4S';
+  wb.created = params.generadoEn;
+
+  const periodoLabel = params.mesDesde === params.mesHasta && params.anioDesde === params.anioHasta
+    ? `${MESES_ES[params.mesDesde - 1]} ${params.anioDesde}`
+    : `${MESES_ES[params.mesDesde - 1]} ${params.anioDesde} — ${MESES_ES[params.mesHasta - 1]} ${params.anioHasta}`;
+
+  // ══════════════════════════════════════
+  // Hoja 1: Resumen general
+  // ══════════════════════════════════════
+  const wsR = wb.addWorksheet('Resumen');
+  agregarLogo(wb, wsR, 3);
+
+  wsR.mergeCells('A1:C1');
+  const t = wsR.getCell('A1');
+  t.value = `Reporte Financiero — ${params.circuito}`;
+  t.font  = { bold: true, size: 16, color: { argb: 'FF' + COLOR_HEADER } };
+  t.alignment = { horizontal: 'center', vertical: 'middle' };
+  wsR.getRow(1).height = 36;
+
+  wsR.mergeCells('A2:C2');
+  const sub = wsR.getCell('A2');
+  sub.value = `Período: ${periodoLabel}   |   Generado: ${params.generadoEn.toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}`;
+  sub.font  = { size: 10, color: { argb: 'FF6B7280' } };
+  sub.alignment = { horizontal: 'center' };
+  wsR.getRow(2).height = 20;
+
+  wsR.addRow([]);
+
+  const kpis: [string, string | number, string][] = [
+    ['Total Recaudado',          params.totalRecaudado,           '"$"#,##0.00'],
+    ['  · Pagos registrados',    params.totalPagos,               '"$"#,##0.00'],
+    ['  · Ingresos adicionales', params.totalIngresosAdicionales, '"$"#,##0.00'],
+    ['Total Gastos',             params.totalGastos,              '"$"#,##0.00'],
+    ['Saldo Acumulado',          params.saldo,                    '"$"#,##0.00'],
+    ['Total Residentes',         params.totalResidentes,          '0'],
+  ];
+
+  const kpiHeader = wsR.addRow(['Indicador', 'Valor']);
+  kpiHeader.height = 20;
+  kpiHeader.eachCell(cell => {
+    cell.fill      = headerFill(COLOR_HEADER);
+    cell.font      = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.border    = border();
+  });
+
+  kpis.forEach(([label, value, fmt], i) => {
+    const row = wsR.addRow([label, value]);
+    row.height = 20;
+    const isAlt = i % 2 === 1;
+    row.getCell(1).fill      = headerFill(isAlt ? COLOR_ROW_ALT : COLOR_WHITE);
+    row.getCell(1).font      = { bold: !label.startsWith('  ·'), size: 10 };
+    row.getCell(1).border    = border();
+    row.getCell(1).alignment = { vertical: 'middle' };
+    row.getCell(2).fill      = headerFill(isAlt ? COLOR_ROW_ALT : COLOR_WHITE);
+    row.getCell(2).numFmt    = fmt;
+    row.getCell(2).border    = border();
+    row.getCell(2).alignment = { horizontal: 'center', vertical: 'middle' };
+    if (label === 'Saldo Acumulado')      row.getCell(2).font = { bold: true, color: { argb: params.saldo >= 0 ? 'FF065F46' : 'FF991B1B' }, size: 10 };
+    else if (label === 'Total Recaudado') row.getCell(2).font = { bold: true, color: { argb: 'FF065F46' }, size: 10 };
+    else if (label === 'Total Gastos')    row.getCell(2).font = { bold: true, color: { argb: 'FF991B1B' }, size: 10 };
+    else if (label.startsWith('  ·'))    { row.getCell(1).font = { size: 9, italic: true }; row.getCell(2).font = { size: 9, italic: true }; }
+  });
+
+  wsR.getColumn(1).width = 26;
+  wsR.getColumn(2).width = 18;
+
+  // ══════════════════════════════════════
+  // Hoja 2: Desglose por mes
+  // ══════════════════════════════════════
+  const wsM = wb.addWorksheet('Por Mes');
+  agregarLogo(wb, wsM, 8);
+
+  wsM.mergeCells('A1:H1');
+  const tm = wsM.getCell('A1');
+  tm.value = `Desglose Mensual — ${periodoLabel}`;
+  tm.font  = { bold: true, size: 14, color: { argb: 'FF' + COLOR_HEADER } };
+  tm.alignment = { horizontal: 'center', vertical: 'middle' };
+  wsM.getRow(1).height = 32;
+  wsM.addRow([]);
+
+  const mhRow = wsM.addRow(['Período', 'Pagos', '# Cobros', 'Ingresos extras', 'Total ingresos', 'Gastos', 'Saldo mes']);
+  mhRow.height = 20;
+  mhRow.eachCell(cell => {
+    cell.fill      = headerFill(COLOR_HEADER);
+    cell.font      = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.border    = border();
+  });
+
+  params.porMes.forEach((m, i) => {
+    const row = wsM.addRow([
+      `${MESES_ES[m.mes - 1]} ${m.anio}`,
+      m.totalPagos,
+      m.cantidadPagos,
+      m.totalIngresosAdicionales,
+      m.totalRecaudado,
+      m.totalGastos,
+      m.saldo,
+    ]);
+    row.height = 18;
+    const isAlt = i % 2 === 1;
+    row.eachCell({ includeEmpty: true }, (cell, colNum) => {
+      cell.fill      = headerFill(isAlt ? COLOR_ROW_ALT : COLOR_WHITE);
+      cell.border    = border();
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.font      = { size: 10 };
+      if (colNum === 1) cell.alignment.horizontal = 'left';
+      if ([2, 4, 5, 6].includes(colNum)) cell.numFmt = '"$"#,##0.00';
+      if (colNum === 5) cell.font = { bold: true, color: { argb: 'FF065F46' }, size: 10 };
+      if (colNum === 6 && m.totalGastos > 0) cell.font = { color: { argb: 'FF991B1B' }, size: 10 };
+      if (colNum === 7) {
+        cell.numFmt = '"$"#,##0.00';
+        cell.font   = { bold: true, color: { argb: m.saldo >= 0 ? 'FF065F46' : 'FF991B1B' }, size: 10 };
+      }
+    });
+  });
+
+  const mTotalRow = wsM.addRow([
+    'TOTAL',
+    params.totalPagos,
+    params.porMes.reduce((s, m) => s + m.cantidadPagos, 0),
+    params.totalIngresosAdicionales,
+    params.totalRecaudado,
+    params.totalGastos,
+    params.saldo,
+  ]);
+  mTotalRow.height = 20;
+  mTotalRow.eachCell({ includeEmpty: true }, (cell, colNum) => {
+    cell.fill      = headerFill('DBEAFE');
+    cell.font      = { bold: true, size: 10, color: { argb: 'FF1E40AF' } };
+    cell.border    = border();
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    if (colNum === 1) cell.alignment.horizontal = 'left';
+    if ([2, 4, 5, 6, 7].includes(colNum)) cell.numFmt = '"$"#,##0.00';
+  });
+
+  wsM.getColumn(1).width = 18;
+  wsM.getColumn(2).width = 14;
+  wsM.getColumn(3).width = 10;
+  wsM.getColumn(4).width = 16;
+  wsM.getColumn(5).width = 16;
+  wsM.getColumn(6).width = 14;
+  wsM.getColumn(7).width = 14;
+
+  // ══════════════════════════════════════
+  // Hoja 3: Por Edificio (acumulado)
+  // ══════════════════════════════════════
+  const wsE = wb.addWorksheet('Por Edificio');
+  agregarLogo(wb, wsE, 6);
+
+  wsE.mergeCells('A1:F1');
+  const te = wsE.getCell('A1');
+  te.value = `Cobranza por Edificio — ${periodoLabel}`;
+  te.font  = { bold: true, size: 14, color: { argb: 'FF' + COLOR_HEADER } };
+  te.alignment = { horizontal: 'center', vertical: 'middle' };
+  wsE.getRow(1).height = 32;
+  wsE.addRow([]);
+
+  const ehRow = wsE.addRow(['Edificio', 'Recaudado', '# Pagos', 'Al corriente', 'Morosos']);
+  ehRow.height = 20;
+  ehRow.eachCell(cell => {
+    cell.fill      = headerFill(COLOR_HEADER);
+    cell.font      = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.border    = border();
+  });
+
+  params.porEdificio.forEach((ed, i) => {
+    const row = wsE.addRow([`Edif. ${ed.edificio}`, ed.totalPagado, ed.cantidadPagos, ed.residentesActivos, ed.residentesMorosos]);
+    row.height = 18;
+    const isAlt = i % 2 === 1;
+    row.eachCell({ includeEmpty: true }, (cell, colNum) => {
+      cell.fill      = headerFill(isAlt ? COLOR_ROW_ALT : COLOR_WHITE);
+      cell.border    = border();
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.font      = { size: 10 };
+      if (colNum === 1) cell.alignment.horizontal = 'left';
+      if (colNum === 2) { cell.numFmt = '"$"#,##0.00'; cell.font = { bold: true, color: { argb: 'FF065F46' }, size: 10 }; }
+      if (colNum === 5 && ed.residentesMorosos > 0) cell.font = { bold: true, color: { argb: 'FF991B1B' }, size: 10 };
+    });
+  });
+
+  wsE.getColumn(1).width = 14;
+  wsE.getColumn(2).width = 16;
+  wsE.getColumn(3).width = 10;
+  wsE.getColumn(4).width = 14;
+  wsE.getColumn(5).width = 12;
+
+  // ══════════════════════════════════════
+  // Hoja 4: Gastos (todos en el rango)
+  // ══════════════════════════════════════
+  const wsG = wb.addWorksheet('Gastos');
+  agregarLogo(wb, wsG, 6);
+
+  wsG.mergeCells('A1:F1');
+  const tg = wsG.getCell('A1');
+  tg.value = `Gastos — ${periodoLabel}`;
+  tg.font  = { bold: true, size: 14, color: { argb: 'FF' + COLOR_HEADER } };
+  tg.alignment = { horizontal: 'center', vertical: 'middle' };
+  wsG.getRow(1).height = 32;
+  wsG.addRow([]);
+
+  const ghRow = wsG.addRow(['Período', 'Concepto', 'Categoría', 'Fecha', 'Monto']);
+  ghRow.height = 20;
+  ghRow.eachCell(cell => {
+    cell.fill      = headerFill(COLOR_HEADER);
+    cell.font      = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.border    = border();
+  });
+
+  if (params.gastos.length === 0) {
+    const emptyRow = wsG.addRow(['Sin gastos registrados en el período', '', '', '', '']);
+    wsG.mergeCells(emptyRow.number, 1, emptyRow.number, 5);
+    emptyRow.getCell(1).alignment = { horizontal: 'center' };
+    emptyRow.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' } };
+  } else {
+    params.gastos.forEach((g, i) => {
+      const row = wsG.addRow([
+        `${MESES_ES[g.mes - 1]} ${g.anio}`,
+        g.concepto,
+        g.categoria,
+        new Date(g.fecha).toLocaleDateString('es-MX'),
+        Number(g.monto),
+      ]);
+      row.height = 18;
+      const isAlt = i % 2 === 1;
+      row.eachCell({ includeEmpty: true }, (cell, colNum) => {
+        cell.fill      = headerFill(isAlt ? COLOR_ROW_ALT : COLOR_WHITE);
+        cell.border    = border();
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.font      = { size: 10 };
+        if ([1, 2].includes(colNum)) cell.alignment.horizontal = 'left';
+        if (colNum === 5) { cell.numFmt = '"$"#,##0.00'; cell.font = { bold: true, color: { argb: 'FF991B1B' }, size: 10 }; }
+      });
+    });
+
+    const gTotalRow = wsG.addRow(['TOTAL GASTOS', '', '', '', params.totalGastos]);
+    gTotalRow.height = 20;
+    gTotalRow.eachCell({ includeEmpty: true }, (cell, colNum) => {
+      cell.fill      = headerFill('FEE2E2');
+      cell.font      = { bold: true, size: 10, color: { argb: 'FF991B1B' } };
+      cell.border    = border();
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      if (colNum === 1) cell.alignment.horizontal = 'left';
+      if (colNum === 5) cell.numFmt = '"$"#,##0.00';
+    });
+  }
+
+  wsG.getColumn(1).width = 14;
+  wsG.getColumn(2).width = 30;
+  wsG.getColumn(3).width = 16;
+  wsG.getColumn(4).width = 14;
+  wsG.getColumn(5).width = 14;
+
+  // ══════════════════════════════════════
+  // Hoja 5: Ingresos Adicionales (todos)
+  // ══════════════════════════════════════
+  const wsI2 = wb.addWorksheet('Ingresos Adicionales');
+  agregarLogo(wb, wsI2, 5);
+
+  wsI2.mergeCells('A1:E1');
+  const ti = wsI2.getCell('A1');
+  ti.value = `Ingresos Adicionales — ${periodoLabel}`;
+  ti.font  = { bold: true, size: 14, color: { argb: 'FF' + COLOR_HEADER } };
+  ti.alignment = { horizontal: 'center', vertical: 'middle' };
+  wsI2.getRow(1).height = 32;
+  wsI2.addRow([]);
+
+  const ihRow = wsI2.addRow(['Período', 'Concepto', 'Fecha', 'Monto']);
+  ihRow.height = 20;
+  ihRow.eachCell(cell => {
+    cell.fill      = headerFill(COLOR_HEADER);
+    cell.font      = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.border    = border();
+  });
+
+  if (params.ingresos.length === 0) {
+    const emptyRow = wsI2.addRow(['Sin ingresos adicionales en el período', '', '', '']);
+    wsI2.mergeCells(emptyRow.number, 1, emptyRow.number, 4);
+    emptyRow.getCell(1).alignment = { horizontal: 'center' };
+    emptyRow.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' } };
+  } else {
+    params.ingresos.forEach((ing, i) => {
+      const row = wsI2.addRow([
+        `${MESES_ES[ing.mes - 1]} ${ing.anio}`,
+        ing.concepto,
+        new Date(ing.fecha).toLocaleDateString('es-MX'),
+        Number(ing.monto),
+      ]);
+      row.height = 18;
+      const isAlt = i % 2 === 1;
+      row.eachCell({ includeEmpty: true }, (cell, colNum) => {
+        cell.fill      = headerFill(isAlt ? COLOR_ROW_ALT : COLOR_WHITE);
+        cell.border    = border();
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.font      = { size: 10 };
+        if ([1, 2].includes(colNum)) cell.alignment.horizontal = 'left';
+        if (colNum === 4) { cell.numFmt = '"$"#,##0.00'; cell.font = { bold: true, color: { argb: 'FF065F46' }, size: 10 }; }
+      });
+    });
+
+    const iTotalRow = wsI2.addRow(['TOTAL INGRESOS ADICIONALES', '', '', params.totalIngresosAdicionales]);
+    iTotalRow.height = 20;
+    iTotalRow.eachCell({ includeEmpty: true }, (cell, colNum) => {
+      cell.fill      = headerFill('D1FAE5');
+      cell.font      = { bold: true, size: 10, color: { argb: 'FF065F46' } };
+      cell.border    = border();
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      if (colNum === 1) cell.alignment.horizontal = 'left';
+      if (colNum === 4) cell.numFmt = '"$"#,##0.00';
+    });
+  }
+
+  wsI2.getColumn(1).width = 14;
+  wsI2.getColumn(2).width = 35;
+  wsI2.getColumn(3).width = 14;
+  wsI2.getColumn(4).width = 16;
+
+  return Buffer.from(await wb.xlsx.writeBuffer() as ArrayBuffer);
+}

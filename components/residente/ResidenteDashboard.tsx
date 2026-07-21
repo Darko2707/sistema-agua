@@ -312,20 +312,20 @@ export function ResidenteDashboard() {
           </div>
 
           {/* Brand row + avatar */}
-          <div style={{ position: 'relative', zIndex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ position: 'relative', zIndex: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
             {/* Brand */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-              <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 6px 16px rgba(120,90,30,.16)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 11, flex: 1, minWidth: 0 }}>
+              <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 6px 16px rgba(120,90,30,.16)', flexShrink: 0 }}>
                 <DropIcon size={26} color={C.greenDark} />
               </div>
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <div style={{ fontFamily: FB, fontSize: 20, fontWeight: 800, color: C.greenDark, lineHeight: 1 }}>SIS4S</div>
-                <div style={{ fontSize: 11, color: C.textWarm, marginTop: 3, fontWeight: 600 }}>Ciudad de los 4 Soles</div>
+                <div style={{ fontSize: 11, color: C.textWarm, marginTop: 3, fontWeight: 600, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>Ciudad de los 4 Soles</div>
               </div>
             </div>
 
             {/* Avatar + dropdown */}
-            <div ref={menuRef} style={{ position: 'relative' }}>
+            <div ref={menuRef} style={{ position: 'relative', flexShrink: 0 }}>
               <button
                 onClick={() => setMenuOpen(v => !v)}
                 aria-expanded={menuOpen}
