@@ -1,98 +1,101 @@
 'use client';
 
-import { signIn, signOut, authClient } from '@/lib/auth-client';
+import { signIn, authClient } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
-import { Eye, EyeOff } from 'lucide-react';
 import Image from 'next/image';
 
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+const C = {
+  green:    '#15493A',
+  greenDk:  '#0F3B2D',
+  bg:       '#F0EEE6',
+  border:   '#D8D4C8',
+  textMain: '#1F2A22',
+  textMute: '#8A8879',
+  danger:   '#C0453F',
+  dangerBg: '#FBEAE9',
+  ok:       '#3D7A52',
+  okBg:     '#E7F2EA',
+} as const;
+
+const FM = "var(--font-manrope), 'Manrope', sans-serif";
+const FS = "var(--font-space-grotesk), 'Space Grotesk', sans-serif";
+
+const inputBase: React.CSSProperties = {
+  width: '100%', boxSizing: 'border-box',
+  padding: '10px 14px', borderRadius: 12,
+  border: `1.5px solid ${C.border}`,
+  fontSize: 14, fontFamily: FM, color: C.textMain, background: '#fff',
+  outline: 'none', transition: 'border-color .15s, box-shadow .15s',
+};
+
+const labelBase: React.CSSProperties = {
+  display: 'block', fontSize: 13, fontWeight: 700,
+  color: C.textMain, fontFamily: FM, marginBottom: 5,
+};
+
+const btnGreen: React.CSSProperties = {
+  width: '100%', padding: '12px', borderRadius: 13,
+  background: C.green, color: '#fff', border: 'none',
+  fontFamily: FM, fontSize: 14, fontWeight: 700,
+  cursor: 'pointer', letterSpacing: '.01em',
+};
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [resetEmail, setResetEmail] = useState('');
-  const [showReset, setShowReset] = useState(false);
-  const [resetSent, setResetSent] = useState(false);
+  const [email,        setEmail]        = useState('');
+  const [password,     setPassword]     = useState('');
+  const [showPwd,      setShowPwd]      = useState(false);
+  const [error,        setError]        = useState('');
+  const [loading,      setLoading]      = useState(false);
+  const [resetEmail,   setResetEmail]   = useState('');
+  const [showReset,    setShowReset]    = useState(false);
+  const [resetSent,    setResetSent]    = useState(false);
   const [resetLoading, setResetLoading] = useState(false);
-  const [resetError, setResetError] = useState('');
+  const [resetError,   setResetError]   = useState('');
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError('');
-
     try {
       const { error: signInError } = await signIn.email({ email, password });
-
       if (signInError) {
-        setError(signInError.message || 'Correo o contraseña incorrectos');
+        setError(signInError.message ?? 'Correo o contraseña incorrectos');
         setLoading(false);
         return;
       }
-
       const session = await authClient.getSession();
       const rol = (session?.data?.user as { role?: string })?.role ?? 'residente';
-
       localStorage.setItem('userRole', rol);
-
-      if (rol === 'admin') {
-        router.push('/admin');
-      } else if (rol === 'representante') {
-        router.push('/representante');
-      } else if (rol === 'cuadrilla_cortes') {
-        router.push('/trabajador');
-      } else {
-        router.push('/residente');
-      }
+      if (rol === 'admin') router.push('/admin');
+      else if (rol === 'representante') router.push('/representante');
+      else if (rol === 'cuadrilla_cortes') router.push('/trabajador');
+      else router.push('/residente');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Error inesperado');
       setLoading(false);
     }
   }
 
-  async function handleResetPassword(e: React.FormEvent) {
+  async function handleReset(e: React.FormEvent) {
     e.preventDefault();
     setResetLoading(true);
     setResetError('');
     setResetSent(false);
-
     try {
       const res = await fetch('/api/auth/request-password-reset', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          email: resetEmail,
-          redirectTo: '/reset-password',
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: resetEmail, redirectTo: '/reset-password' }),
       });
-
       if (res.ok) {
         setResetSent(true);
         setResetEmail('');
-        setTimeout(() => {
-          setShowReset(false);
-          setResetSent(false);
-        }, 5000);
+        setTimeout(() => { setShowReset(false); setResetSent(false); }, 5000);
       } else {
-        const data = await res.json();
-        setResetError(data.error || 'Error al enviar el correo de recuperación');
+        const data = await res.json() as { error?: string };
+        setResetError(data.error ?? 'Error al enviar el correo de recuperación');
       }
     } catch (err: unknown) {
       setResetError(err instanceof Error ? err.message : 'Error al enviar el correo');
@@ -101,139 +104,119 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-sky-100 via-white to-cyan-100 flex items-center justify-center p-4">
-      <Card className="w-full max-w-md shadow-2xl border-0">
-        <CardHeader className="space-y-5 text-center">
-          <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-2xl overflow-hidden">
-            <Image
-              src="/logo1SIS4S.png"
-              alt="SIS4S Logo"
-              width={80}
-              height={80}
-              className="object-contain"
-              priority
-            />
-          </div>
-          <div>
-            <CardTitle className="text-3xl">Iniciar sesión</CardTitle>
-            <CardDescription className="mt-2">
-              Ingresa tus credenciales para acceder al sistema
-            </CardDescription>
-          </div>
-        </CardHeader>
+    <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px 16px', fontFamily: FM }}>
+      <style>{`
+        .a-inp:focus { border-color: #15493A !important; box-shadow: 0 0 0 3px rgba(21,73,58,.12) !important; }
+        .a-lnk { background: none; border: none; padding: 0; font-family: inherit; font-size: 13px; font-weight: 600; color: #15493A; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+        .a-lnk:hover { color: #0F3B2D; }
+      `}</style>
 
-        <CardContent>
+      <div style={{ width: '100%', maxWidth: 400, background: '#fff', borderRadius: 24, boxShadow: '0 20px 60px rgba(0,0,0,.12), 0 4px 16px rgba(0,0,0,.06)', overflow: 'hidden' }}>
+
+        {/* ── Green header ── */}
+        <div style={{ background: C.green, padding: '30px 28px 24px', textAlign: 'center' }}>
+          <div style={{ width: 68, height: 68, borderRadius: 18, overflow: 'hidden', background: '#fff', margin: '0 auto 14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Image src="/logo1SIS4S.png" alt="SIS4S Logo" width={60} height={60} style={{ objectFit: 'contain' }} priority />
+          </div>
+          <div style={{ fontFamily: FS, fontSize: 22, fontWeight: 800, color: '#fff', lineHeight: 1.2 }}>
+            {showReset ? 'Recuperar contraseña' : 'Bienvenido de vuelta'}
+          </div>
+          <div style={{ fontSize: 13, color: 'rgba(255,255,255,.62)', marginTop: 5 }}>
+            {showReset ? 'Te enviaremos un enlace de recuperación' : 'Ingresa tus credenciales para continuar'}
+          </div>
+        </div>
+
+        {/* ── Form body ── */}
+        <div style={{ padding: '26px 28px 28px' }}>
           {!showReset ? (
-            <form onSubmit={handleLogin} className="space-y-5">
-              <div className="space-y-2">
-                <Label htmlFor="email">Correo electrónico</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="tu@correo.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                />
+            <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 16 }} noValidate>
+              <div>
+                <label htmlFor="login-email" style={labelBase}>Correo electrónico</label>
+                <input id="login-email" type="email" className="a-inp"
+                  placeholder="tu@correo.com" autoComplete="email" required
+                  value={email} onChange={e => setEmail(e.target.value)}
+                  style={inputBase} />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="password">Contraseña</Label>
-                <div className="relative">
-                  <Input
-                    id="password"
-                    type={showPassword ? 'text' : 'password'}
-                    placeholder="••••••••"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-                  >
-                    {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+              <div>
+                <label htmlFor="login-pwd" style={labelBase}>Contraseña</label>
+                <div style={{ position: 'relative' }}>
+                  <input id="login-pwd" type={showPwd ? 'text' : 'password'} className="a-inp"
+                    placeholder="••••••••" autoComplete="current-password" required
+                    value={password} onChange={e => setPassword(e.target.value)}
+                    style={{ ...inputBase, paddingRight: 44 }} />
+                  <button type="button" aria-label={showPwd ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                    onClick={() => setShowPwd(v => !v)}
+                    style={{ position: 'absolute', right: 13, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: C.textMute, display: 'flex', alignItems: 'center', padding: 0 }}>
+                    {showPwd
+                      ? <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                      : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    }
                   </button>
                 </div>
               </div>
 
               {error && (
-                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+                <div role="alert" style={{ background: C.dangerBg, border: '1px solid #F3BFBF', borderRadius: 12, padding: '10px 14px', fontSize: 13, color: C.danger, fontWeight: 600 }}>
                   {error}
                 </div>
               )}
 
-              <Button type="submit" className="w-full h-11" disabled={loading}>
+              <button type="submit" disabled={loading} style={{ ...btnGreen, opacity: loading ? 0.75 : 1, marginTop: 2 }}>
                 {loading ? 'Ingresando...' : 'Iniciar sesión'}
-              </Button>
+              </button>
 
-              <div className="text-center mt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowReset(true)}
-                  className="text-sm text-primary hover:underline focus:outline-none"
-                >
+              <div style={{ textAlign: 'center' }}>
+                <button type="button" className="a-lnk" onClick={() => setShowReset(true)}>
                   ¿Olvidaste tu contraseña?
                 </button>
               </div>
             </form>
           ) : (
-            <form onSubmit={handleResetPassword} className="space-y-5">
-              <div className="space-y-2">
-                <Label htmlFor="reset-email">Correo electrónico</Label>
-                <Input
-                  id="reset-email"
-                  type="email"
-                  placeholder="tu@correo.com"
-                  value={resetEmail}
-                  onChange={(e) => setResetEmail(e.target.value)}
-                  required
-                />
-                <p className="text-xs text-muted-foreground">
+            <form onSubmit={handleReset} style={{ display: 'flex', flexDirection: 'column', gap: 16 }} noValidate>
+              <div>
+                <label htmlFor="reset-email" style={labelBase}>Correo electrónico</label>
+                <input id="reset-email" type="email" className="a-inp"
+                  placeholder="tu@correo.com" autoComplete="email" required
+                  value={resetEmail} onChange={e => setResetEmail(e.target.value)}
+                  style={inputBase} />
+                <p style={{ fontSize: 12, color: C.textMute, marginTop: 5, lineHeight: 1.4 }}>
                   Te enviaremos un enlace para restablecer tu contraseña.
                 </p>
               </div>
 
               {resetError && (
-                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+                <div role="alert" style={{ background: C.dangerBg, border: '1px solid #F3BFBF', borderRadius: 12, padding: '10px 14px', fontSize: 13, color: C.danger, fontWeight: 600 }}>
                   {resetError}
                 </div>
               )}
-
               {resetSent && (
-                <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-600">
-                  ✅ Correo de recuperación enviado. Revisa tu bandeja de entrada.
+                <div role="alert" style={{ background: C.okBg, border: '1px solid #B0DFC0', borderRadius: 12, padding: '10px 14px', fontSize: 13, color: C.ok, fontWeight: 600 }}>
+                  ✓ Correo enviado. Revisa tu bandeja de entrada.
                 </div>
               )}
 
-              <Button type="submit" className="w-full h-11" disabled={resetLoading}>
+              <button type="submit" disabled={resetLoading} style={{ ...btnGreen, opacity: resetLoading ? 0.75 : 1 }}>
                 {resetLoading ? 'Enviando...' : 'Enviar enlace de recuperación'}
-              </Button>
+              </button>
 
-              <div className="text-center mt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowReset(false);
-                    setResetError('');
-                    setResetSent(false);
-                  }}
-                  className="text-sm text-muted-foreground hover:underline focus:outline-none"
-                >
+              <div style={{ textAlign: 'center' }}>
+                <button type="button" className="a-lnk" style={{ color: C.textMute, fontWeight: 500 }}
+                  onClick={() => { setShowReset(false); setResetError(''); setResetSent(false); }}>
                   ← Volver al inicio de sesión
                 </button>
               </div>
             </form>
           )}
-        </CardContent>
 
-        <CardFooter className="justify-center">
-          <Button variant="link" onClick={() => router.push('/registro')}>
-            ¿No tienes cuenta? Regístrate
-          </Button>
-        </CardFooter>
-      </Card>
+          <div style={{ borderTop: '1px solid #E8E4D8', marginTop: 22, paddingTop: 18, textAlign: 'center', fontSize: 13, color: C.textMute }}>
+            ¿No tienes cuenta?{' '}
+            <button type="button" className="a-lnk" onClick={() => router.push('/registro')}>
+              Regístrate
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

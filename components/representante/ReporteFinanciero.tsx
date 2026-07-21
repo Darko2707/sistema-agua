@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { trpcReact } from '@/lib/trpc-react';
 import {
-  FileDown, Plus, Pencil, Trash2, Loader2,
+  Plus, Pencil, Trash2, Loader2,
   TrendingUp, Users, AlertTriangle, DollarSign, Wallet,
 } from 'lucide-react';
 
@@ -238,133 +238,6 @@ function IngresoModal({ open, onClose, titulo, inicial, mes, anio, onGuardar }: 
   );
 }
 
-// ─── Modal de rango para Excel ────────────────────────────────────────────────
-
-interface ExcelRangoModalProps {
-  open:          boolean;
-  onClose:       () => void;
-  mesActual:     number;
-  anioActual:    number;
-  onExportar:    (desde: { mes: number; anio: number }, hasta: { mes: number; anio: number }) => Promise<void>;
-}
-
-function ExcelRangoModal({ open, onClose, mesActual, anioActual, onExportar }: ExcelRangoModalProps) {
-  const hoy       = new Date();
-  const aniosOpts = Array.from({ length: 5 }, (_, i) => hoy.getFullYear() - 2 + i);
-
-  const [mesDesde,  setMesDesde]  = useState(mesActual);
-  const [anioDesde, setAnioDesde] = useState(anioActual);
-  const [mesHasta,  setMesHasta]  = useState(mesActual);
-  const [anioHasta, setAnioHasta] = useState(anioActual);
-  const [exportando, setExportando] = useState(false);
-  const [errMsg,     setErrMsg]   = useState('');
-
-  if (!open) return null;
-
-  const desdeNum = anioDesde * 100 + mesDesde;
-  const hastaNum = anioHasta * 100 + mesHasta;
-  const rangoValido = hastaNum >= desdeNum;
-
-  async function handleExportar() {
-    if (!rangoValido) { setErrMsg('La fecha de inicio debe ser anterior o igual a la fecha de fin'); return; }
-    setExportando(true);
-    setErrMsg('');
-    try {
-      await onExportar({ mes: mesDesde, anio: anioDesde }, { mes: mesHasta, anio: anioHasta });
-      onClose();
-    } catch (err: unknown) {
-      setErrMsg(err instanceof Error ? err.message : 'Error al generar Excel');
-    } finally {
-      setExportando(false);
-    }
-  }
-
-  const periodosLabel = desdeNum === hastaNum
-    ? `${MESES_FULL[mesDesde - 1]} ${anioDesde}`
-    : `${MESES_FULL[mesDesde - 1]} ${anioDesde} — ${MESES_FULL[mesHasta - 1]} ${anioHasta}`;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div className="bg-background rounded-xl shadow-2xl w-full max-w-sm p-6 space-y-5" onClick={e => e.stopPropagation()}>
-        <div>
-          <h2 className="text-lg font-semibold">Exportar Excel</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">Selecciona el rango de meses a incluir en el reporte.</p>
-        </div>
-
-        {errMsg && (
-          <div role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600">{errMsg}</div>
-        )}
-
-        {/* Desde */}
-        <div className="space-y-2">
-          <Label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Desde</Label>
-          <div className="flex gap-2">
-            <select
-              className="flex-1 h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
-              value={mesDesde}
-              onChange={e => setMesDesde(parseInt(e.target.value, 10))}
-            >
-              {MESES_FULL.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
-            </select>
-            <select
-              className="w-24 h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
-              value={anioDesde}
-              onChange={e => setAnioDesde(parseInt(e.target.value, 10))}
-            >
-              {aniosOpts.map(a => <option key={a} value={a}>{a}</option>)}
-            </select>
-          </div>
-        </div>
-
-        {/* Hasta */}
-        <div className="space-y-2">
-          <Label className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Hasta</Label>
-          <div className="flex gap-2">
-            <select
-              className="flex-1 h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
-              value={mesHasta}
-              onChange={e => setMesHasta(parseInt(e.target.value, 10))}
-            >
-              {MESES_FULL.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
-            </select>
-            <select
-              className="w-24 h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring"
-              value={anioHasta}
-              onChange={e => setAnioHasta(parseInt(e.target.value, 10))}
-            >
-              {aniosOpts.map(a => <option key={a} value={a}>{a}</option>)}
-            </select>
-          </div>
-        </div>
-
-        {/* Preview */}
-        {rangoValido && (
-          <div className="rounded-lg bg-green-50 border border-green-200 px-3 py-2 text-sm text-green-700 font-medium">
-            Reporte: {periodosLabel}
-          </div>
-        )}
-        {!rangoValido && (
-          <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-sm text-amber-700">
-            El mes de inicio debe ser anterior al mes de fin.
-          </div>
-        )}
-
-        <div className="flex gap-2 justify-end pt-1">
-          <Button type="button" variant="outline" onClick={onClose} disabled={exportando}>Cancelar</Button>
-          <Button
-            onClick={handleExportar}
-            disabled={exportando || !rangoValido}
-            className="gap-2 bg-green-700 hover:bg-green-800"
-          >
-            {exportando ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
-            Descargar Excel
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 // ─── Toast ────────────────────────────────────────────────────────────────────
 
 function useToast() {
@@ -389,7 +262,6 @@ export function ReporteFinanciero() {
   }>(null);
   const [ingresoModalAbierto, setIngresoModalAbierto]  = useState(false);
   const [ingresoEditando,     setIngresoEditando]      = useState<IngresoEditing>(null);
-  const [excelModalAbierto,   setExcelModalAbierto]    = useState(false);
   const [eliminandoId,        setEliminandoId]         = useState<string | null>(null);
   const [eliminandoIngresoId, setEliminandoIngresoId]  = useState<string | null>(null);
   const { toast, mostrar } = useToast();
@@ -456,31 +328,6 @@ export function ReporteFinanciero() {
     try { await eliminarIngresoMutation.mutateAsync({ id }); } finally { setEliminandoIngresoId(null); }
   }
 
-  async function exportarExcel(
-    desde: { mes: number; anio: number },
-    hasta: { mes: number; anio: number },
-  ) {
-    const params = new URLSearchParams({
-      mesDesde:  String(desde.mes),
-      anioDesde: String(desde.anio),
-      mesHasta:  String(hasta.mes),
-      anioHasta: String(hasta.anio),
-    });
-    const res = await fetch(`/api/reportes/financiero?${params}`);
-    if (!res.ok) throw new Error('Error al generar Excel');
-    const blob = await res.blob();
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href     = url;
-    const label = desde.anio === hasta.anio && desde.mes === hasta.mes
-      ? `${desde.mes}-${desde.anio}`
-      : `${desde.mes}-${desde.anio}_a_${hasta.mes}-${hasta.anio}`;
-    a.download = `reporte-financiero-${label}.xlsx`;
-    a.click();
-    URL.revokeObjectURL(url);
-    mostrar('Excel generado correctamente');
-  }
-
   return (
     <div className="space-y-4">
       {/* Toast */}
@@ -517,17 +364,6 @@ export function ReporteFinanciero() {
               </div>
             </div>
 
-            <div className="md:ml-auto">
-              <Button
-                onClick={() => setExcelModalAbierto(true)}
-                disabled={cargando}
-                variant="outline"
-                className="gap-2"
-              >
-                <FileDown className="h-4 w-4" />
-                Generar Excel
-              </Button>
-            </div>
           </div>
         </CardContent>
       </Card>
@@ -753,13 +589,6 @@ export function ReporteFinanciero() {
         inicial={ingresoEditando ?? undefined}
         mes={mes} anio={anio}
         onGuardar={ingresoEditando ? handleEditarIngreso : handleAgregarIngreso}
-      />
-      <ExcelRangoModal
-        open={excelModalAbierto}
-        onClose={() => setExcelModalAbierto(false)}
-        mesActual={mes}
-        anioActual={anio}
-        onExportar={exportarExcel}
       />
     </div>
   );

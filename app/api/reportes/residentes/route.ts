@@ -55,6 +55,11 @@ export async function GET(req: Request) {
   const estadoFiltro   = url.searchParams.get('estadoAgua') as 'activo' | 'pendiente_corte' | 'cortado' | 'pendiente_reconexion' | null;
   const edificioFiltro = url.searchParams.get('edificio') ?? undefined;
 
+  const mesDesdeRaw  = url.searchParams.get('mesDesde');
+  const anioDesdeRaw = url.searchParams.get('anioDesde');
+  const mesHastaRaw  = url.searchParams.get('mesHasta');
+  const anioHastaRaw = url.searchParams.get('anioHasta');
+
   const residentes = await db.query.perfilesResidente.findMany({
     where: (p, { eq, and }) => {
       const conds = [eq(p.circuitoId, circuito.id)];
@@ -65,12 +70,21 @@ export async function GET(req: Request) {
     with: { usuario: true },
   });
 
-  // Últimos 12 meses
   const hoy = new Date();
   const periodos: { mes: number; anio: number }[] = [];
-  for (let i = 11; i >= 0; i--) {
-    const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
-    periodos.push({ mes: d.getMonth() + 1, anio: d.getFullYear() });
+  if (mesDesdeRaw && anioDesdeRaw && mesHastaRaw && anioHastaRaw) {
+    const mD = parseInt(mesDesdeRaw, 10), aD = parseInt(anioDesdeRaw, 10);
+    const mH = parseInt(mesHastaRaw, 10), aH = parseInt(anioHastaRaw, 10);
+    let m = mD, a = aD;
+    while (a < aH || (a === aH && m <= mH)) {
+      periodos.push({ mes: m, anio: a });
+      if (++m > 12) { m = 1; a++; }
+    }
+  } else {
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+      periodos.push({ mes: d.getMonth() + 1, anio: d.getFullYear() });
+    }
   }
 
   const perfilIds = residentes.map(r => r.id);

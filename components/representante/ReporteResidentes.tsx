@@ -2,7 +2,8 @@
 
 import { useState, useMemo } from 'react';
 import { trpcReact } from '@/lib/trpc-react';
-import { FileDown, Search, Filter, Loader2, Users } from 'lucide-react';
+import { FileDown, Search, Loader2, Users } from 'lucide-react';
+import { ExcelRangoModal } from '@/components/shared/ExcelRangoModal';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -58,6 +59,7 @@ export function ReporteResidentes() {
   const [busqueda,       setBusqueda]       = useState('');
   const [orden,          setOrden]          = useState<OrdenResidentes>('edificio');
   const [descargando,    setDescargando]    = useState(false);
+  const [excelModal,     setExcelModal]     = useState(false);
 
   const edificiosQuery = trpcReact.reportes.edificiosCircuito.useQuery();
   const residentesQuery = trpcReact.reportes.reporteResidentes.useQuery({
@@ -75,13 +77,20 @@ export function ReporteResidentes() {
   // Calcular los periodos desde el primer residente (todos comparten los mismos 12 meses)
   const periodos = useMemo(() => residentes[0]?.pagosAnio ?? [], [residentes]);
 
-  async function exportarExcel() {
+  async function exportarExcel(
+    desde: { mes: number; anio: number },
+    hasta: { mes: number; anio: number },
+  ) {
     setDescargando(true);
     try {
       const params = new URLSearchParams();
       if (estadoFiltro)   params.set('estadoAgua', estadoFiltro);
       if (edificioFiltro) params.set('edificio', edificioFiltro);
       params.set('orden', orden);
+      params.set('mesDesde',  String(desde.mes));
+      params.set('anioDesde', String(desde.anio));
+      params.set('mesHasta',  String(hasta.mes));
+      params.set('anioHasta', String(hasta.anio));
 
       const res  = await fetch(`/api/reportes/residentes?${params}`);
       if (!res.ok) throw new Error('Error al generar Excel');
@@ -89,11 +98,14 @@ export function ReporteResidentes() {
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement('a');
       a.href     = url;
-      a.download = 'reporte-residentes.xlsx';
+      const label = desde.anio === hasta.anio && desde.mes === hasta.mes
+        ? `${desde.mes}-${desde.anio}`
+        : `${desde.mes}-${desde.anio}_a_${hasta.mes}-${hasta.anio}`;
+      a.download = `reporte-residentes-${label}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
     } catch {
-      alert('No se pudo generar el Excel. Intenta nuevamente.');
+      throw new Error('No se pudo generar el Excel. Intenta nuevamente.');
     } finally {
       setDescargando(false);
     }
@@ -151,9 +163,9 @@ export function ReporteResidentes() {
             </select>
 
             {/* Exportar */}
-            <Button onClick={exportarExcel} disabled={descargando || cargando} variant="outline" className="gap-2">
-              {descargando ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
-              Exportar Excel
+            <Button onClick={() => setExcelModal(true)} disabled={cargando} variant="outline" className="gap-2">
+              <FileDown className="h-4 w-4" />
+              Generar Excel
             </Button>
           </div>
         </CardContent>
@@ -181,6 +193,16 @@ export function ReporteResidentes() {
       {error && (
         <div role="alert" aria-live="polite" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>
       )}
+
+      <ExcelRangoModal
+        open={excelModal}
+        onClose={() => setExcelModal(false)}
+        mesActual={new Date().getMonth() + 1}
+        anioActual={new Date().getFullYear()}
+        titulo="Reporte de residentes"
+        subtitulo="Selecciona el rango de meses de historial de pagos a incluir."
+        onExportar={exportarExcel}
+      />
 
       {/* Tabla */}
       <Card>

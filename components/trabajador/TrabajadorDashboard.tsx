@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { authClient } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
 import { useSession } from '@/hooks/useAuth';
@@ -130,10 +130,33 @@ export function TrabajadorDashboard() {
   const [filter, setFilter]       = useState<FilterType>('todos');
   const [procesando, setProcesando] = useState<string | null>(null);
   const [error, setError]         = useState<string | null>(null);
+  const [menuOpen, setMenuOpen]   = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
-  const cortesQ      = trpcReact.cortes.pendientesDeCorte.useQuery();
-  const reconexionesQ = trpcReact.cortes.pendientesDeReconexion.useQuery();
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const cortesQ = trpcReact.cortes.pendientesDeCorte.useQuery(undefined, {
+    refetchInterval:     30_000,
+    refetchOnWindowFocus: true,
+  });
+  const reconexionesQ = trpcReact.cortes.pendientesDeReconexion.useQuery(undefined, {
+    refetchInterval:     30_000,
+    refetchOnWindowFocus: true,
+  });
   const { confirmarCorte, confirmarReconexion } = useActualizarEstadoAgua();
+
+  const queryError = cortesQ.error?.message ?? reconexionesQ.error?.message ?? null;
+
+  function refetchAll() {
+    void cortesQ.refetch();
+    void reconexionesQ.refetch();
+  }
 
   const cargando           = sessionPending || cortesQ.isLoading || reconexionesQ.isLoading;
   const pendientesCorte    = (cortesQ.data ?? []) as ResidenteJob[];
@@ -214,26 +237,41 @@ export function TrabajadorDashboard() {
               <div style={{ fontFamily: FS, fontSize: 16, fontWeight: 700, color: '#fff', letterSpacing: '.02em' }}>Cuadrilla SIS4S</div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div ref={menuRef} style={{ position: 'relative' }}>
               <button
-                onClick={() => router.push('/residente')}
-                aria-label="Ir a inicio"
-                style={{ background: C.headerCard, border: 'none', borderRadius: 10, padding: '6px 10px', cursor: 'pointer', color: '#9FC2AC', fontSize: 12, fontWeight: 700, fontFamily: FM }}
+                onClick={() => setMenuOpen(v => !v)}
+                aria-expanded={menuOpen}
+                aria-haspopup="menu"
+                aria-label="Menú de usuario"
+                style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.headerCard, border: '1.5px solid rgba(255,255,255,.12)', borderRadius: 30, padding: '4px 9px 4px 4px', cursor: 'pointer' }}
               >
-                Inicio
-              </button>
-              <button
-                onClick={salir}
-                aria-label="Cerrar sesión"
-                style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4 }}
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9FC2AC" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M10 4H6a2 2 0 00-2 2v12a2 2 0 002 2h4M16 8l4 4-4 4M20 12H9"/>
+                <span style={{ width: 34, height: 34, borderRadius: '50%', background: '#0A2E22', color: C.goldLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13, fontFamily: FS }}>
+                  {initials}
+                </span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={menuOpen ? C.gold : '#9FC2AC'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transition: 'transform .2s', transform: menuOpen ? 'rotate(180deg)' : 'none' }} aria-hidden="true">
+                  <polyline points="6 9 12 15 18 9"/>
                 </svg>
               </button>
-              <span style={{ width: 36, height: 36, borderRadius: '50%', background: C.headerCard, color: C.goldLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13, fontFamily: FS }}>
-                {initials}
-              </span>
+
+              {menuOpen && (
+                <div role="menu" style={{ position: 'absolute', right: 0, top: 50, width: 200, background: '#fff', borderRadius: 18, boxShadow: '0 16px 40px rgba(0,0,0,.22)', padding: 6, zIndex: 30 }}>
+                  <div style={{ padding: '10px 14px 9px', borderBottom: '1px solid #E4E1D5', marginBottom: 4 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: '#1F2A22', fontFamily: FS, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombre}</div>
+                    <div style={{ fontSize: 12, color: '#8A8879', marginTop: 2, fontFamily: FM }}>Cuadrilla SIS4S</div>
+                  </div>
+                  <button role="menuitem" onClick={() => { setMenuOpen(false); router.push('/residente'); }}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: 'none', border: 'none', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#1F2A22', fontFamily: FM, textAlign: 'left' }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                    Inicio
+                  </button>
+                  <div style={{ height: 1, background: '#E4E1D5', margin: '4px 9px' }} />
+                  <button role="menuitem" onClick={() => { setMenuOpen(false); void salir(); }}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: 'none', border: 'none', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#C0453F', fontFamily: FM, textAlign: 'left' }}>
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10 4H6a2 2 0 00-2 2v12a2 2 0 002 2h4M16 8l4 4-4 4M20 12H9"/></svg>
+                    Cerrar sesión
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -266,15 +304,35 @@ export function TrabajadorDashboard() {
 
           {/* Job list */}
           {visibleJobs.length === 0 ? (
-            <div style={{ background: '#fff', borderRadius: 18, padding: '32px 20px', textAlign: 'center', boxShadow: '0 4px 14px rgba(20,40,30,.06)' }}>
-              <span style={{ width: 52, height: 52, borderRadius: '50%', background: C.okBg, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }} aria-hidden="true">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={C.ok} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M5 12l4 4 10-11"/>
-                </svg>
-              </span>
-              <p style={{ fontSize: 14, color: C.textMuted, fontWeight: 600 }}>
-                {filter === 'corte' ? 'Sin cortes pendientes' : filter === 'reconexion' ? 'Sin reconexiones pendientes' : 'Sin trabajo pendiente'}
-              </p>
+            <div style={{ background: '#fff', borderRadius: 18, padding: '28px 20px', textAlign: 'center', boxShadow: '0 4px 14px rgba(20,40,30,.06)' }}>
+              {queryError ? (
+                <>
+                  <span style={{ width: 52, height: 52, borderRadius: '50%', background: C.dangerBg, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }} aria-hidden="true">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={C.danger} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                    </svg>
+                  </span>
+                  <p style={{ fontSize: 13, color: C.danger, fontWeight: 700, marginBottom: 4 }}>Error al cargar datos</p>
+                  <p style={{ fontSize: 12, color: C.textMuted, marginBottom: 14, lineHeight: 1.4 }}>{queryError}</p>
+                  <button onClick={refetchAll} style={{ background: C.bgHeader, color: '#fff', border: 'none', borderRadius: 12, padding: '9px 20px', fontSize: 13, fontWeight: 700, fontFamily: FM, cursor: 'pointer' }}>
+                    Reintentar
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span style={{ width: 52, height: 52, borderRadius: '50%', background: C.okBg, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }} aria-hidden="true">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={C.ok} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M5 12l4 4 10-11"/>
+                    </svg>
+                  </span>
+                  <p style={{ fontSize: 14, color: C.textMuted, fontWeight: 600, marginBottom: 12 }}>
+                    {filter === 'corte' ? 'Sin cortes pendientes' : filter === 'reconexion' ? 'Sin reconexiones pendientes' : 'Sin trabajo pendiente'}
+                  </p>
+                  <button onClick={refetchAll} style={{ background: 'none', border: '1px solid #DEDACB', color: '#6C7268', borderRadius: 12, padding: '7px 16px', fontSize: 12, fontWeight: 700, fontFamily: FM, cursor: 'pointer' }}>
+                    Actualizar lista
+                  </button>
+                </>
+              )}
             </div>
           ) : (
             <div role="list" aria-label="Lista de trabajos pendientes" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

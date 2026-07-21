@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { authClient } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
 import { useSession } from '@/hooks/useAuth';
@@ -105,6 +105,17 @@ export function RepresentanteDashboard() {
   const [tab, setTab]         = useState<TabId>('residentes');
   const [busqueda, setBusqueda] = useState('');
   const [toast, setToast]     = useState<{ msg: string; tipo: 'ok' | 'error' } | null>(null);
+
+  const [menuOpen,          setMenuOpen]          = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   const [modalPersonal,     setModalPersonal]     = useState(false);
   const [residenteSelId,    setResidenteSelId]    = useState('');
@@ -235,18 +246,43 @@ export function RepresentanteDashboard() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button onClick={() => router.push('/residente')} style={{ background: C.headerCard, border: 'none', borderRadius: 10, padding: '6px 12px', cursor: 'pointer', color: '#9FC2AC', fontSize: 12, fontWeight: 700, fontFamily: FM }}>
-              Inicio
-            </button>
-            <button onClick={salir} aria-label="Cerrar sesión" style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 4 }}>
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#9FC2AC" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M10 4H6a2 2 0 00-2 2v12a2 2 0 002 2h4M16 8l4 4-4 4M20 12H9"/>
+          <div ref={menuRef} style={{ position: 'relative' }}>
+            <button
+              onClick={() => setMenuOpen(v => !v)}
+              aria-expanded={menuOpen}
+              aria-haspopup="menu"
+              aria-label="Menú de usuario"
+              style={{ display: 'flex', alignItems: 'center', gap: 6, background: C.headerCard, border: '1.5px solid rgba(255,255,255,.12)', borderRadius: 30, padding: '4px 9px 4px 4px', cursor: 'pointer' }}
+            >
+              <span style={{ width: 34, height: 34, borderRadius: '50%', background: '#0A2E22', color: C.goldLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13, fontFamily: FS }}>
+                {initials}
+              </span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={menuOpen ? C.gold : '#9FC2AC'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transition: 'transform .2s', transform: menuOpen ? 'rotate(180deg)' : 'none' }} aria-hidden="true">
+                <polyline points="6 9 12 15 18 9"/>
               </svg>
             </button>
-            <span style={{ width: 36, height: 36, borderRadius: '50%', background: C.headerCard, color: C.goldLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13, fontFamily: FS }}>
-              {initials}
-            </span>
+
+            {menuOpen && (
+              <div role="menu" style={{ position: 'absolute', right: 0, top: 50, width: 210, background: '#fff', borderRadius: 18, boxShadow: '0 16px 40px rgba(0,0,0,.22)', padding: 6, zIndex: 30 }}>
+                <div style={{ padding: '10px 14px 9px', borderBottom: '1px solid #E4E1D5', marginBottom: 4 }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: '#1F2A22', fontFamily: FS, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombre}</div>
+                  <div style={{ fontSize: 12, color: '#8A8879', marginTop: 2, fontFamily: FM }}>
+                    {circuito?.nombre ? `Circuito ${circuito.nombre}` : 'Representante — SIS4S'}
+                  </div>
+                </div>
+                <button role="menuitem" onClick={() => { setMenuOpen(false); router.push('/residente'); }}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: 'none', border: 'none', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#1F2A22', fontFamily: FM, textAlign: 'left' }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                  Inicio
+                </button>
+                <div style={{ height: 1, background: '#E4E1D5', margin: '4px 9px' }} />
+                <button role="menuitem" onClick={() => { setMenuOpen(false); void salir(); }}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: 'none', border: 'none', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#C0453F', fontFamily: FM, textAlign: 'left' }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10 4H6a2 2 0 00-2 2v12a2 2 0 002 2h4M16 8l4 4-4 4M20 12H9"/></svg>
+                  Cerrar sesión
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
