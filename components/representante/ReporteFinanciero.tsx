@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { trpcReact } from '@/lib/trpc-react';
 import {
   Plus, Pencil, Trash2, Loader2,
-  TrendingUp, Users, AlertTriangle, DollarSign, Wallet,
+  TrendingUp, Users, AlertTriangle, DollarSign, Wallet, Download,
 } from 'lucide-react';
 
 import { Button }      from '@/components/ui/button';
@@ -15,6 +15,7 @@ import { Badge }       from '@/components/ui/badge';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
+import { ExcelRangoModal } from '@/components/shared/ExcelRangoModal';
 
 // ─── Tipos ───────────────────────────────────────────────────────────────────
 
@@ -264,6 +265,7 @@ export function ReporteFinanciero() {
   const [ingresoEditando,     setIngresoEditando]      = useState<IngresoEditing>(null);
   const [eliminandoId,        setEliminandoId]         = useState<string | null>(null);
   const [eliminandoIngresoId, setEliminandoIngresoId]  = useState<string | null>(null);
+  const [excelModal,          setExcelModal]           = useState(false);
   const { toast, mostrar } = useToast();
 
   const utils = trpcReact.useUtils();
@@ -328,6 +330,30 @@ export function ReporteFinanciero() {
     try { await eliminarIngresoMutation.mutateAsync({ id }); } finally { setEliminandoIngresoId(null); }
   }
 
+  async function exportarExcel(
+    desde: { mes: number; anio: number },
+    hasta: { mes: number; anio: number },
+  ) {
+    const params = new URLSearchParams({
+      mesDesde: String(desde.mes),
+      anioDesde: String(desde.anio),
+      mesHasta: String(hasta.mes),
+      anioHasta: String(hasta.anio),
+    });
+    const res = await fetch(`/api/reportes/financiero?${params}`);
+    if (!res.ok) throw new Error('Error al generar el reporte');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const label = desde.anio === hasta.anio && desde.mes === hasta.mes
+      ? `${desde.mes}-${desde.anio}`
+      : `${desde.mes}-${desde.anio}_a_${hasta.mes}-${hasta.anio}`;
+    a.download = `reporte-financiero-${label}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="space-y-4">
       {/* Toast */}
@@ -340,7 +366,7 @@ export function ReporteFinanciero() {
       {/* Selector de período */}
       <Card>
         <CardContent className="pt-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-end">
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
             <div className="flex gap-2 flex-wrap items-end">
               <div className="space-y-1">
                 <Label>Mes</Label>
@@ -364,9 +390,23 @@ export function ReporteFinanciero() {
               </div>
             </div>
 
+            <Button type="button" variant="outline" className="gap-2" onClick={() => setExcelModal(true)} disabled={cargando}>
+              <Download className="h-4 w-4" />
+              Generar Excel
+            </Button>
           </div>
         </CardContent>
       </Card>
+
+      <ExcelRangoModal
+        open={excelModal}
+        onClose={() => setExcelModal(false)}
+        mesActual={mes}
+        anioActual={anio}
+        titulo="Reporte financiero"
+        subtitulo="Exporta pagos, ingresos y gastos del rango seleccionado."
+        onExportar={exportarExcel}
+      />
 
       {error && <div role="alert" aria-live="polite" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</div>}
 

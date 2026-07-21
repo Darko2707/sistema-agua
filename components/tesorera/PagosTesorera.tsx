@@ -3,7 +3,6 @@
 import { useState, useMemo } from 'react';
 import { trpcReact } from '@/lib/trpc-react';
 import { MESES_CORTO as MESES } from '@/lib/meses';
-import { ExcelRangoModal } from '@/components/shared/ExcelRangoModal';
 
 const C = {
   green:      '#15493A',
@@ -31,7 +30,6 @@ export function PagosTesorera() {
   const [busqueda,    setBusqueda]    = useState('');
   const [registrando, setRegistrando] = useState<string | null>(null);
   const [toast,       setToast]       = useState<{ msg: string; tipo: 'ok' | 'error' } | null>(null);
-  const [excelModal,  setExcelModal]  = useState(false);
 
   const utils    = trpcReact.useUtils();
   const query    = trpcReact.pagos.listarResidentesParaPago.useQuery();
@@ -62,30 +60,6 @@ export function PagosTesorera() {
   function mostrar(msg: string, tipo: 'ok' | 'error') {
     setToast({ msg, tipo });
     setTimeout(() => setToast(null), 4000);
-  }
-
-  async function exportarExcel(
-    desde: { mes: number; anio: number },
-    hasta: { mes: number; anio: number },
-  ) {
-    const params = new URLSearchParams({
-      mesDesde:  String(desde.mes),
-      anioDesde: String(desde.anio),
-      mesHasta:  String(hasta.mes),
-      anioHasta: String(hasta.anio),
-    });
-    const res = await fetch(`/api/reportes/financiero?${params}`);
-    if (!res.ok) throw new Error('Error al generar el reporte');
-    const blob = await res.blob();
-    const url  = URL.createObjectURL(blob);
-    const a    = document.createElement('a');
-    a.href     = url;
-    const label = desde.anio === hasta.anio && desde.mes === hasta.mes
-      ? `${desde.mes}-${desde.anio}`
-      : `${desde.mes}-${desde.anio}_a_${hasta.mes}-${hasta.anio}`;
-    a.download = `reporte-pagos-${label}.xlsx`;
-    a.click();
-    URL.revokeObjectURL(url);
   }
 
   const lista = useMemo(() => {
@@ -167,24 +141,6 @@ export function PagosTesorera() {
         </div>
       </div>
 
-      {/* ── Excel export ── */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <button
-          onClick={() => setExcelModal(true)}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 8,
-            background: C.green, color: '#fff', border: 'none',
-            borderRadius: 12, padding: '9px 18px',
-            fontSize: 13, fontWeight: 700, fontFamily: FM, cursor: 'pointer',
-          }}
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-          </svg>
-          Generar Excel
-        </button>
-      </div>
-
       {/* ── Filtros + búsqueda ── */}
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -209,16 +165,6 @@ export function PagosTesorera() {
           />
         </div>
       </div>
-
-      <ExcelRangoModal
-        open={excelModal}
-        onClose={() => setExcelModal(false)}
-        mesActual={ahora.getMonth() + 1}
-        anioActual={ahora.getFullYear()}
-        titulo="Reporte de pagos"
-        subtitulo="Exporta un resumen de pagos, ingresos y gastos del período seleccionado."
-        onExportar={exportarExcel}
-      />
 
       {/* ── Lista ── */}
       <div style={{ background: C.card, borderRadius: 20, border: `1px solid ${C.border}`, overflow: 'hidden', boxShadow: '0 4px 16px rgba(20,40,30,.06)' }}>

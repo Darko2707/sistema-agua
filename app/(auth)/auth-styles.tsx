@@ -116,7 +116,7 @@ export function AuthCard({
         <div style={{ position: 'relative', background: '#fff', padding: '42px 30px 24px', textAlign: 'center', overflow: 'hidden' }}>
           <div aria-hidden="true" style={{ position: 'absolute', top: -84, right: -54, width: 220, height: 220, borderRadius: '50%', background: 'radial-gradient(circle,#F8C84E 0%,rgba(248,200,78,0) 68%)', opacity: .7, animation: 'auth-glow 5s ease-in-out infinite' }} />
           <div style={{ position: 'relative', zIndex: 1 }}>
-            <Image src="/logo1SIS4S.png" alt="SIS4S Logo" width={56} height={56} style={{ objectFit: 'contain', margin: '0 auto 18px' }} priority />
+            <Image src="/logo2SIS4S.png" alt="SIS4S Logo" width={96} height={96} style={{ objectFit: 'contain', margin: '0 auto 14px' }} priority />
             <h1 style={{ fontFamily: FB, fontSize: 25, fontWeight: 900, color: C.green, lineHeight: 1.12, margin: 0 }}>{title}</h1>
             <p style={{ fontSize: 13.5, color: C.textWarm, margin: '8px 0 0', fontWeight: 700 }}>{subtitle}</p>
           </div>

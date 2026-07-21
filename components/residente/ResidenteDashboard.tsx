@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Image from 'next/image';
 import { authClient } from '@/lib/auth-client';
 import { useSession } from '@/hooks/useAuth';
 import { useMiHistorial, useCheckoutMP } from '@/hooks/usePagos';
@@ -151,11 +152,9 @@ function Chevron({ up, color = C.textWarm }: { up?: boolean; color?: string }) {
 }
 
 // ── Water drop icon ────────────────────────────────────────────────────────────
-function DropIcon({ size = 22, color = C.green2 }: { size?: number; color?: string }) {
+function LogoMark({ size = 28 }: { size?: number }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 3.5c3.8 4.6 5.8 7.7 5.8 10.5a5.8 5.8 0 11-11.6 0c0-2.8 2-5.9 5.8-10.5z"/>
-    </svg>
+    <Image src="/logo1SIS4S.png" alt="SIS4S" width={size} height={size} style={{ objectFit: 'contain' }} priority />
   );
 }
 
@@ -316,7 +315,7 @@ export function ResidenteDashboard() {
             {/* Brand */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 11, flex: 1, minWidth: 0 }}>
               <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 6px 16px rgba(120,90,30,.16)', flexShrink: 0 }}>
-                <DropIcon size={26} color={C.greenDark} />
+                <LogoMark size={34} />
               </div>
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontFamily: FB, fontSize: 20, fontWeight: 800, color: C.greenDark, lineHeight: 1 }}>SIS4S</div>
@@ -379,7 +378,7 @@ export function ResidenteDashboard() {
               Hola, {userName.split(' ')[0]}
             </div>
             <div style={{ fontSize: 13.5, color: '#8C7E62', marginTop: 5, fontWeight: 600 }}>
-              Tu cuenta de agua · {perfil.edificio}, {perfil.departamento}
+              Edif. {perfil.edificio}, Depto. {perfil.departamento}
             </div>
           </div>
         </div>
@@ -580,7 +579,7 @@ export function ResidenteDashboard() {
           {/* ── Service status ── */}
           <div style={{ background: '#fff', borderRadius: 22, padding: '16px 18px', display: 'flex', alignItems: 'center', gap: 13, boxShadow: '0 6px 18px rgba(120,90,30,.07)' }}>
             <span style={{ flexShrink: 0, width: 48, height: 48, borderRadius: '50%', background: C.greenBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }} aria-hidden="true">
-              <DropIcon size={22} />
+              <LogoMark size={31} />
             </span>
             <div style={{ flex: 1 }}>
               <div style={{ fontFamily: FB, fontSize: 15, fontWeight: 700, color: C.textMain }}>Servicio de agua</div>
@@ -598,7 +597,7 @@ export function ResidenteDashboard() {
             {historyItems.length === 0 ? (
               <div style={{ padding: '24px 0 20px', textAlign: 'center' }}>
                 <span style={{ width: 52, height: 52, borderRadius: '50%', background: C.greenBg, margin: '0 auto 12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} aria-hidden="true">
-                  <DropIcon size={22} />
+                  <LogoMark size={34} />
                 </span>
                 <p style={{ fontSize: 14, color: C.textWarm2, fontWeight: 600 }}>Aún no tienes pagos registrados</p>
                 <p style={{ fontSize: 12, color: C.textWarm3, marginTop: 4 }}>Tu historial aparecerá aquí una vez que realices tu primer pago.</p>

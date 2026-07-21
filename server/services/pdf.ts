@@ -21,13 +21,17 @@ export async function generarTicketPDF(data: {
 }) {
   const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
 
-  const BRAND   = rgb(0.04, 0.39, 0.58);
-  const BRAND_L = rgb(0.86, 0.95, 1);
-  const GRAY    = rgb(0.45, 0.45, 0.45);
-  const GRAY_L  = rgb(0.82, 0.86, 0.9);
-  const BLACK   = rgb(0.12, 0.12, 0.12);
+  const BRAND   = rgb(0.08, 0.29, 0.23);
+  const GOLD    = rgb(0.96, 0.70, 0.14);
+  const GOLD_L  = rgb(0.98, 0.78, 0.31);
+  const CREAM   = rgb(0.96, 0.93, 0.88);
+  const CREAM_L = rgb(0.98, 0.96, 0.92);
+  const WARM    = rgb(0.60, 0.56, 0.45);
+  const GRAY    = rgb(0.55, 0.50, 0.39);
+  const GRAY_L  = rgb(0.94, 0.90, 0.82);
+  const BLACK   = rgb(0.23, 0.21, 0.16);
   const WHITE   = rgb(1, 1, 1);
-  const GREEN   = rgb(0.05, 0.60, 0.25);
+  const GREEN   = rgb(0.08, 0.38, 0.23);
 
   const doc  = await PDFDocument.create();
   const font = await doc.embedFont(StandardFonts.Helvetica);
@@ -54,7 +58,11 @@ export async function generarTicketPDF(data: {
   const HEADER_H = 80;
   const HEADER_Y = H - HEADER_H;
 
-  page.drawRectangle({ x: 0, y: HEADER_Y, width: W, height: HEADER_H, color: BRAND });
+  page.drawRectangle({ x: 0, y: 0, width: W, height: H, color: CREAM });
+  page.drawRectangle({ x: 18, y: 18, width: W - 36, height: H - 36, color: WHITE });
+  page.drawRectangle({ x: 18, y: HEADER_Y, width: W - 36, height: HEADER_H, color: CREAM_L });
+  page.drawRectangle({ x: 18, y: HEADER_Y, width: W - 36, height: 6, color: GOLD });
+  page.drawCircle({ x: W - 66, y: H - 28, size: 78, color: GOLD_L, opacity: 0.28 });
 
   if (logoImg) {
     const LOGO_S = 52;
@@ -65,10 +73,10 @@ export async function generarTicketPDF(data: {
   }
 
   page.drawText('Comprobante de pago', {
-    x: 28, y: HEADER_Y + 50, size: 19, font: bold, color: WHITE,
+    x: 28, y: HEADER_Y + 50, size: 19, font: bold, color: BRAND,
   });
   page.drawText(fraccionamiento, {
-    x: 28, y: HEADER_Y + 28, size: 11, font, color: BRAND_L,
+    x: 28, y: HEADER_Y + 28, size: 11, font, color: WARM,
   });
 
   // ════════════════════════════════════════════════════════
@@ -115,9 +123,13 @@ export async function generarTicketPDF(data: {
   const TOTAL_BOX_H = 62;
   page.drawRectangle({
     x: 28, y: y - TOTAL_BOX_H + 14, width: W - 56, height: TOTAL_BOX_H,
-    color: rgb(0.94, 0.98, 1),
-    borderColor: BRAND_L,
+    color: CREAM_L,
+    borderColor: GRAY_L,
     borderWidth: 1,
+  });
+  page.drawRectangle({
+    x: 28, y: y - TOTAL_BOX_H + 14, width: 7, height: TOTAL_BOX_H,
+    color: GOLD,
   });
   page.drawText('Monto total pagado', {
     x: 44, y: y - 4, size: 9, font, color: GRAY,
@@ -134,9 +146,11 @@ export async function generarTicketPDF(data: {
 
   page.drawRectangle({
     x: 28, y: y - 156, width: BOX_W, height: 161,
+    color: WHITE,
     borderColor: GRAY_L, borderWidth: 1,
   });
-  page.drawText('Desglose del pago', { x: 42, y: y - 18, size: 11, font: bold, color: BLACK });
+  page.drawRectangle({ x: 28, y: y - 21, width: BOX_W, height: 26, color: CREAM_L });
+  page.drawText('Desglose del pago', { x: 42, y: y - 14, size: 11, font: bold, color: BRAND });
 
   const filas: [string, string | null | undefined][] = [
     ['Cuota del servicio',  data.montoBase],
@@ -146,7 +160,7 @@ export async function generarTicketPDF(data: {
   ];
   let fy = y - 44;
   for (const [label, value] of filas) {
-    page.drawText(label, { x: 42, y: fy, size: 9, font, color: rgb(0.35, 0.35, 0.35) });
+    page.drawText(label, { x: 42, y: fy, size: 9, font, color: WARM });
     page.drawText(`$${Number(value ?? 0).toFixed(2)} MXN`, {
       x: 380, y: fy, size: 9, font: bold, color: BLACK,
     });
@@ -167,9 +181,11 @@ export async function generarTicketPDF(data: {
   page.drawRectangle({
     x: W - 120, y: STAMP_Y, width: 92, height: 28,
     color: GREEN,
+    borderColor: GOLD,
+    borderWidth: 1,
   });
   page.drawText('PAGADO', {
-    x: W - 104, y: STAMP_Y + 9, size: 11, font: bold, color: WHITE,
+    x: W - 104, y: STAMP_Y + 9, size: 11, font: bold, color: GOLD_L,
   });
 
   // ════════════════════════════════════════════════════════

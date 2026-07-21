@@ -277,7 +277,7 @@ export function TrabajadorDashboard() {
 
           {/* Shift label + stat cards */}
           <div style={{ marginTop: 18, fontSize: 12, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: '#B9D6C4' }}>
-            Turno de hoy · {hoy}
+            Día {hoy}
           </div>
           <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
             <StatCard value={pendientesCorte.length}    label="Cortes pendientes" color="#fff" />
