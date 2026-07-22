@@ -1,7 +1,7 @@
 import { router, roleProcedure } from '../trpc';
 import { z } from 'zod';
 // eslint-disable-next-line no-restricted-imports -- complex financial aggregations not yet in a repo
-import { eq, and, inArray } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 
 // eslint-disable-next-line no-restricted-imports -- complex financial aggregations not yet in a repo
@@ -98,7 +98,7 @@ export const reportesRouter = router({
         ? residentes.filter((r) => {
             const term = input.busqueda!.toLowerCase();
             return (
-              r.usuario.name.toLowerCase().includes(term) ||
+              (r.usuario?.name ?? '').toLowerCase().includes(term) ||
               r.departamento.toLowerCase().includes(term)
             );
           })
@@ -148,7 +148,7 @@ export const reportesRouter = router({
 
         return {
           id:           r.id,
-          nombre:       r.usuario.name,
+          nombre:       r.usuario?.name ?? '',
           telefono:     r.telefono,
           edificio:     r.edificio,
           departamento: r.departamento,

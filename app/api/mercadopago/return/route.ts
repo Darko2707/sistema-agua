@@ -1,4 +1,5 @@
 import { createMercadoPagoClients } from '@/lib/mercadopago';
+import { decryptTokenSafe } from '@/lib/crypto';
 import { db } from '@/db';
 import { parseExternalReference, type ExternalReference } from '@/src/infrastructure/mercadopago/parser';
 import { residenteRepo, pagoRepo, circuitoRepo } from '@/src/infrastructure/db/repositories';
@@ -13,7 +14,7 @@ async function getPaymentClientForReference(reference: ExternalReference | null)
     where: (p, { eq }) => eq(p.id, reference.perfilId),
     with: { circuito: true },
   });
-  const accessToken = perfil?.circuito?.mercadoPagoAccessToken;
+  const accessToken = decryptTokenSafe(perfil?.circuito?.mercadoPagoAccessToken);
   return accessToken ? createMercadoPagoClients(accessToken).paymentClient : null;
 }
 

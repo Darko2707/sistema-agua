@@ -207,7 +207,7 @@ export function ResidentesTab({
                   </Button>
                   <select
                     value={r.usuario?.role || 'residente'}
-                    disabled={actualizando === r.id}
+                    disabled={actualizando === usuarioId}
                     onChange={(e) => onCambiarRol(usuarioId, e.target.value)}
                     className="h-9 rounded-lg border bg-background px-2 text-sm md:w-40"
                   >
@@ -215,7 +215,7 @@ export function ResidentesTab({
                       <option key={role.value} value={role.value}>{role.label}</option>
                     ))}
                   </select>
-                  {actualizando === r.id && (
+                  {actualizando === usuarioId && (
                     <span className="text-xs text-muted-foreground">Guardando...</span>
                   )}
                 </div>

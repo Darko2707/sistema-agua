@@ -10,7 +10,6 @@ import { logger } from '@/lib/logger';
 import type { RegistrarPagoManualCommand } from './registrar-pago-manual.command';
 import { eventBus } from '@/src/domain/shared/event-bus';
 import { PagoRegistradoEvent } from '@/src/domain/residente/events/pago-registrado.event';
-import { ACCIONES, aplicarTransicion, puedeTransicionar } from '@/src/domain/agua/state-machine';
 
 type Deps = {
   residenteRepo: ResidenteRepository;
@@ -69,13 +68,6 @@ export class RegistrarPagoManualHandler {
       esReconexion,
       fechaPago:              new Date(),
     });
-
-    // Actualizar estadoAgua según la máquina de estados
-    const accion = esReconexion ? ACCIONES.PAGAR_RECONEXION : ACCIONES.PAGAR_PENDIENTE;
-    if (puedeTransicionar(perfil.estadoAgua, accion)) {
-      const { nuevoEstado } = aplicarTransicion(perfil.estadoAgua, accion, { fecha: new Date() });
-      await residenteRepo.updateEstado(perfil.id, nuevoEstado);
-    }
 
     await eventBus.publish([new PagoRegistradoEvent(perfil.id, folio)]);
 

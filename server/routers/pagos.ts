@@ -11,7 +11,7 @@ import { ResolverCircuitoTesoreraService } from '@/src/application/circuitos/que
 // eslint-disable-next-line no-restricted-imports -- inline MP webhook queries not yet in a repo
 import { db } from '@/db';
 // eslint-disable-next-line no-restricted-imports -- inline MP webhook queries not yet in a repo
-import { pagos as pagosTable } from '@/db/schema';
+import { pagos as pagosTable, tickets } from '@/db/schema';
 // eslint-disable-next-line no-restricted-imports -- inline MP webhook queries not yet in a repo
 import { eq } from 'drizzle-orm';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
@@ -40,16 +40,26 @@ export const pagosRouter = router({
       if (!perfil.circuito) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Circuito no encontrado' });
       if (!perfil.circuito.activo) throw new TRPCError({ code: 'FORBIDDEN', message: 'Tu circuito esta inhabilitado' });
 
+      if (!perfil.circuito.representanteId)
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Tu circuito no tiene un representante asignado' });
+
       return registrarPagoManualHandler.execute({
         perfilId: perfil.id,
         metodo: input.metodo,
-        representanteId: perfil.circuito.representanteId ?? ctx.user.id,
+        representanteId: perfil.circuito.representanteId,
       });
     }),
 
   historialDe: roleProcedure('admin', 'representante')
     .input(z.object({ perfilId: z.uuid() }))
-    .query(async ({ input }) => {
+    .query(async ({ ctx, input }) => {
+      if (ctx.user.role === 'representante') {
+        const miCircuito = await circuitoRepo.findByRepresentante(ctx.user.id);
+        if (!miCircuito) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes circuito asignado' });
+        const perfil = await residenteRepo.findById(input.perfilId);
+        if (!perfil || perfil.circuitoId !== miCircuito.id)
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes acceso a este residente' });
+      }
       return historialPagosHandler.executeByPerfilId(input.perfilId);
     }),
 
@@ -254,36 +264,46 @@ export const pagosRouter = router({
       const omitidos: string[] = [];
 
       for (const { mes, anio } of input.meses) {
-        const yaPago = await db.query.pagos.findFirst({
-          where: (p, { eq, and }) =>
-            and(eq(p.perfilId, perfil.id), eq(p.mes, mes), eq(p.anio, anio), eq(p.estado, 'pagado')),
-        });
-        if (yaPago) {
-          omitidos.push(`${MESES_CORTO[mes - 1]} ${anio}`);
-          continue;
-        }
+        try {
+          const inserted = await db.transaction(async (tx) => {
+            const yaPago = await tx.query.pagos.findFirst({
+              where: (p, { eq, and }) =>
+                and(eq(p.perfilId, perfil.id), eq(p.mes, mes), eq(p.anio, anio), eq(p.estado, 'pagado')),
+            });
+            if (yaPago) return false;
 
-        await db.insert(pagosTable).values({
-          perfilId:               perfil.id,
-          circuitoId:             circuito.id,
-          representanteId:        circuito.representanteId ?? null,
-          mes,
-          anio,
-          monto:                  desglose.total,
-          montoBase:              desglose.montoBase,
-          iva:                    desglose.iva,
-          comisionMercadoPago:    desglose.comisionMercadoPago,
-          retencionIsr:           desglose.retencionIsr,
-          retencionIva:           desglose.retencionIva,
-          montoNetoRepresentante: desglose.montoNetoRepresentante,
-          mercadoPagoCollectorId: circuito.mercadoPagoCollectorId,
-          estado:                 'pagado',
-          metodo:                 input.metodo,
-          folio:                  null,
-          esReconexion:           false,
-          fechaPago:              new Date(),
-        });
-        registrados++;
+            const folio = FolioVO.generate().toString();
+            const [pago] = await tx.insert(pagosTable).values({
+              perfilId:               perfil.id,
+              circuitoId:             circuito.id,
+              representanteId:        circuito.representanteId ?? null,
+              mes,
+              anio,
+              monto:                  desglose.total,
+              montoBase:              desglose.montoBase,
+              iva:                    desglose.iva,
+              comisionMercadoPago:    desglose.comisionMercadoPago,
+              retencionIsr:           desglose.retencionIsr,
+              retencionIva:           desglose.retencionIva,
+              montoNetoRepresentante: desglose.montoNetoRepresentante,
+              mercadoPagoCollectorId: circuito.mercadoPagoCollectorId,
+              estado:                 'pagado',
+              metodo:                 input.metodo,
+              folio,
+              esReconexion:           false,
+              fechaPago:              new Date(),
+            }).returning();
+            await tx.insert(tickets).values({ pagoId: pago.id, folio, pdfUrl: null });
+            return true;
+          });
+          if (inserted) registrados++;
+          else omitidos.push(`${MESES_CORTO[mes - 1]} ${anio}`);
+        } catch (err) {
+          const isUniqueViolation = typeof err === 'object' && err !== null && 'code' in err &&
+            (err as { code: string }).code === '23505';
+          if (isUniqueViolation) omitidos.push(`${MESES_CORTO[mes - 1]} ${anio}`);
+          else throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `Error al registrar ${MESES_CORTO[mes - 1]} ${anio}` });
+        }
       }
 
       logger.info('pago.retroactivo.admin.lote', {

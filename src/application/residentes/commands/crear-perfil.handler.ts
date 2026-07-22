@@ -1,5 +1,4 @@
 import { TRPCError } from '@trpc/server';
-import { DIA_CORTE } from '@/src/domain/pagos/constants';
 import type { ResidenteRepository } from '../../ports/residente.repository';
 import type { CircuitoRepository } from '../../ports/circuito.repository';
 import { logger } from '@/lib/logger';
@@ -37,7 +36,7 @@ export class CrearPerfilHandler {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'Ya tienes un perfil registrado' });
     }
 
-    const estadoInicial = new Date().getDate() > DIA_CORTE ? 'pendiente_corte' : 'activo';
+    const estadoInicial = 'activo';
     logger.info('usuario.perfil.creado', { userId: cmd.userId, estadoInicial });
 
     return residenteRepo.create({
