@@ -346,7 +346,7 @@ export function RepresentanteDashboard() {
 
             {personal.length === 0 ? (
               <div style={{ padding: '48px 20px', textAlign: 'center' }}>
-                <p style={{ fontSize: 14, color: C.textMuted, fontWeight: 600 }}>No hay personal asignado.<br /><span style={{ fontWeight: 400 }}>Usa el botón "Añadir personal" para designar roles.</span></p>
+                <p style={{ fontSize: 14, color: C.textMuted, fontWeight: 600 }}>No hay personal asignado.<br /><span style={{ fontWeight: 400 }}>Usa el botón &quot;Añadir personal&quot; para designar roles.</span></p>
               </div>
             ) : (
               personal.map((p, i) => (

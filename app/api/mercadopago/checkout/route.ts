@@ -32,7 +32,8 @@ export async function POST(request: Request) {
 
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return Response.json({ error: 'No autorizado' }, { status: 401 });
-  if (!session.user.emailVerified) return Response.json({ error: 'Verifica tu correo electronico antes de realizar pagos' }, { status: 403 });
+  // TEMPORAL: verificación de correo desactivada hasta contar con dominio propio.
+  // if (!session.user.emailVerified) return Response.json({ error: 'Verifica tu correo electronico antes de realizar pagos' }, { status: 403 });
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? process.env.BETTER_AUTH_URL;
   if (!appUrl) return Response.json({ error: 'Falta configurar NEXT_PUBLIC_APP_URL' }, { status: 500 });

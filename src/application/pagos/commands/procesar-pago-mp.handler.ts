@@ -1,3 +1,4 @@
+import { TRPCError } from '@trpc/server';
 import { calcularDesglosePago } from '@/src/domain/pagos/calculator';
 import { FolioVO } from '@/src/domain/pagos/folio.vo';
 import type { ResidenteRepository } from '../../ports/residente.repository';
@@ -43,42 +44,66 @@ export class ProcesarPagoMpHandler {
     const circuito = await circuitoRepo.findById(perfil.circuitoId);
     if (!circuito) throw new Error('Circuito no encontrado');
 
-    const montoBase = cmd.esReconexion
-      ? Number(circuito.montoMensual) + Number(circuito.montoReconexion)
-      : Number(cmd.monto);
+    // Usar siempre el monto congelado en el checkout (cmd.monto), nunca recalcular
+    // con las tarifas actuales del circuito: si montoMensual/montoReconexion cambian
+    // entre el checkout y la confirmación del pago, Mercado Pago ya cobró la tarifa
+    // vieja (fija en la preferencia), así que el registro debe reflejar esa misma tarifa.
+    const montoBase = Number(cmd.monto);
 
     const desglose = calcularDesglosePago(montoBase);
     const folio = FolioVO.generate().toString();
 
-    const pago = await pagoRepo.createWithLock(perfil.id, {
-      perfilId:               cmd.perfilId,
-      circuitoId:             circuito.id,
-      representanteId:        circuito.representanteId,
-      mes:                    cmd.mes,
-      anio:                   cmd.anio,
-      monto:                  desglose.total,
-      montoBase:              desglose.montoBase,
-      iva:                    desglose.iva,
-      comisionMercadoPago:    desglose.comisionMercadoPago,
-      retencionIsr:           desglose.retencionIsr,
-      retencionIva:           desglose.retencionIva,
-      montoNetoRepresentante: desglose.montoNetoRepresentante,
-      mercadoPagoPaymentId:   cmd.mercadoPagoPaymentId,
-      mercadoPagoCollectorId: cmd.mercadoPagoCollectorId ?? circuito.mercadoPagoCollectorId,
-      estado:                 'pagado',
-      metodo:                 cmd.metodo,
-      folio,
-      esReconexion:           cmd.esReconexion,
-      fechaPago:              new Date(),
-    });
+    let pago;
+    let yaRegistrado = false;
+    try {
+      pago = await pagoRepo.createWithLock(perfil.id, {
+        perfilId:               cmd.perfilId,
+        circuitoId:             circuito.id,
+        representanteId:        circuito.representanteId,
+        mes:                    cmd.mes,
+        anio:                   cmd.anio,
+        monto:                  desglose.total,
+        montoBase:              desglose.montoBase,
+        iva:                    desglose.iva,
+        comisionMercadoPago:    desglose.comisionMercadoPago,
+        retencionIsr:           desglose.retencionIsr,
+        retencionIva:           desglose.retencionIva,
+        montoNetoRepresentante: desglose.montoNetoRepresentante,
+        mercadoPagoPaymentId:   cmd.mercadoPagoPaymentId,
+        mercadoPagoCollectorId: cmd.mercadoPagoCollectorId ?? circuito.mercadoPagoCollectorId,
+        estado:                 'pagado',
+        metodo:                 cmd.metodo,
+        folio,
+        esReconexion:           cmd.esReconexion,
+        fechaPago:              new Date(),
+      });
+    } catch (err) {
+      // El webhook y el redirect de retorno de Mercado Pago pueden llegar casi
+      // simultáneamente para el mismo pago; el que pierde la carrera del lock
+      // debe devolver el pago ya creado por el otro en vez de fallar (a diferencia
+      // del registro manual, aquí un duplicado siempre representa el mismo evento).
+      if (err instanceof TRPCError && err.code === 'BAD_REQUEST') {
+        const existente = await pagoRepo.findByPerfilYMes(cmd.perfilId, cmd.mes, cmd.anio);
+        if (existente) {
+          pago = existente;
+          yaRegistrado = true;
+        } else {
+          throw err;
+        }
+      } else {
+        throw err;
+      }
+    }
 
-    await eventBus.publish([new PagoRegistradoEvent(pago.perfilId, folio)]);
+    if (!yaRegistrado) {
+      await eventBus.publish([new PagoRegistradoEvent(pago.perfilId, folio)]);
+    }
 
     return {
       folio:        pago.folio,
       monto:        pago.monto,
       esReconexion: pago.esReconexion ?? false,
-      yaRegistrado: false,
+      yaRegistrado,
     };
   }
 }

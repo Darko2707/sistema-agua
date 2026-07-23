@@ -1,3 +1,5 @@
+import type { MetodoPago } from '../../ports/pago.repository';
+
 export type ProcesarPagoMpCommand = {
   perfilId: string;
   mes: number;
@@ -6,5 +8,5 @@ export type ProcesarPagoMpCommand = {
   esReconexion: boolean;
   mercadoPagoPaymentId?: string;
   mercadoPagoCollectorId?: string | null;
-  metodo: string;
+  metodo: MetodoPago;
 };

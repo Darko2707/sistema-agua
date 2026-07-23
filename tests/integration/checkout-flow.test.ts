@@ -102,6 +102,7 @@ afterAll(async () => {
 // ── Helpers ────────────────────────────────────────────────────────────────────
 function cmd(mes: number, overrides: Partial<{
   esReconexion:           boolean;
+  monto:                  string;
   mercadoPagoPaymentId:   string;
   mercadoPagoCollectorId: string;
 }> = {}) {
@@ -109,9 +110,9 @@ function cmd(mes: number, overrides: Partial<{
     perfilId:               FX.perfilId,
     mes,
     anio:                   ANIO,
-    monto:                  '100.00',
+    monto:                  overrides.monto ?? '100.00',
     esReconexion:           overrides.esReconexion ?? false,
-    metodo:                 `mercado_pago:${overrides.mercadoPagoPaymentId ?? 'mp-001'}`,
+    metodo:                 'mercado_pago' as const,
     mercadoPagoPaymentId:   overrides.mercadoPagoPaymentId ?? 'mp-001',
     mercadoPagoCollectorId: overrides.mercadoPagoCollectorId ?? `col-${suffix}`,
   };
@@ -142,7 +143,7 @@ describe('Checkout flow — integración con BD real', () => {
       const pago = await getPago(1);
       expect(pago).toBeDefined();
       expect(pago!.estado).toBe('pagado');
-      expect(pago!.metodo).toBe('mercado_pago:mp-001');
+      expect(pago!.metodo).toBe('mercado_pago');
       expect(pago!.mercadoPagoPaymentId).toBe('mp-001');
       expect(pago!.mercadoPagoCollectorId).toBe(`col-${suffix}`);
       expect(pago!.circuitoId).toBe(FX.circId);
@@ -207,13 +208,14 @@ describe('Checkout flow — integración con BD real', () => {
         .set({ estadoAgua: 'cortado' })
         .where(eq(perfilesResidente.id, FX.perfilId));
 
-      const result = await handler.execute(cmd(4, { esReconexion: true }));
+      // monto viene congelado desde el checkout (external_reference de MP) —
+      // el handler no debe recalcularlo con las tarifas actuales del circuito.
+      const result = await handler.execute(cmd(4, { esReconexion: true, monto: '400.00' }));
       expect(result.esReconexion).toBe(true);
 
       const perfil = await getPerfil();
       expect(perfil!.estadoAgua).toBe('pendiente_reconexion');
 
-      // Amount base = montoMensual (100) + montoReconexion (300) = 400
       const pago = await getPago(4);
       expect(parseFloat(pago!.montoBase!)).toBeCloseTo(400, 0);
 

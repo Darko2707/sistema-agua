@@ -17,9 +17,12 @@ export async function requireSession(opts?: { roles?: string[] }) {
     redirect('/');
   }
 
-  if (user.role !== 'admin' && !user.emailVerified) {
-    redirect('/verificar-email');
-  }
+  // TEMPORAL: verificación de correo desactivada hasta contar con dominio
+  // propio para el envío de correos (Resend requiere dominio verificado).
+  // Reactivar descomentando este bloque una vez configurado el dominio.
+  // if (user.role !== 'admin' && !user.emailVerified) {
+  //   redirect('/verificar-email');
+  // }
 
   return session;
 }

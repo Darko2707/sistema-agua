@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { TRPCError } from '@trpc/server';
 import { ProcesarPagoMpHandler } from '@/src/application/pagos/commands/procesar-pago-mp.handler';
 import type { ResidenteRepository } from '@/src/application/ports/residente.repository';
 import type { PagoRepository, PagoData } from '@/src/application/ports/pago.repository';
@@ -10,7 +11,7 @@ const CMD = {
   anio: 2025,
   monto: '100.00',
   esReconexion: false,
-  metodo: 'mercado_pago:12345',
+  metodo: 'mercado_pago' as const,
   mercadoPagoPaymentId:   '12345',
   mercadoPagoCollectorId: null as string | null,
 };
@@ -20,7 +21,7 @@ const PAGO: PagoData = {
   representanteId: 'rep-001', mes: 6, anio: 2025, monto: '100.00', montoBase: '100.00',
   iva: '0.00', comisionMercadoPago: '4.85', retencionIsr: '0.00', retencionIva: '0.00',
   montoNetoRepresentante: '95.15', mercadoPagoPaymentId: '12345', mercadoPagoCollectorId: null,
-  estado: 'pagado', metodo: 'mercado_pago:12345', esReconexion: false, fechaPago: new Date(), creadoEn: new Date(),
+  estado: 'pagado', metodo: 'mercado_pago', esReconexion: false, fechaPago: new Date(), creadoEn: new Date(),
 };
 
 const PERFIL = {
@@ -97,6 +98,33 @@ describe('ProcesarPagoMpHandler', () => {
       const result = await new ProcesarPagoMpHandler(deps).execute(CMD);
       expect(result.esReconexion).toBe(true);
     });
+
+    it('si createWithLock pierde la carrera (webhook vs return simultáneos), devuelve el pago del ganador en vez de fallar', async () => {
+      const deps = makeDeps();
+      // Fast-path no encuentra nada (aún no se había insertado cuando se consultó)...
+      vi.mocked(deps.pagoRepo.findByPerfilYMes)
+        .mockResolvedValueOnce(null)
+        // ...pero para cuando createWithLock intenta insertar, el otro request ya ganó.
+        .mockResolvedValueOnce(PAGO);
+      vi.mocked(deps.pagoRepo.createWithLock).mockRejectedValue(
+        new TRPCError({ code: 'BAD_REQUEST', message: 'Ya existe un pago registrado para este mes' }),
+      );
+
+      const result = await new ProcesarPagoMpHandler(deps).execute(CMD);
+
+      expect(result.yaRegistrado).toBe(true);
+      expect(result.folio).toBe('AGU-001');
+    });
+
+    it('si createWithLock falla y no hay pago existente, propaga el error', async () => {
+      const deps = makeDeps();
+      vi.mocked(deps.pagoRepo.findByPerfilYMes).mockResolvedValue(null);
+      vi.mocked(deps.pagoRepo.createWithLock).mockRejectedValue(
+        new TRPCError({ code: 'BAD_REQUEST', message: 'Ya existe un pago registrado para este mes' }),
+      );
+
+      await expect(new ProcesarPagoMpHandler(deps).execute(CMD)).rejects.toThrow(TRPCError);
+    });
   });
 
   describe('happy path', () => {
@@ -116,20 +144,21 @@ describe('ProcesarPagoMpHandler', () => {
       expect(input.anio).toBe(2025);
     });
 
-    it('pasa el metodo con el paymentId', async () => {
+    it('pasa el metodo mercado_pago', async () => {
       const deps = makeDeps();
       await new ProcesarPagoMpHandler(deps).execute(CMD);
       const [, input] = vi.mocked(deps.pagoRepo.createWithLock).mock.calls[0];
-      expect(input.metodo).toBe('mercado_pago:12345');
+      expect(input.metodo).toBe('mercado_pago');
     });
   });
 
   describe('precio reconexión', () => {
-    it('usa montoMensual + montoReconexion como base cuando esReconexion=true', async () => {
+    it('usa siempre cmd.monto como base, incluso cuando esReconexion=true', async () => {
+      // cmd.monto viene congelado desde el checkout (external_reference de MP);
+      // no debe recalcularse con las tarifas actuales del circuito.
       const deps = makeDeps();
-      await new ProcesarPagoMpHandler(deps).execute({ ...CMD, esReconexion: true });
+      await new ProcesarPagoMpHandler(deps).execute({ ...CMD, esReconexion: true, monto: '400.00' });
       const [, input] = vi.mocked(deps.pagoRepo.createWithLock).mock.calls[0];
-      // 100 + 300 = 400
       expect(parseFloat(input.montoBase)).toBeCloseTo(400, 0);
     });
 
@@ -138,6 +167,15 @@ describe('ProcesarPagoMpHandler', () => {
       await new ProcesarPagoMpHandler(deps).execute({ ...CMD, monto: '150.00' });
       const [, input] = vi.mocked(deps.pagoRepo.createWithLock).mock.calls[0];
       expect(parseFloat(input.montoBase)).toBeCloseTo(150, 0);
+    });
+
+    it('ignora montoMensual/montoReconexion del circuito si difieren de cmd.monto', async () => {
+      // El circuito (mock) tiene montoMensual=100 y montoReconexion=300 (ver CIRCUITO),
+      // pero cmd.monto (congelado en el checkout) es 100 — debe prevalecer este último.
+      const deps = makeDeps();
+      await new ProcesarPagoMpHandler(deps).execute({ ...CMD, esReconexion: true });
+      const [, input] = vi.mocked(deps.pagoRepo.createWithLock).mock.calls[0];
+      expect(parseFloat(input.montoBase)).toBeCloseTo(100, 0);
     });
   });
 

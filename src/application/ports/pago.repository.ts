@@ -1,3 +1,5 @@
+export type MetodoPago = 'efectivo' | 'transferencia' | 'mercado_pago';
+
 export type PagoData = {
   id: string;
   perfilId: string;
@@ -15,7 +17,7 @@ export type PagoData = {
   mercadoPagoPaymentId: string | null;
   mercadoPagoCollectorId: string | null;
   estado: 'pendiente' | 'pagado' | 'vencido' | null;
-  metodo: string | null;
+  metodo: MetodoPago | null;
   folio: string | null;
   esReconexion: boolean | null;
   fechaPago: Date | null;
@@ -38,7 +40,7 @@ export type CrearPagoInput = {
   mercadoPagoPaymentId?: string;
   mercadoPagoCollectorId?: string | null;
   estado: 'pagado';
-  metodo: string;
+  metodo: MetodoPago;
   folio: string;
   esReconexion: boolean;
   fechaPago: Date;

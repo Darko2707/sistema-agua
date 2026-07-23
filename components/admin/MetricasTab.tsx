@@ -67,6 +67,8 @@ export function MetricasTab() {
   }, [mes, anio]);
 
   useEffect(() => {
+    // Carga de métricas al montar/cambiar período; no hay estado externo que sincronizar.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void cargar();
   }, [cargar]);
 

@@ -80,8 +80,8 @@ export async function POST(request: Request) {
       });
       await procesarPagoMpHandler.execute({
         ...reference,
-        metodo:                `mercado_pago:${payment.id}`,
-        mercadoPagoPaymentId:  payment.id ? String(payment.id) : undefined,
+        metodo:                'mercado_pago',
+        mercadoPagoPaymentId:   payment.id ? String(payment.id) : undefined,
         mercadoPagoCollectorId: payment.collector_id ? String(payment.collector_id) : undefined,
       });
     }

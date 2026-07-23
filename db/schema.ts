@@ -13,6 +13,7 @@ export const rolEnum = pgEnum('rol', [
 export const estadoPagoEnum = pgEnum('estado_pago', ['pendiente', 'pagado', 'vencido']);
 export const tenenciaEnum   = pgEnum('tenencia', ['propietario', 'inquilino']);
 export const sexoEnum       = pgEnum('sexo', ['masculino', 'femenino', 'otro']);
+export const metodoPagoEnum = pgEnum('metodo_pago', ['efectivo', 'transferencia', 'mercado_pago']);
 
 // ============================================
 // Estado del agua para perfiles
@@ -139,7 +140,7 @@ export const pagos = pgTable('pagos', {
   mercadoPagoPaymentId:   text('mercado_pago_payment_id'),
   mercadoPagoCollectorId: text('mercado_pago_collector_id'),
   estado:                 estadoPagoEnum('estado').default('pendiente'),
-  metodo:                 text('metodo'),
+  metodo:                 metodoPagoEnum('metodo'),
   folio:                  text('folio').unique(),
   esReconexion:           boolean('es_reconexion').default(false),
   fechaPago:              timestamp('fecha_pago'),

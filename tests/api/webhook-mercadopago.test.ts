@@ -50,8 +50,17 @@ vi.mock('mercadopago', () => {
       this.reason = msg ?? 'invalid signature';
     }
   }
+  const SignatureFailureReason = {
+    MissingSignatureHeader:   'MissingSignatureHeader',
+    MalformedSignatureHeader: 'MalformedSignatureHeader',
+    MissingTimestamp:         'MissingTimestamp',
+    MissingHash:              'MissingHash',
+    SignatureMismatch:        'SignatureMismatch',
+    TimestampOutOfTolerance:  'TimestampOutOfTolerance',
+  };
   return {
     InvalidWebhookSignatureError,
+    SignatureFailureReason,
     WebhookSignatureValidator: { validate: vi.fn() },
   };
 });
@@ -102,13 +111,16 @@ beforeEach(() => {
   vi.mocked(db.query.perfilesResidente.findFirst).mockResolvedValue({
     id: 'perf-001',
     circuito: { mercadoPagoAccessToken: 'encrypted-token', activo: true },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any);
 
   vi.mocked(decryptTokenSafe).mockReturnValue('access-token-plain');
 
   mockPaymentGet.mockResolvedValue(MOCK_PAYMENT);
   vi.mocked(createMercadoPagoClients).mockReturnValue({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     paymentClient:    { get: mockPaymentGet } as any,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     preferenceClient: {} as any,
   });
 

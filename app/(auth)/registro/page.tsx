@@ -107,7 +107,8 @@ export default function RegistroPage() {
           telefonoPropietario: data.telefonoPropietario?.trim(),
         }),
       });
-      router.push('/verificar-email');
+      // TEMPORAL: verificación de correo desactivada hasta contar con dominio propio.
+      router.push('/residente');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Error desconocido');
     } finally {

@@ -102,6 +102,8 @@ export function useAdmin() {
   }
 
   useEffect(() => {
+    // Carga inicial de datos del panel admin; no hay estado externo que sincronizar.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void cargarDatos();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

@@ -159,7 +159,10 @@ async function safeMarcar(mes: number, anio: number): Promise<number> {
       .where(inArray(perfilesResidente.id, colateral.map(r => r.id)));
   }
 
-  return count;
+  // `count` incluye residentes reales de la BD de dev ajenos al fixture (colateral) —
+  // ninguno puede tener un pago del año 2090, así que marcarMorososDelMes los marca
+  // siempre. Se descuentan para que el valor de retorno refleje solo el fixture.
+  return count - colateral.length;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
