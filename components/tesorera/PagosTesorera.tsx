@@ -24,13 +24,44 @@ const FM = "var(--font-manrope), 'Manrope', sans-serif";
 const FS = "var(--font-space-grotesk), 'Space Grotesk', sans-serif";
 
 type Filtro = 'todos' | 'pendientes';
+type MetodoPago = 'efectivo' | 'transferencia';
+type PeriodoPago = { mes: number; anio: number; tipo: 'atrasado' | 'actual' | 'adelantado'; label: string };
+type ResidentePago = {
+  id: string;
+  edificio: string;
+  departamento: string;
+  estadoAgua: string;
+  pagoEsteMes: boolean;
+  usuario?: { id?: string; name?: string | null; email?: string | null };
+};
+
+const MESES_FULL = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+function generarPeriodosPago(): PeriodoPago[] {
+  const now = new Date();
+  return Array.from({ length: 25 }, (_, index) => {
+    const offset = index - 12;
+    const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+    const mes = d.getMonth() + 1;
+    const anio = d.getFullYear();
+    return {
+      mes,
+      anio,
+      tipo: offset < 0 ? 'atrasado' : offset === 0 ? 'actual' : 'adelantado',
+      label: `${MESES_FULL[mes - 1]} ${anio}`,
+    };
+  });
+}
+
+const PERIODOS_PAGO = generarPeriodosPago();
 
 export function PagosTesorera() {
   const [filtro,      setFiltro]      = useState<Filtro>('pendientes');
   const [busqueda,    setBusqueda]    = useState('');
   const [registrando, setRegistrando] = useState<string | null>(null);
   const [toast,       setToast]       = useState<{ msg: string; tipo: 'ok' | 'error' } | null>(null);
-  const [mesesAdelantados, setMesesAdelantados] = useState(1);
+  const [modalPago, setModalPago] = useState<{ residente: ResidentePago; metodo: MetodoPago } | null>(null);
+  const [mesesSel, setMesesSel] = useState<Array<{ mes: number; anio: number }>>([]);
 
   const utils    = trpcReact.useUtils();
   const query    = trpcReact.pagos.listarResidentesParaPago.useQuery();
@@ -46,10 +77,29 @@ export function PagosTesorera() {
   const cargando   = query.isLoading;
   const ahora      = new Date();
 
-  async function registrar(perfilId: string, metodo: 'efectivo' | 'transferencia') {
-    setRegistrando(`${perfilId}:${metodo}`);
+  function abrirModal(residente: ResidentePago, metodo: MetodoPago) {
+    const actual = PERIODOS_PAGO.find(p => p.tipo === 'actual');
+    setModalPago({ residente, metodo });
+    setMesesSel(actual ? [{ mes: actual.mes, anio: actual.anio }] : []);
+  }
+
+  function toggleMes(mes: number, anio: number) {
+    setMesesSel(prev => prev.some(m => m.mes === mes && m.anio === anio)
+      ? prev.filter(m => !(m.mes === mes && m.anio === anio))
+      : [...prev, { mes, anio }]);
+  }
+
+  async function registrar() {
+    if (!modalPago || mesesSel.length === 0) return;
+    setRegistrando(`${modalPago.residente.id}:${modalPago.metodo}`);
     try {
-      const res = await mutation.mutateAsync({ perfilId, metodo, mesesAdelantados });
+      const res = await mutation.mutateAsync({
+        perfilId: modalPago.residente.id,
+        metodo: modalPago.metodo,
+        meses: mesesSel,
+      });
+      setModalPago(null);
+      setMesesSel([]);
       mostrar(`Pago registrado — folio ${res.folio}`, 'ok');
     } catch (e: unknown) {
       mostrar(e instanceof Error ? e.message : 'No se pudo registrar el pago', 'error');
@@ -149,23 +199,6 @@ export function PagosTesorera() {
           <FilterBtn active={filtro === 'todos'}      onClick={() => setFiltro('todos')}      label={`Todos (${residentes.length})`} />
         </div>
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: C.textMuted, fontWeight: 700 }}>
-          Meses
-          <select
-            value={mesesAdelantados}
-            onChange={e => setMesesAdelantados(Number(e.target.value))}
-            style={{
-              height: 38, borderRadius: 12, border: `1.5px solid ${C.border}`,
-              background: C.card, color: C.textMain, fontFamily: FM, fontWeight: 700,
-              padding: '0 10px', outline: 'none',
-            }}
-          >
-            {Array.from({ length: 12 }, (_, i) => i + 1).map(n => (
-              <option key={n} value={n}>{n}</option>
-            ))}
-          </select>
-        </label>
-
         <div style={{ position: 'relative', flex: 1, maxWidth: 260 }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={C.textMuted} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
             style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} aria-hidden="true">
@@ -260,14 +293,14 @@ export function PagosTesorera() {
                         disabled={!!registrando}
                         danger={r.estadoAgua === 'cortado'}
                         outline
-                        onClick={() => registrar(r.id, 'efectivo')}
+                        onClick={() => abrirModal(r, 'efectivo')}
                       />
                       <ActionBtn
                         label={r.pagoEsteMes ? 'Adelantar transferencia' : 'Transferencia'}
                         loading={registrando === `${r.id}:transferencia`}
                         disabled={!!registrando}
                         danger={r.estadoAgua === 'cortado'}
-                        onClick={() => registrar(r.id, 'transferencia')}
+                        onClick={() => abrirModal(r, 'transferencia')}
                       />
                     </div>
                   )}
@@ -277,6 +310,59 @@ export function PagosTesorera() {
           </div>
         )}
       </div>
+
+      {modalPago && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(0,0,0,.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18 }}
+          onClick={e => { if (e.target === e.currentTarget && !registrando) setModalPago(null); }}
+        >
+          <div style={{ width: '100%', maxWidth: 560, maxHeight: '88vh', overflow: 'auto', background: '#fff', borderRadius: 18, padding: 20, boxShadow: '0 22px 70px rgba(0,0,0,.25)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start' }}>
+              <div>
+                <h2 style={{ fontFamily: FS, fontSize: 18, color: C.green, fontWeight: 800 }}>Registrar pago</h2>
+                <p style={{ marginTop: 4, color: C.textMuted, fontSize: 13 }}>
+                  {modalPago.residente.usuario?.name ?? 'Sin nombre'} · {modalPago.metodo === 'efectivo' ? 'Efectivo' : 'Transferencia'}
+                </p>
+              </div>
+              <button type="button" onClick={() => setModalPago(null)} disabled={!!registrando} style={{ border: 'none', background: C.greenLight, color: C.green, borderRadius: 10, width: 34, height: 34, cursor: 'pointer', fontWeight: 800 }}>×</button>
+            </div>
+
+            <div style={{ marginTop: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
+              {PERIODOS_PAGO.map(p => {
+                const selected = mesesSel.some(m => m.mes === p.mes && m.anio === p.anio);
+                const color = p.tipo === 'atrasado' ? '#B45309' : p.tipo === 'actual' ? C.green : '#2563EB';
+                return (
+                  <button
+                    key={`${p.anio}-${p.mes}`}
+                    type="button"
+                    onClick={() => toggleMes(p.mes, p.anio)}
+                    style={{
+                      minHeight: 48, borderRadius: 12, border: selected ? `2px solid ${color}` : `1px solid ${C.border}`,
+                      background: selected ? '#F8FAF7' : '#fff', color: C.textMain, cursor: 'pointer',
+                      display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center', padding: '8px 10px',
+                    }}
+                  >
+                    <span style={{ fontWeight: 800, fontSize: 13 }}>{p.label}</span>
+                    <span style={{ color, fontSize: 11, fontWeight: 800, textTransform: 'uppercase' }}>{p.tipo}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div style={{ marginTop: 16, display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ color: C.textMuted, fontSize: 13, fontWeight: 700 }}>{mesesSel.length} meses seleccionados</span>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" onClick={() => setModalPago(null)} disabled={!!registrando} style={{ border: `1px solid ${C.border}`, background: '#fff', color: C.textMain, borderRadius: 10, padding: '9px 14px', fontWeight: 800, cursor: 'pointer' }}>Cancelar</button>
+                <button type="button" onClick={registrar} disabled={!!registrando || mesesSel.length === 0} style={{ border: 'none', background: C.green, color: '#fff', borderRadius: 10, padding: '9px 14px', fontWeight: 800, cursor: registrando ? 'not-allowed' : 'pointer', opacity: registrando ? .65 : 1 }}>
+                  {registrando ? 'Registrando...' : 'Registrar pago'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

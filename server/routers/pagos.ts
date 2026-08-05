@@ -222,6 +222,10 @@ export const pagosRouter = router({
       perfilId:          z.uuid(),
       metodo:            z.enum(['efectivo', 'transferencia']),
       mesesAdelantados:  z.number().int().min(1).max(12).optional(),
+      meses:             z.array(z.object({
+        mes:  z.number().int().min(1).max(12),
+        anio: z.number().int().min(2020).max(2100),
+      })).min(1).max(36).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const circuito = await resolverCircuitoTesoreraService.execute(ctx.user.id);
@@ -233,14 +237,14 @@ export const pagosRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Residente no encontrado en tu circuito' });
       }
 
-      const mesesARegistrar = input.mesesAdelantados ?? 1;
-      const periodos = await nextUnpaidPeriods(perfil.id, mesesARegistrar);
+      const periodos = input.meses ?? await nextUnpaidPeriods(perfil.id, input.mesesAdelantados ?? 1);
       if (periodos.length === 0) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'No hay periodos disponibles para registrar' });
       }
 
       const esReconexion = perfil.estadoAgua === 'cortado';
       const folios: string[] = [];
+      const omitidos: string[] = [];
       let total = 0;
 
       for (const [index, periodo] of periodos.entries()) {
@@ -249,38 +253,47 @@ export const pagosRouter = router({
         const desglose   = calcularDesglosePagoManual(montoBase);
         const folio      = FolioVO.generate().toString();
 
-        await pagoRepo.createWithLock(perfil.id, {
-          perfilId:               perfil.id,
-          circuitoId:             circuito.id,
-          representanteId:        circuito.representanteId ?? null,
-          mes:                    periodo.mes,
-          anio:                   periodo.anio,
-          monto:                  desglose.total,
-          montoBase:              desglose.montoBase,
-          iva:                    desglose.iva,
-          comisionMercadoPago:    desglose.comisionMercadoPago,
-          retencionIsr:           desglose.retencionIsr,
-          retencionIva:           desglose.retencionIva,
-          montoNetoRepresentante: desglose.montoNetoRepresentante,
-          mercadoPagoCollectorId: circuito.mercadoPagoCollectorId,
-          estado:                 'pagado',
-          metodo:                 input.metodo,
-          folio,
-          esReconexion:           incluyeReconexion,
-          fechaPago:              new Date(),
-        });
+        try {
+          await pagoRepo.createWithLock(perfil.id, {
+            perfilId:               perfil.id,
+            circuitoId:             circuito.id,
+            representanteId:        circuito.representanteId ?? null,
+            mes:                    periodo.mes,
+            anio:                   periodo.anio,
+            monto:                  desglose.total,
+            montoBase:              desglose.montoBase,
+            iva:                    desglose.iva,
+            comisionMercadoPago:    desglose.comisionMercadoPago,
+            retencionIsr:           desglose.retencionIsr,
+            retencionIva:           desglose.retencionIva,
+            montoNetoRepresentante: desglose.montoNetoRepresentante,
+            mercadoPagoCollectorId: circuito.mercadoPagoCollectorId,
+            estado:                 'pagado',
+            metodo:                 input.metodo,
+            folio,
+            esReconexion:           incluyeReconexion,
+            fechaPago:              new Date(),
+          });
 
-        folios.push(folio);
-        total += Number(desglose.total);
+          folios.push(folio);
+          total += Number(desglose.total);
+        } catch (err) {
+          if (err instanceof TRPCError && err.code === 'BAD_REQUEST') {
+            omitidos.push(`${MESES_CORTO[periodo.mes - 1]} ${periodo.anio}`);
+            continue;
+          }
+          throw err;
+        }
       }
 
       logger.info('pago.tesorera.manual', {
-        folios, perfilId: perfil.id, tesoreraId: ctx.user.id, registrados: folios.length,
+        folios, perfilId: perfil.id, tesoreraId: ctx.user.id, registrados: folios.length, omitidos: omitidos.length,
       });
       return {
         folio: folios[0],
         folios,
         registrados: folios.length,
+        omitidos,
         monto: total.toFixed(2),
         metodo: input.metodo,
         periodos: periodos.map(p => `${MESES_CORTO[p.mes - 1]} ${p.anio}`),

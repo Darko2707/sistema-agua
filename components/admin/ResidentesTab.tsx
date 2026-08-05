@@ -11,20 +11,25 @@ const MESES_NOMBRE = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','
 const MESES_CORTO  = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 
 // Genera los últimos N meses anteriores al mes actual
-function generarMesesPasados(n = 24): Array<{ mes: number; anio: number; label: string }> {
+function generarPeriodosPago(pasados = 12, futuros = 12): Array<{ mes: number; anio: number; label: string; tipo: 'atrasado' | 'actual' | 'adelantado' }> {
   const items = [];
   const now = new Date();
-  let d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  for (let i = 0; i < n; i++) {
+  for (let offset = -pasados; offset <= futuros; offset++) {
+    const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
     const mes  = d.getMonth() + 1;
     const anio = d.getFullYear();
-    items.push({ mes, anio, label: `${MESES_NOMBRE[mes - 1]} ${anio}` });
-    d = new Date(d.getFullYear(), d.getMonth() - 1, 1);
+    const tipo: 'atrasado' | 'actual' | 'adelantado' = offset < 0 ? 'atrasado' : offset === 0 ? 'actual' : 'adelantado';
+    items.push({
+      mes,
+      anio,
+      label: `${MESES_NOMBRE[mes - 1]} ${anio}`,
+      tipo,
+    });
   }
   return items;
 }
 
-const MESES_PASADOS = generarMesesPasados(24);
+const PERIODOS_PAGO = generarPeriodosPago();
 
 type MesAnio = { mes: number; anio: number };
 
@@ -64,10 +69,11 @@ export function ResidentesTab({
   const [resultado,      setResultado]      = useState<{ registrados: number; omitidos: string[] } | null>(null);
   const [errorModal,     setErrorModal]     = useState<string | null>(null);
 
-  function abrirModal(r: ResidenteCompleto) {
+  function abrirModal(r: ResidenteCompleto, metodo: 'efectivo' | 'transferencia') {
     setModalResidente(r);
-    setMesesSel([]);
-    setMetodoSel('efectivo');
+    const actual = PERIODOS_PAGO.find(p => p.tipo === 'actual');
+    setMesesSel(actual ? [{ mes: actual.mes, anio: actual.anio }] : []);
+    setMetodoSel(metodo);
     setResultado(null);
     setErrorModal(null);
   }
@@ -109,8 +115,8 @@ export function ResidentesTab({
 
   // Agrupa meses pasados por año para mostrarlos ordenados
   const porAnio = useMemo(() => {
-    const mapa = new Map<number, typeof MESES_PASADOS>();
-    for (const item of MESES_PASADOS) {
+    const mapa = new Map<number, typeof PERIODOS_PAGO>();
+    for (const item of PERIODOS_PAGO) {
       if (!mapa.has(item.anio)) mapa.set(item.anio, []);
       mapa.get(item.anio)!.push(item);
     }
@@ -201,9 +207,17 @@ export function ResidentesTab({
                     variant="outline"
                     size="sm"
                     className="text-xs"
-                    onClick={() => abrirModal(r)}
+                    onClick={() => abrirModal(r, 'efectivo')}
                   >
-                    + Pagos anteriores
+                    Efectivo
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="text-xs"
+                    onClick={() => abrirModal(r, 'transferencia')}
+                  >
+                    Transferencia
                   </Button>
                   <select
                     value={r.usuario?.role || 'residente'}
@@ -232,13 +246,13 @@ export function ResidentesTab({
           onClick={(e) => { if (e.target === e.currentTarget) cerrarModal(); }}
         >
           <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
-            <h2 className="text-lg font-bold text-slate-800">Registrar pagos anteriores</h2>
+            <h2 className="text-lg font-bold text-slate-800">Registrar pago por {metodoSel === 'efectivo' ? 'efectivo' : 'transferencia'}</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               {modalResidente.usuario?.name} · {modalResidente.circuito?.nombre} · Edif.{' '}
               {modalResidente.edificio} · Depto. {modalResidente.departamento}
             </p>
             <p className="mt-1 text-xs text-slate-400">
-              Los pagos retroactivos no generan folio ni afectan el estado del servicio.
+              Selecciona meses atrasados, el mes actual o meses adelantados para registrar el pago.
             </p>
 
             <div className="mt-4 space-y-4">
@@ -246,13 +260,13 @@ export function ResidentesTab({
               <div>
                 <div className="mb-2 flex items-center justify-between">
                   <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Selecciona los meses a registrar
+                    Selecciona los meses pagados
                   </label>
                   <div className="flex gap-2 text-xs">
                     <button
                       type="button"
                       className="text-sky-600 hover:underline"
-                      onClick={() => setMesesSel(MESES_PASADOS.map(({ mes, anio }) => ({ mes, anio })))}
+                      onClick={() => setMesesSel(PERIODOS_PAGO.map(({ mes, anio }) => ({ mes, anio })))}
                     >
                       Todos
                     </button>
@@ -272,7 +286,7 @@ export function ResidentesTab({
                     <div key={anio}>
                       <p className="sticky top-0 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-500">{anio}</p>
                       <div className="grid grid-cols-3 gap-px p-2">
-                        {meses.map(({ mes, anio: a }) => {
+                        {meses.map(({ mes, anio: a, tipo }) => {
                           const sel = estaSeleccionado(mes, a);
                           return (
                             <button
@@ -285,7 +299,8 @@ export function ResidentesTab({
                                   : 'bg-slate-50 text-slate-700 hover:bg-slate-100'
                               }`}
                             >
-                              {MESES_CORTO[mes - 1]}
+                              <span className="block">{MESES_CORTO[mes - 1]}</span>
+                              <span className={`block text-[10px] ${sel ? 'text-white/80' : 'text-slate-400'}`}>{tipo}</span>
                             </button>
                           );
                         })}
