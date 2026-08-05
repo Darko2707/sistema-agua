@@ -27,6 +27,9 @@ export async function GET(
   }
 
   const { folio } = await ctx.params;
+  if (!/^[A-Z0-9-]{4,64}$/i.test(folio)) {
+    return Response.json({ error: 'Folio invalido' }, { status: 400 });
+  }
 
   // ── Buscar ticket en DB ───────────────────────────────────────────────────
   const ticket = await db.query.tickets.findFirst({

@@ -14,6 +14,7 @@ import type {
 } from '@/server/services/excel-reportes';
 
 export const dynamic = 'force-dynamic';
+const MAX_RANGO_MESES = 36;
 
 // Genera lista de (mes, anio) entre dos períodos inclusive
 function getMesesEnRango(
@@ -29,6 +30,14 @@ function getMesesEnRango(
     if (m > 12) { m = 1; a++; }
   }
   return result;
+}
+
+function isMesValido(mes: number): boolean {
+  return Number.isInteger(mes) && mes >= 1 && mes <= 12;
+}
+
+function isAnioValido(anio: number): boolean {
+  return Number.isInteger(anio) && anio >= 2020 && anio <= 2100;
 }
 
 async function resolverCircuito(userId: string) {
@@ -76,7 +85,7 @@ export async function GET(req: Request) {
     const mesHasta  = parseInt(mesHastaRaw,  10);
     const anioHasta = parseInt(anioHastaRaw, 10);
 
-    if ([mesDesde, anioDesde, mesHasta, anioHasta].some(isNaN))
+    if (!isMesValido(mesDesde) || !isMesValido(mesHasta) || !isAnioValido(anioDesde) || !isAnioValido(anioHasta))
       return new Response('Parámetros inválidos', { status: 400 });
 
     const desdeNum = anioDesde * 100 + mesDesde;
@@ -85,6 +94,8 @@ export async function GET(req: Request) {
       return new Response('El rango de fechas es inválido', { status: 400 });
 
     const mesesLista = getMesesEnRango(mesDesde, anioDesde, mesHasta, anioHasta);
+    if (mesesLista.length > MAX_RANGO_MESES)
+      return new Response('El rango no puede exceder 36 meses', { status: 400 });
 
     const [residentes, pagosTodos, gastosTodos, ingresosTodos] = await Promise.all([
       db.query.perfilesResidente.findMany({
@@ -192,7 +203,7 @@ export async function GET(req: Request) {
   const mes  = parseInt(url.searchParams.get('mes')  ?? String(new Date().getMonth() + 1), 10);
   const anio = parseInt(url.searchParams.get('anio') ?? String(new Date().getFullYear()), 10);
 
-  if (isNaN(mes) || isNaN(anio)) return new Response('Parámetros inválidos', { status: 400 });
+  if (!isMesValido(mes) || !isAnioValido(anio)) return new Response('Parámetros inválidos', { status: 400 });
 
   const [residentes, pagosPeriodo, gastosPeriodo, ingresosPeriodo] = await Promise.all([
     db.query.perfilesResidente.findMany({

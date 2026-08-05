@@ -18,16 +18,16 @@ async function checkDatabase(): Promise<CheckResult> {
   try {
     await db.execute(sql`SELECT 1`);
     return { status: 'ok', latencyMs: Date.now() - t0 };
-  } catch (err) {
+  } catch {
     return { status: 'error', latencyMs: Date.now() - t0, detail: 'unreachable' };
   }
 }
 
-function checkEnv(): CheckResult & { missing: string[] } {
+function checkEnv(): CheckResult & { missingCount: number } {
   const missing = REQUIRED_ENV.filter((key) => !process.env[key]);
   return missing.length === 0
-    ? { status: 'ok', missing: [] }
-    : { status: 'error', missing, detail: 'missing required env vars' };
+    ? { status: 'ok', missingCount: 0 }
+    : { status: 'error', missingCount: missing.length, detail: 'missing required env vars' };
 }
 
 export async function GET() {

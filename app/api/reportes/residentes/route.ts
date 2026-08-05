@@ -21,7 +21,24 @@ function sortPorEdificio<T extends { edificio: string; departamento: string }>(a
   });
 }
 
+function safeFilenamePart(value: string): string {
+  return value
+    .replace(/[\r\n"]/g, '')
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80) || 'circuito';
+}
+
 export const dynamic = 'force-dynamic';
+const MAX_RANGO_MESES = 36;
+
+function isMesValido(mes: number): boolean {
+  return Number.isInteger(mes) && mes >= 1 && mes <= 12;
+}
+
+function isAnioValido(anio: number): boolean {
+  return Number.isInteger(anio) && anio >= 2020 && anio <= 2100;
+}
 
 export async function GET(req: Request) {
   const session = await auth.api.getSession({ headers: req.headers });
@@ -75,10 +92,16 @@ export async function GET(req: Request) {
   if (mesDesdeRaw && anioDesdeRaw && mesHastaRaw && anioHastaRaw) {
     const mD = parseInt(mesDesdeRaw, 10), aD = parseInt(anioDesdeRaw, 10);
     const mH = parseInt(mesHastaRaw, 10), aH = parseInt(anioHastaRaw, 10);
+    if (!isMesValido(mD) || !isMesValido(mH) || !isAnioValido(aD) || !isAnioValido(aH)) {
+      return new Response('Parametros invalidos', { status: 400 });
+    }
     let m = mD, a = aD;
     while (a < aH || (a === aH && m <= mH)) {
       periodos.push({ mes: m, anio: a });
       if (++m > 12) { m = 1; a++; }
+    }
+    if (periodos.length === 0 || periodos.length > MAX_RANGO_MESES) {
+      return new Response('El rango no puede exceder 36 meses', { status: 400 });
     }
   } else {
     for (let i = 11; i >= 0; i--) {
@@ -138,7 +161,7 @@ export async function GET(req: Request) {
     residentes: ordenados,
   });
 
-  const nombre = circuito.nombre.replace(/\s+/g, '-');
+  const nombre = safeFilenamePart(circuito.nombre);
   return new Response(new Uint8Array(xlsxBuffer), {
     headers: {
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

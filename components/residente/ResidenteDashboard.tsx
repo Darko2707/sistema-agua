@@ -488,42 +488,63 @@ export function ResidenteDashboard() {
                   )}
 
                   {!esReconexion && (
-                    <div style={{ marginTop: 14 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 8 }}>
+                    <label style={{ display: 'block', marginTop: 14 }}>
+                      <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 7 }}>
                         <span style={{ fontSize: 12, color: C.textWarm, fontWeight: 800 }}>Meses a pagar</span>
                         <span style={{ fontSize: 12, color: C.green, fontWeight: 800 }}>
-                          {mesesAdelantados === 1 ? 'Mes actual' : `${mesesAdelantados} meses`}
+                          {mesesAdelantados === 1 ? 'Mes actual' : 'Adelanto'}
                         </span>
-                      </div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 7 }}>
-                        {[1, 3, 6, 12].map(n => {
-                          const active = mesesAdelantados === n;
-                          return (
-                            <button
-                              key={n}
-                              type="button"
-                              onClick={() => setMesesAdelantados(n)}
-                              style={{
-                                minHeight: 42, borderRadius: 12, border: active ? `2px solid ${C.green}` : `1.5px solid ${C.border3}`,
-                                background: active ? C.greenBg : '#fff', color: active ? C.green : C.textMain,
-                                fontFamily: FB, fontWeight: 800, cursor: 'pointer',
-                              }}
-                            >
-                              {n}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <input
-                        type="range"
-                        min={1}
-                        max={12}
-                        value={mesesAdelantados}
-                        onChange={e => setMesesAdelantados(Number(e.target.value))}
-                        aria-label="Meses a pagar con tarjeta"
-                        style={{ width: '100%', marginTop: 12, accentColor: C.green }}
-                      />
-                    </div>
+                      </span>
+                      <span style={{ position: 'relative', display: 'block' }}>
+                        <select
+                          value={mesesAdelantados}
+                          onChange={e => setMesesAdelantados(Number(e.target.value))}
+                          aria-label="Meses a pagar con tarjeta"
+                          style={{
+                            width: '100%',
+                            height: 46,
+                            borderRadius: 14,
+                            border: `1.5px solid ${C.border3}`,
+                            background: '#fff',
+                            color: C.textMain,
+                            fontFamily: FM,
+                            fontWeight: 800,
+                            fontSize: 14,
+                            padding: '0 42px 0 14px',
+                            outline: 'none',
+                            boxShadow: '0 4px 12px rgba(120,90,30,.07)',
+                            appearance: 'none',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          {Array.from({ length: 12 }, (_, i) => i + 1).map(n => (
+                            <option key={n} value={n}>
+                              {n === 1 ? '1 mes (actual)' : `${n} meses`}
+                            </option>
+                          ))}
+                        </select>
+                        <span
+                          aria-hidden="true"
+                          style={{
+                            position: 'absolute',
+                            right: 14,
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            pointerEvents: 'none',
+                            color: C.green,
+                            display: 'flex',
+                            alignItems: 'center',
+                          }}
+                        >
+                          <Chevron color={C.green} />
+                        </span>
+                      </span>
+                      <span style={{ display: 'block', marginTop: 7, fontSize: 11.5, color: C.textWarm2, fontWeight: 600 }}>
+                        {mesesAdelantados === 1
+                          ? 'Pagaras solo el periodo vigente.'
+                          : `Se registraran ${mesesAdelantados} meses consecutivos.`}
+                      </span>
+                    </label>
                   )}
 
                   {/* Collapsible breakdown */}
