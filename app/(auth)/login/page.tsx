@@ -116,7 +116,7 @@ export default function LoginPage() {
               />
               <button
                 type="button"
-                aria-label={showPwd ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                aria-label={showPwd ? 'Ocultar clave' : 'Mostrar clave'}
                 onClick={() => setShowPwd(v => !v)}
                 style={{ position: 'absolute', right: 13, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: C.textWarm, display: 'flex', alignItems: 'center', padding: 0 }}
               >

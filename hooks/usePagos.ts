@@ -51,14 +51,14 @@ export function useCheckoutMP() {
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function checkout(esReconexion: boolean) {
+  async function checkout(esReconexion: boolean, mesesAdelantados = 1) {
     setIsPending(true);
     setError(null);
     try {
       const res = await fetch('/api/mercadopago/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ esReconexion }),
+        body: JSON.stringify({ esReconexion, mesesAdelantados }),
         credentials: 'include',
       });
       const data = await res.json();

@@ -9,6 +9,7 @@ import { useMiHistorial, useCheckoutMP } from '@/hooks/usePagos';
 import { ResidenteDashboardSkeleton } from './ResidenteDashboardSkeleton';
 import { MESES_FULL as MESES } from '@/lib/meses';
 import { CheckCircle2, Clock, XCircle } from 'lucide-react';
+import { calcularDesglosePago } from '@/src/domain/pagos/calculator';
 
 // ── Design tokens ──────────────────────────────────────────────────────────────
 const C = {
@@ -177,6 +178,7 @@ export function ResidenteDashboard() {
 
   const [menuOpen,      setMenuOpen]      = useState(false);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
+  const [mesesAdelantados, setMesesAdelantados] = useState(1);
   const menuRef      = useRef<HTMLDivElement>(null);
   const announcerRef = useRef<HTMLDivElement>(null);
 
@@ -232,6 +234,9 @@ export function ResidenteDashboard() {
   const montoMensual    = Number(perfil.circuito?.montoMensual ?? 50);
   const montoReconexion = Number(perfil.circuito?.montoReconexion ?? 300);
   const esReconexion    = perfil.estadoAgua === 'cortado';
+  const montoBaseAdelantado = montoMensual * mesesAdelantados + (esReconexion ? montoReconexion : 0);
+  const desgloseAdelantado = desgloseVigente ? calcularDesglosePago(montoBaseAdelantado) : null;
+  const totalTarjeta = desgloseAdelantado?.total ?? totalConCargos;
 
   const userName = sessionData?.user?.name ?? 'Usuario';
   const miRol    = (sessionData?.user?.role as string) ?? 'residente';
@@ -263,11 +268,11 @@ export function ResidenteDashboard() {
     .slice(0, 6);
 
   const breakdown = desgloseVigente ? [
-    { label: 'Cuota base',                value: `$${montoMensual.toFixed(2)}` },
+    { label: mesesAdelantados === 1 ? 'Cuota base' : `Cuotas (${mesesAdelantados} meses)`, value: `$${(montoMensual * mesesAdelantados).toFixed(2)}` },
     ...(esReconexion ? [{ label: 'Cargo de reconexión', value: `$${montoReconexion.toFixed(2)}` }] : []),
-    { label: 'Comisión Mercado Pago',     value: `$${desgloseVigente.comisionMercadoPago}` },
-    { label: 'Retención ISR (MP)',        value: `$${desgloseVigente.retencionIsr}` },
-    { label: 'Retención IVA (MP)',        value: `$${desgloseVigente.retencionIva}` },
+    { label: 'Comisión Mercado Pago',     value: `$${desgloseAdelantado?.comisionMercadoPago ?? desgloseVigente.comisionMercadoPago}` },
+    { label: 'Retención ISR (MP)',        value: `$${desgloseAdelantado?.retencionIsr ?? desgloseVigente.retencionIsr}` },
+    { label: 'Retención IVA (MP)',        value: `$${desgloseAdelantado?.retencionIva ?? desgloseVigente.retencionIva}` },
   ] : [];
 
   async function salir() {
@@ -472,14 +477,35 @@ export function ResidenteDashboard() {
                   </div>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, marginTop: 5 }}>
                     <span style={{ fontFamily: FB, fontSize: 46, fontWeight: 800, color: C.green, letterSpacing: '-.02em', lineHeight: 1 }}>
-                      ${desgloseVigente?.montoBase ?? montoMensual.toFixed(2)}
+                      ${montoBaseAdelantado.toFixed(2)}
                     </span>
                     <span style={{ fontSize: 15, fontWeight: 700, color: C.textWarm2 }}>MXN</span>
                   </div>
                   {desgloseVigente && (
                     <div style={{ fontSize: 12.5, color: '#C98A0E', marginTop: 5, fontWeight: 600 }}>
-                      Con tarjeta: <strong>${totalConCargos} MXN</strong> · incluye comisiones MP
+                      Con tarjeta: <strong>${totalTarjeta} MXN</strong> · incluye comisiones MP
                     </div>
+                  )}
+
+                  {!esReconexion && (
+                    <label style={{ display: 'block', marginTop: 14 }}>
+                      <span style={{ display: 'block', fontSize: 12, color: C.textWarm, fontWeight: 800, marginBottom: 6 }}>
+                        Meses a pagar con tarjeta
+                      </span>
+                      <select
+                        value={mesesAdelantados}
+                        onChange={e => setMesesAdelantados(Number(e.target.value))}
+                        style={{
+                          width: '100%', height: 42, borderRadius: 12, border: `1.5px solid ${C.border3}`,
+                          background: '#fff', color: C.textMain, fontFamily: FM, fontWeight: 700,
+                          padding: '0 12px', outline: 'none',
+                        }}
+                      >
+                        {Array.from({ length: 12 }, (_, i) => i + 1).map(n => (
+                          <option key={n} value={n}>{n} {n === 1 ? 'mes' : 'meses'}</option>
+                        ))}
+                      </select>
+                    </label>
                   )}
 
                   {/* Collapsible breakdown */}
@@ -510,7 +536,7 @@ export function ResidenteDashboard() {
                           <div style={{ height: 1, background: C.border3, margin: '8px 0' }} />
                           <div style={{ display: 'flex', justifyContent: 'space-between', color: C.green, fontWeight: 800, fontSize: 14 }}>
                             <span>Total a pagar</span>
-                            <span>${totalConCargos} MXN</span>
+                            <span>${totalTarjeta} MXN</span>
                           </div>
                         </div>
                       )}
@@ -521,7 +547,7 @@ export function ResidenteDashboard() {
                 {/* MP button */}
                 <button
                   type="button"
-                  onClick={() => checkout(esReconexion)}
+                  onClick={() => checkout(esReconexion, mesesAdelantados)}
                   disabled={pagando}
                   aria-busy={pagando}
                   style={{
@@ -539,7 +565,7 @@ export function ResidenteDashboard() {
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5A3D06" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                     <rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19"/>
                   </svg>
-                  {pagando ? 'Redirigiendo a Mercado Pago...' : `Pagar $${totalConCargos} con Mercado Pago`}
+                  {pagando ? 'Redirigiendo a Mercado Pago...' : `Pagar $${totalTarjeta} con Mercado Pago`}
                 </button>
 
                 {error && (
@@ -601,7 +627,7 @@ export function ResidenteDashboard() {
                 {!yaPagoEsteMes && perfil.estadoAgua !== 'pendiente_reconexion' && (
                   <button
                     type="button"
-                    onClick={() => checkout(esReconexion)}
+                    onClick={() => checkout(esReconexion, mesesAdelantados)}
                     disabled={pagando}
                     aria-busy={pagando}
                     style={{ marginTop: 14, background: C.gold, color: '#5A3D06', border: 'none', borderRadius: 14, padding: '12px 22px', cursor: pagando ? 'not-allowed' : 'pointer', fontFamily: FB, fontSize: 13, fontWeight: 700 }}

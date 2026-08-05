@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseExternalReference } from '@/src/infrastructure/mercadopago/parser';
+import { expandExternalReference, parseExternalReference } from '@/src/infrastructure/mercadopago/parser';
 
 const VALID = 'agua|perf-abc|6|2025|0|125.50';
 
@@ -62,5 +62,26 @@ describe('parseExternalReference', () => {
 
   it('null si monto no es un número', () => {
     expect(parseExternalReference('agua|perf-abc|6|2025|0|abc')).toBeNull();
+  });
+  it('parsea referencia v2 de meses adelantados', () => {
+    expect(parseExternalReference('agua2|perf-abc|11|2026|3|0|100|0')).toEqual({
+      perfilId:         'perf-abc',
+      mes:              11,
+      anio:             2026,
+      esReconexion:     false,
+      monto:            '300.00',
+      mesesAdelantados: 3,
+      montoMensual:     '100.00',
+      montoReconexion:  '0.00',
+    });
+  });
+
+  it('expande meses adelantados cruzando de anio', () => {
+    const ref = parseExternalReference('agua2|perf-abc|11|2026|3|0|100|0');
+    expect(ref && expandExternalReference(ref)).toEqual([
+      { perfilId: 'perf-abc', mes: 11, anio: 2026, esReconexion: false, monto: '100.00' },
+      { perfilId: 'perf-abc', mes: 12, anio: 2026, esReconexion: false, monto: '100.00' },
+      { perfilId: 'perf-abc', mes: 1, anio: 2027, esReconexion: false, monto: '100.00' },
+    ]);
   });
 });

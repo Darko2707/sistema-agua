@@ -4,7 +4,7 @@ import * as Sentry from '@sentry/nextjs';
 import { createMercadoPagoClients } from '@/lib/mercadopago';
 import { decryptTokenSafe } from '@/lib/crypto';
 import { db } from '@/db';
-import { parseExternalReference, type ExternalReference } from '@/src/infrastructure/mercadopago/parser';
+import { expandExternalReference, parseExternalReference, type ExternalReference } from '@/src/infrastructure/mercadopago/parser';
 import { residenteRepo, pagoRepo, circuitoRepo } from '@/src/infrastructure/db/repositories';
 import { ProcesarPagoMpHandler } from '@/src/application/pagos/commands/procesar-pago-mp.handler';
 import { logger } from '@/lib/logger';
@@ -70,6 +70,7 @@ export async function POST(request: Request) {
     const reference = parseExternalReference(payment.external_reference) ?? referenceFromUrl;
 
     if (payment.status === 'approved' && reference) {
+      const references = expandExternalReference(reference);
       logger.info('mp.webhook.pago_aprobado', {
         paymentId: String(payment.id),
         perfilId:  reference.perfilId,
@@ -77,13 +78,16 @@ export async function POST(request: Request) {
         anio:      reference.anio,
         monto:     reference.monto,
         esReconexion: reference.esReconexion,
+        mesesAdelantados: references.length,
       });
-      await procesarPagoMpHandler.execute({
-        ...reference,
-        metodo:                'mercado_pago',
-        mercadoPagoPaymentId:   payment.id ? String(payment.id) : undefined,
-        mercadoPagoCollectorId: payment.collector_id ? String(payment.collector_id) : undefined,
-      });
+      for (const referenceItem of references) {
+        await procesarPagoMpHandler.execute({
+          ...referenceItem,
+          metodo:                'mercado_pago',
+          mercadoPagoPaymentId:   payment.id ? String(payment.id) : undefined,
+          mercadoPagoCollectorId: payment.collector_id ? String(payment.collector_id) : undefined,
+        });
+      }
     }
 
     return Response.json({ received: true });

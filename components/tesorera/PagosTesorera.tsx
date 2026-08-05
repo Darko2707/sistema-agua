@@ -30,6 +30,7 @@ export function PagosTesorera() {
   const [busqueda,    setBusqueda]    = useState('');
   const [registrando, setRegistrando] = useState<string | null>(null);
   const [toast,       setToast]       = useState<{ msg: string; tipo: 'ok' | 'error' } | null>(null);
+  const [mesesAdelantados, setMesesAdelantados] = useState(1);
 
   const utils    = trpcReact.useUtils();
   const query    = trpcReact.pagos.listarResidentesParaPago.useQuery();
@@ -41,14 +42,14 @@ export function PagosTesorera() {
   });
 
   const circuito   = query.data?.circuito;
-  const residentes = query.data?.residentes ?? [];
+  const residentes = useMemo(() => query.data?.residentes ?? [], [query.data?.residentes]);
   const cargando   = query.isLoading;
   const ahora      = new Date();
 
   async function registrar(perfilId: string, metodo: 'efectivo' | 'transferencia') {
     setRegistrando(`${perfilId}:${metodo}`);
     try {
-      const res = await mutation.mutateAsync({ perfilId, metodo });
+      const res = await mutation.mutateAsync({ perfilId, metodo, mesesAdelantados });
       mostrar(`Pago registrado — folio ${res.folio}`, 'ok');
     } catch (e: unknown) {
       mostrar(e instanceof Error ? e.message : 'No se pudo registrar el pago', 'error');
@@ -148,6 +149,23 @@ export function PagosTesorera() {
           <FilterBtn active={filtro === 'todos'}      onClick={() => setFiltro('todos')}      label={`Todos (${residentes.length})`} />
         </div>
 
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: C.textMuted, fontWeight: 700 }}>
+          Meses
+          <select
+            value={mesesAdelantados}
+            onChange={e => setMesesAdelantados(Number(e.target.value))}
+            style={{
+              height: 38, borderRadius: 12, border: `1.5px solid ${C.border}`,
+              background: C.card, color: C.textMain, fontFamily: FM, fontWeight: 700,
+              padding: '0 10px', outline: 'none',
+            }}
+          >
+            {Array.from({ length: 12 }, (_, i) => i + 1).map(n => (
+              <option key={n} value={n}>{n}</option>
+            ))}
+          </select>
+        </label>
+
         <div style={{ position: 'relative', flex: 1, maxWidth: 260 }}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={C.textMuted} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
             style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} aria-hidden="true">
@@ -223,11 +241,13 @@ export function PagosTesorera() {
                     </span>
                   )}
 
-                  {r.pagoEsteMes ? (
+                  {r.pagoEsteMes && (
                     <span style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 12px', borderRadius: 20, background: C.greenLight, color: C.greenText }}>
                       Pagado ✓
                     </span>
-                  ) : (
+                  )}
+
+                  {r.estadoAgua !== 'pendiente_reconexion' && (
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                       {r.estadoAgua === 'cortado' && (
                         <span style={{ fontSize: 11, color: C.danger, fontWeight: 600 }}>
@@ -235,7 +255,7 @@ export function PagosTesorera() {
                         </span>
                       )}
                       <ActionBtn
-                        label="Efectivo"
+                        label={r.pagoEsteMes ? 'Adelantar efectivo' : 'Efectivo'}
                         loading={registrando === `${r.id}:efectivo`}
                         disabled={!!registrando}
                         danger={r.estadoAgua === 'cortado'}
@@ -243,7 +263,7 @@ export function PagosTesorera() {
                         onClick={() => registrar(r.id, 'efectivo')}
                       />
                       <ActionBtn
-                        label="Transferencia"
+                        label={r.pagoEsteMes ? 'Adelantar transferencia' : 'Transferencia'}
                         loading={registrando === `${r.id}:transferencia`}
                         disabled={!!registrando}
                         danger={r.estadoAgua === 'cortado'}

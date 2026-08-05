@@ -9,7 +9,10 @@ import { calcularDesglosePago, calcularMontoBase } from '@/src/domain/pagos/calc
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
 import { db } from '@/db';
 
-const checkoutSchema = z.object({ esReconexion: z.boolean().optional() });
+const checkoutSchema = z.object({
+  esReconexion:     z.boolean().optional(),
+  mesesAdelantados: z.number().int().min(1).max(12).optional(),
+});
 
 const ALLOWED_ORIGINS = [
   process.env.NEXT_PUBLIC_APP_URL,
@@ -50,6 +53,7 @@ export async function POST(request: Request) {
   }
 
   const periodo = PeriodoVO.vigente();
+  const mesesAdelantados = body.data.mesesAdelantados ?? 1;
   const pagoExistente = await db.query.pagos.findFirst({
     where: (p, { eq, and }) =>
       and(eq(p.perfilId, perfil.id), eq(p.mes, periodo.mes), eq(p.anio, periodo.anio), eq(p.estado, 'pagado')),
@@ -57,20 +61,32 @@ export async function POST(request: Request) {
   if (pagoExistente) return Response.json({ error: 'Ya pagaste este mes' }, { status: 400 });
 
   const esReconexion = perfil.estadoAgua === 'cortado';
-  const montoBase = calcularMontoBase(perfil.circuito.montoMensual, esReconexion, perfil.circuito.montoReconexion);
+  const montoMensual = Number(calcularMontoBase(perfil.circuito.montoMensual, false, perfil.circuito.montoReconexion));
+  const montoReconexion = esReconexion ? Number(perfil.circuito.montoReconexion) : 0;
+  const montoBase = montoMensual * mesesAdelantados + montoReconexion;
   const desglose = calcularDesglosePago(montoBase);
 
-  const externalReference = ['agua', perfil.id, periodo.mes, periodo.anio, esReconexion ? '1' : '0', desglose.montoBase].join('|');
+  const externalReference = [
+    'agua2',
+    perfil.id,
+    periodo.mes,
+    periodo.anio,
+    mesesAdelantados,
+    esReconexion ? '1' : '0',
+    montoMensual.toFixed(2),
+    montoReconexion.toFixed(2),
+  ].join('|');
   const baseUrl = appUrl.replace(/\/$/, '');
   const referenceParam = encodeURIComponent(externalReference);
   const { preferenceClient } = createMercadoPagoClients(accessToken);
+  const mesesLabel = mesesAdelantados === 1 ? '1 mes' : `${mesesAdelantados} meses`;
 
   const preference = await preferenceClient.create({
     body: {
       items: [{
         id:          externalReference,
-        title:       esReconexion ? 'Pago de agua y reconexion' : 'Pago mensual de agua',
-        description: `Periodo ${periodo.mes}/${periodo.anio}`,
+        title:       esReconexion ? 'Pago de agua, reconexion y meses adelantados' : 'Pago de agua adelantado',
+        description: `${mesesLabel} desde ${periodo.mes}/${periodo.anio}`,
         quantity:    1,
         currency_id: 'MXN',
         unit_price:  Number(desglose.total),

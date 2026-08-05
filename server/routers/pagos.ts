@@ -12,8 +12,6 @@ import { ResolverCircuitoTesoreraService } from '@/src/application/circuitos/que
 import { db } from '@/db';
 // eslint-disable-next-line no-restricted-imports -- inline MP webhook queries not yet in a repo
 import { pagos as pagosTable, tickets } from '@/db/schema';
-// eslint-disable-next-line no-restricted-imports -- inline MP webhook queries not yet in a repo
-import { eq } from 'drizzle-orm';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
 import { calcularDesglosePagoManual, calcularMontoBase } from '@/src/domain/pagos/calculator';
 import { FolioVO } from '@/src/domain/pagos/folio.vo';
@@ -25,6 +23,32 @@ const registrarPagoManualHandler = new RegistrarPagoManualHandler({ residenteRep
 const historialPagosHandler = new HistorialPagosHandler({ pagoRepo, residenteRepo });
 const resumenMesHandler = new ResumenMesHandler({ pagoRepo, residenteRepo, circuitoRepo });
 const metricasAdminHandler = new MetricasAdminHandler({ pagoRepo });
+
+const MESES_CORTO = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+function addMonths(mes: number, anio: number, offset: number) {
+  const total = mes - 1 + offset;
+  return {
+    mes:  (total % 12) + 1,
+    anio: anio + Math.floor(total / 12),
+  };
+}
+
+async function nextUnpaidPeriods(perfilId: string, count: number) {
+  const periodo = PeriodoVO.vigente();
+  const result: Array<{ mes: number; anio: number }> = [];
+
+  for (let offset = 0; result.length < count && offset < 36; offset++) {
+    const candidate = addMonths(periodo.mes, periodo.anio, offset);
+    const yaPago = await db.query.pagos.findFirst({
+      where: (p, { eq, and }) =>
+        and(eq(p.perfilId, perfilId), eq(p.mes, candidate.mes), eq(p.anio, candidate.anio), eq(p.estado, 'pagado')),
+    });
+    if (!yaPago) result.push(candidate);
+  }
+
+  return result;
+}
 
 export const pagosRouter = router({
   miHistorial: protectedProcedure.query(async ({ ctx }) => {
@@ -195,8 +219,9 @@ export const pagosRouter = router({
   // ── Tesorera: registrar pago en efectivo / transferencia ────────────────────
   registrarManualTesorera: roleProcedure('tesorera')
     .input(z.object({
-      perfilId: z.uuid(),
-      metodo:   z.enum(['efectivo', 'transferencia']),
+      perfilId:          z.uuid(),
+      metodo:            z.enum(['efectivo', 'transferencia']),
+      mesesAdelantados:  z.number().int().min(1).max(12).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const circuito = await resolverCircuitoTesoreraService.execute(ctx.user.id);
@@ -208,35 +233,58 @@ export const pagosRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Residente no encontrado en tu circuito' });
       }
 
-      const periodo    = PeriodoVO.vigente();
+      const mesesARegistrar = input.mesesAdelantados ?? 1;
+      const periodos = await nextUnpaidPeriods(perfil.id, mesesARegistrar);
+      if (periodos.length === 0) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'No hay periodos disponibles para registrar' });
+      }
+
       const esReconexion = perfil.estadoAgua === 'cortado';
-      const montoBase  = calcularMontoBase(circuito.montoMensual, esReconexion, circuito.montoReconexion);
-      const desglose   = calcularDesglosePagoManual(montoBase);
-      const folio      = FolioVO.generate().toString();
+      const folios: string[] = [];
+      let total = 0;
 
-      await pagoRepo.createWithLock(perfil.id, {
-        perfilId:               perfil.id,
-        circuitoId:             circuito.id,
-        representanteId:        circuito.representanteId ?? null,
-        mes:                    periodo.mes,
-        anio:                   periodo.anio,
-        monto:                  desglose.total,
-        montoBase:              desglose.montoBase,
-        iva:                    desglose.iva,
-        comisionMercadoPago:    desglose.comisionMercadoPago,
-        retencionIsr:           desglose.retencionIsr,
-        retencionIva:           desglose.retencionIva,
-        montoNetoRepresentante: desglose.montoNetoRepresentante,
-        mercadoPagoCollectorId: circuito.mercadoPagoCollectorId,
-        estado:                 'pagado',
-        metodo:                 input.metodo,
-        folio,
-        esReconexion,
-        fechaPago:              new Date(),
+      for (const [index, periodo] of periodos.entries()) {
+        const incluyeReconexion = index === 0 && esReconexion;
+        const montoBase  = calcularMontoBase(circuito.montoMensual, incluyeReconexion, circuito.montoReconexion);
+        const desglose   = calcularDesglosePagoManual(montoBase);
+        const folio      = FolioVO.generate().toString();
+
+        await pagoRepo.createWithLock(perfil.id, {
+          perfilId:               perfil.id,
+          circuitoId:             circuito.id,
+          representanteId:        circuito.representanteId ?? null,
+          mes:                    periodo.mes,
+          anio:                   periodo.anio,
+          monto:                  desglose.total,
+          montoBase:              desglose.montoBase,
+          iva:                    desglose.iva,
+          comisionMercadoPago:    desglose.comisionMercadoPago,
+          retencionIsr:           desglose.retencionIsr,
+          retencionIva:           desglose.retencionIva,
+          montoNetoRepresentante: desglose.montoNetoRepresentante,
+          mercadoPagoCollectorId: circuito.mercadoPagoCollectorId,
+          estado:                 'pagado',
+          metodo:                 input.metodo,
+          folio,
+          esReconexion:           incluyeReconexion,
+          fechaPago:              new Date(),
+        });
+
+        folios.push(folio);
+        total += Number(desglose.total);
+      }
+
+      logger.info('pago.tesorera.manual', {
+        folios, perfilId: perfil.id, tesoreraId: ctx.user.id, registrados: folios.length,
       });
-
-      logger.info('pago.tesorera.manual', { folio, perfilId: perfil.id, tesoreraId: ctx.user.id });
-      return { folio, monto: desglose.total, metodo: input.metodo };
+      return {
+        folio: folios[0],
+        folios,
+        registrados: folios.length,
+        monto: total.toFixed(2),
+        metodo: input.metodo,
+        periodos: periodos.map(p => `${MESES_CORTO[p.mes - 1]} ${p.anio}`),
+      };
     }),
 
   registrarRetroactivo: roleProcedure('admin')
@@ -259,7 +307,6 @@ export const pagosRouter = router({
       const montoBase = calcularMontoBase(circuito.montoMensual, false, circuito.montoReconexion);
       const desglose  = calcularDesglosePagoManual(montoBase);
 
-      const MESES_CORTO = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
       let registrados = 0;
       const omitidos: string[] = [];
 
