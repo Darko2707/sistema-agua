@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
 import { trpc } from '@/lib/trpc-client';
@@ -16,7 +16,7 @@ export const ROLES = [
   { value: 'residente',        label: 'Residente' },
 ];
 
-// ─── Tipos ───────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Tipos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export type Resumen = {
   totalDeptos: number;
@@ -55,9 +55,9 @@ export type Circuito = {
   representanteId:  string | null;
 };
 
-export type AdminTab = 'resumen' | 'métricas' | 'personal' | 'residentes' | 'pendientes';
+export type AdminTab = 'resumen' | 'métricas' | 'personal' | 'residentes' | 'pendientes' | 'operacion';
 
-// ─── Hook ────────────────────────────────────────────────────────────────────
+// â”€â”€â”€ Hook â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export function useAdmin() {
   const router = useRouter();
@@ -179,3 +179,5 @@ export function useAdmin() {
     salir,
   };
 }
+
+

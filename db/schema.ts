@@ -1,5 +1,5 @@
 // db/schema.ts
-import { pgTable, uuid, text, integer, decimal, timestamp, boolean, pgEnum, uniqueIndex, index } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, integer, decimal, timestamp, boolean, pgEnum, uniqueIndex, index, jsonb } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 
 export const rolEnum = pgEnum('rol', [
@@ -14,6 +14,7 @@ export const estadoPagoEnum = pgEnum('estado_pago', ['pendiente', 'pagado', 'ven
 export const tenenciaEnum   = pgEnum('tenencia', ['propietario', 'inquilino']);
 export const sexoEnum       = pgEnum('sexo', ['masculino', 'femenino', 'otro']);
 export const metodoPagoEnum = pgEnum('metodo_pago', ['efectivo', 'transferencia', 'mercado_pago']);
+export const estadoNotificacionEnum = pgEnum('estado_notificacion', ['pendiente', 'enviada', 'fallida']);
 
 // ============================================
 // Estado del agua para perfiles
@@ -195,6 +196,77 @@ export const tickets = pgTable('tickets', {
   pdfUrl:    text('pdf_url'),
   emitidoEn: timestamp('emitido_en').defaultNow(),
 });
+
+export const auditoria = pgTable('auditoria', {
+  id:        uuid('id').defaultRandom().primaryKey(),
+  actorId:   text('actor_id').references(() => user.id, { onDelete: 'set null' }),
+  accion:    text('accion').notNull(),
+  entidad:   text('entidad').notNull(),
+  entidadId: text('entidad_id'),
+  detalle:   jsonb('detalle').$type<Record<string, unknown>>(),
+  ip:        text('ip'),
+  userAgent: text('user_agent'),
+  creadoEn:  timestamp('creado_en').notNull().defaultNow(),
+}, (t) => [
+  index('idx_auditoria_entidad').on(t.entidad, t.entidadId),
+  index('idx_auditoria_creado_en').on(t.creadoEn),
+]);
+
+export const reversosPago = pgTable('reversos_pago', {
+  id:            uuid('id').defaultRandom().primaryKey(),
+  pagoId:        uuid('pago_id').notNull().references(() => pagos.id, { onDelete: 'restrict' }),
+  actorId:       text('actor_id').references(() => user.id, { onDelete: 'set null' }),
+  motivo:        text('motivo').notNull(),
+  estadoAnterior:text('estado_anterior').notNull(),
+  creadoEn:      timestamp('creado_en').notNull().defaultNow(),
+}, (t) => [
+  index('idx_reversos_pago').on(t.pagoId),
+  index('idx_reversos_actor').on(t.actorId),
+]);
+
+export const consentimientosLegales = pgTable('consentimientos_legales', {
+  id:                 uuid('id').defaultRandom().primaryKey(),
+  userId:             text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  privacidadVersion:  text('privacidad_version').notNull(),
+  cookiesVersion:     text('cookies_version').notNull(),
+  terminosVersion:    text('terminos_version').notNull(),
+  ip:                 text('ip'),
+  userAgent:          text('user_agent'),
+  aceptadoEn:         timestamp('aceptado_en').notNull().defaultNow(),
+}, (t) => [
+  index('idx_consentimientos_user').on(t.userId),
+]);
+
+export const bitacoraCortes = pgTable('bitacora_cortes', {
+  id:        uuid('id').defaultRandom().primaryKey(),
+  corteId:   uuid('corte_id').references(() => cortes.id, { onDelete: 'set null' }),
+  perfilId:  uuid('perfil_id').notNull().references(() => perfilesResidente.id, { onDelete: 'cascade' }),
+  actorId:   text('actor_id').references(() => user.id, { onDelete: 'set null' }),
+  accion:    text('accion').notNull(),
+  nota:      text('nota'),
+  fotoUrl:   text('foto_url'),
+  creadoEn:  timestamp('creado_en').notNull().defaultNow(),
+}, (t) => [
+  index('idx_bitacora_cortes_perfil').on(t.perfilId),
+  index('idx_bitacora_cortes_corte').on(t.corteId),
+]);
+
+export const notificaciones = pgTable('notificaciones', {
+  id:        uuid('id').defaultRandom().primaryKey(),
+  userId:    text('user_id').references(() => user.id, { onDelete: 'set null' }),
+  perfilId:  uuid('perfil_id').references(() => perfilesResidente.id, { onDelete: 'cascade' }),
+  canal:     text('canal').notNull(),
+  tipo:      text('tipo').notNull(),
+  destino:   text('destino').notNull(),
+  mensaje:   text('mensaje').notNull(),
+  estado:    estadoNotificacionEnum('estado').notNull().default('pendiente'),
+  error:     text('error'),
+  enviadoEn: timestamp('enviado_en'),
+  creadoEn:  timestamp('creado_en').notNull().defaultNow(),
+}, (t) => [
+  index('idx_notificaciones_estado').on(t.estado),
+  index('idx_notificaciones_user').on(t.userId),
+]);
 
 export const ingresosAdicionales = pgTable('ingresos_adicionales', {
   id:              uuid('id').defaultRandom().primaryKey(),

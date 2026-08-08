@@ -1,10 +1,10 @@
-import { headers } from 'next/headers';
+﻿import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
 
 /**
- * Validates session, role, and email verification for protected layouts.
- * Admin is exempt from email verification (created manually by system owner).
+ * Validates session, role, and account verification for protected layouts.
+ * Admin is exempt because it is created manually by the system owner.
  */
 export async function requireSession(opts?: { roles?: string[] }) {
   const session = await auth.api.getSession({ headers: await headers() });
@@ -17,12 +17,9 @@ export async function requireSession(opts?: { roles?: string[] }) {
     redirect('/');
   }
 
-  // TEMPORAL: verificación de correo desactivada hasta contar con dominio
-  // propio para el envío de correos (Resend requiere dominio verificado).
-  // Reactivar descomentando este bloque una vez configurado el dominio.
-  // if (user.role !== 'admin' && !user.emailVerified) {
-  //   redirect('/verificar-email');
-  // }
+  if (user.role !== 'admin' && !user.emailVerified) {
+    redirect('/verificar-email');
+  }
 
   return session;
 }

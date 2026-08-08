@@ -20,6 +20,7 @@ import { PersonalTab }   from './PersonalTab';
 import { ResidentesTab } from './ResidentesTab';
 import { PendientesTab } from './PendientesTab';
 import { MetricasTab }   from './MetricasTab';
+import { OperacionTab }  from './OperacionTab';
 
 const ahora = new Date();
 
@@ -147,6 +148,12 @@ export function AdminDashboard() {
             <Landmark className="h-4 w-4" />
             Tesorera/o
           </Button>
+          <Button
+            variant={tab === 'operacion' ? 'default' : 'outline'}
+            onClick={() => setTab('operacion')}
+          >
+            Operacion
+          </Button>
         </div>
 
         {/* Paneles */}
@@ -186,6 +193,7 @@ export function AdminDashboard() {
             pendientesReconexion={pendientesReconexion}
           />
         )}
+        {tab === 'operacion' && <OperacionTab />}
       </div>
     </div>
   );

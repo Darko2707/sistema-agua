@@ -11,7 +11,7 @@ import { ResolverCircuitoTesoreraService } from '@/src/application/circuitos/que
 // eslint-disable-next-line no-restricted-imports -- inline MP webhook queries not yet in a repo
 import { db } from '@/db';
 // eslint-disable-next-line no-restricted-imports -- inline MP webhook queries not yet in a repo
-import { pagos as pagosTable, tickets } from '@/db/schema';
+import { auditoria, notificaciones, pagos as pagosTable, tickets } from '@/db/schema';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
 import { calcularDesglosePagoManual, calcularMontoBase } from '@/src/domain/pagos/calculator';
 import { FolioVO } from '@/src/domain/pagos/folio.vo';
@@ -97,6 +97,15 @@ export const pagosRouter = router({
         perfilId:        input.perfilId,
         metodo:          input.metodo,
         representanteId: ctx.user.id,
+      }).then(async (result) => {
+        await db.insert(auditoria).values({
+          actorId: ctx.user.id,
+          accion: 'pago.manual.representante',
+          entidad: 'pago',
+          entidadId: result.folio,
+          detalle: { perfilId: input.perfilId, metodo: input.metodo, folio: result.folio },
+        });
+        return result;
       });
     }),
 
@@ -289,6 +298,23 @@ export const pagosRouter = router({
       logger.info('pago.tesorera.manual', {
         folios, perfilId: perfil.id, tesoreraId: ctx.user.id, registrados: folios.length, omitidos: omitidos.length,
       });
+      await db.insert(auditoria).values({
+        actorId: ctx.user.id,
+        accion: 'pago.manual.tesorera',
+        entidad: 'pago',
+        entidadId: folios[0] ?? perfil.id,
+        detalle: { perfilId: perfil.id, metodo: input.metodo, folios, omitidos, periodos },
+      });
+      if (perfil.telefono && folios.length > 0) {
+        await db.insert(notificaciones).values({
+          userId: perfil.userId,
+          perfilId: perfil.id,
+          canal: 'whatsapp',
+          tipo: 'pago_confirmado',
+          destino: perfil.telefono,
+          mensaje: `Tu pago fue registrado. Folios: ${folios.join(', ')}`,
+        });
+      }
       return {
         folio: folios[0],
         folios,
@@ -369,6 +395,23 @@ export const pagosRouter = router({
       logger.info('pago.retroactivo.admin.lote', {
         perfilId: perfil.id, adminId: ctx.user.id, registrados, omitidos: omitidos.length,
       });
+      await db.insert(auditoria).values({
+        actorId: ctx.user.id,
+        accion: 'pago.retroactivo.admin',
+        entidad: 'pago',
+        entidadId: perfil.id,
+        detalle: { perfilId: perfil.id, metodo: input.metodo, registrados, omitidos, meses: input.meses },
+      });
+      if (perfil.telefono && registrados > 0) {
+        await db.insert(notificaciones).values({
+          userId: perfil.userId,
+          perfilId: perfil.id,
+          canal: 'whatsapp',
+          tipo: 'pago_confirmado',
+          destino: perfil.telefono,
+          mensaje: `Se registraron ${registrados} pago(s) en tu cuenta.`,
+        });
+      }
       return { registrados, omitidos };
     }),
 });
