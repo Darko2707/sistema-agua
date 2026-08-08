@@ -90,7 +90,7 @@ export async function GET(
     retencionIva:        ticket.pago.retencionIva,
     emailContacto:       process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? 'contactoservicio4soles@gmail.com',
   });
-
+//si
   try {
     const pdfUrl = await storage.upload(folio, pdf);
     await db.update(tickets).set({ pdfUrl }).where(eq(tickets.folio, folio));
