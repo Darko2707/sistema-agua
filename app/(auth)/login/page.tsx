@@ -26,7 +26,7 @@ export default function LoginPage() {
     try {
       const { error: signInError } = await signIn.email({ email, password });
       if (signInError) {
-        setError(signInError.message ?? 'Correo o contraseÃ±a incorrectos');
+        setError(signInError.message ?? 'Correo o contraseña incorrectos');
         setLoading(false);
         return;
       }
@@ -63,7 +63,7 @@ export default function LoginPage() {
         }, 5000);
       } else {
         const data = await res.json() as { error?: string };
-        setResetError(data.error ?? 'Error al enviar el correo de recuperaciÃ³n');
+        setResetError(data.error ?? 'Error al enviar el correo de recuperación');
       }
     } catch (err: unknown) {
       setResetError(err instanceof Error ? err.message : 'Error al enviar el correo');
@@ -73,8 +73,8 @@ export default function LoginPage() {
 
   return (
     <AuthCard
-      title={showReset ? 'Recuperar contraseÃ±a' : 'Iniciar sesiÃ³n'}
-      subtitle={showReset ? 'Te enviaremos un enlace de recuperaciÃ³n' : 'Ingresa tus credenciales para acceder al sistema'}
+      title={showReset ? 'Recuperar contraseña' : 'Iniciar sesión'}
+      subtitle={showReset ? 'Te enviaremos un enlace de recuperación' : 'Ingresa tus credenciales para acceder al sistema'}
       footer={(
         <>
           <div>
@@ -100,7 +100,7 @@ export default function LoginPage() {
       {!showReset ? (
         <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 16 }} noValidate>
           <div>
-            <label htmlFor="login-email" style={labelBase}>Correo electrÃ³nico</label>
+            <label htmlFor="login-email" style={labelBase}>Correo electrónico</label>
             <input
               id="login-email"
               type="email"
@@ -115,13 +115,13 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label htmlFor="login-pwd" style={labelBase}>ContraseÃ±a</label>
+            <label htmlFor="login-pwd" style={labelBase}>Contraseña</label>
             <div style={{ position: 'relative' }}>
               <input
                 id="login-pwd"
                 type={showPwd ? 'text' : 'password'}
                 className="auth-inp"
-                placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢"
+                placeholder="••••••••"
                 autoComplete="current-password"
                 required
                 value={password}
@@ -149,19 +149,19 @@ export default function LoginPage() {
           )}
 
           <button className="auth-primary" type="submit" disabled={loading} style={{ ...buttonGold, opacity: loading ? 0.75 : 1, marginTop: 2 }}>
-            {loading ? 'Ingresando...' : 'Iniciar sesiÃ³n'}
+            {loading ? 'Ingresando...' : 'Iniciar sesión'}
           </button>
 
           <div style={{ textAlign: 'center' }}>
             <button type="button" className="auth-link" style={{ ...linkButton, color: '#C98A0E' }} onClick={() => setShowReset(true)}>
-              Â¿Olvidaste tu contraseÃ±a?
+              ¿Olvidaste tu contraseña?
             </button>
           </div>
         </form>
       ) : (
         <form onSubmit={handleReset} style={{ display: 'flex', flexDirection: 'column', gap: 16 }} noValidate>
           <div>
-            <label htmlFor="reset-email" style={labelBase}>Correo electrÃ³nico</label>
+            <label htmlFor="reset-email" style={labelBase}>Correo electrónico</label>
             <input
               id="reset-email"
               type="email"
@@ -174,7 +174,7 @@ export default function LoginPage() {
               style={inputBase}
             />
             <p style={{ fontSize: 12, color: C.textWarm, marginTop: 5, lineHeight: 1.4 }}>
-              Te enviaremos un enlace para restablecer tu contraseÃ±a.
+              Te enviaremos un enlace para restablecer tu contraseña.
             </p>
           </div>
 
@@ -185,12 +185,12 @@ export default function LoginPage() {
           )}
           {resetSent && (
             <div role="alert" style={{ background: C.okBg, border: '1px solid #B0DFC0', borderRadius: 14, padding: '10px 14px', fontSize: 13, color: C.ok, fontWeight: 700 }}>
-              âœ“ Correo enviado. Revisa tu bandeja de entrada.
+              ✓ Correo enviado. Revisa tu bandeja de entrada.
             </div>
           )}
 
           <button className="auth-primary" type="submit" disabled={resetLoading} style={{ ...buttonGold, opacity: resetLoading ? 0.75 : 1 }}>
-            {resetLoading ? 'Enviando...' : 'Enviar enlace de recuperaciÃ³n'}
+            {resetLoading ? 'Enviando...' : 'Enviar enlace de recuperación'}
           </button>
 
           <div style={{ textAlign: 'center' }}>
@@ -204,7 +204,7 @@ export default function LoginPage() {
                 setResetSent(false);
               }}
             >
-              â€¹ Volver al inicio de sesiÃ³n
+              ‹ Volver al inicio de sesión
             </button>
           </div>
         </form>
@@ -212,5 +212,6 @@ export default function LoginPage() {
     </AuthCard>
   );
 }
+
 
 

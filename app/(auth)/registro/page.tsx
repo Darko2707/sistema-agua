@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
@@ -13,19 +13,19 @@ import { AuthCard, C, inputBase, selectBase, labelBase, buttonGold, linkButton, 
 
 const cuentaSchema = z.object({
   nombre: z.string().min(2, 'Ingresa tu nombre completo'),
-  email: z.string().email('Correo electrÃ³nico invÃ¡lido'),
-  password: z.string().min(8, 'La contraseÃ±a debe tener al menos 8 caracteres'),
+  email: z.string().email('Correo electrónico inválido'),
+  password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres'),
   aceptaLegales: z.literal(true, { error: 'Debes aceptar los terminos y condiciones para continuar' }),
 });
 type CuentaForm = z.infer<typeof cuentaSchema>;
 
 const perfilSchema = z.object({
-  telefono: z.string().min(10, 'MÃ­nimo 10 dÃ­gitos').regex(/^\d+$/, 'Solo nÃºmeros'),
+  telefono: z.string().min(10, 'Mínimo 10 dígitos').regex(/^\d+$/, 'Solo números'),
   sexo: z.enum(['masculino', 'femenino', 'otro']),
   tenencia: z.enum(['propietario', 'inquilino']),
   circuitoId: z.string().min(1, 'Selecciona tu circuito'),
-  edificio: z.string().min(1, 'Ingresa el nÃºmero de edificio'),
-  deptoNumero: z.string().min(1, 'Ingresa el nÃºmero de departamento').regex(/^\d+$/, 'Solo dÃ­gitos'),
+  edificio: z.string().min(1, 'Ingresa el número de edificio'),
+  deptoNumero: z.string().min(1, 'Ingresa el número de departamento').regex(/^\d+$/, 'Solo dígitos'),
   deptoLetra: z.string().regex(/^[a-zA-Z]?$/, 'Solo una letra (opcional)').optional(),
   nombrePropietario: z.string().optional(),
   telefonoPropietario: z.string().optional(),
@@ -35,7 +35,7 @@ const perfilSchema = z.object({
       ctx.addIssue({ code: 'custom', message: 'Ingresa el nombre del propietario', path: ['nombrePropietario'] });
     }
     if (!data.telefonoPropietario || data.telefonoPropietario.trim().length < 10) {
-      ctx.addIssue({ code: 'custom', message: 'TelÃ©fono del propietario (mÃ­nimo 10 dÃ­gitos)', path: ['telefonoPropietario'] });
+      ctx.addIssue({ code: 'custom', message: 'Teléfono del propietario (mínimo 10 dígitos)', path: ['telefonoPropietario'] });
     }
   }
 });
@@ -92,13 +92,13 @@ export default function RegistroPage() {
       });
       if (signUpError) {
         setPaso(1);
-        throw new Error(signUpError.message ?? 'No se pudo crear la cuenta. El correo podrÃ­a estar registrado.');
+        throw new Error(signUpError.message ?? 'No se pudo crear la cuenta. El correo podría estar registrado.');
       }
       const { error: signInError } = await authClient.signIn.email({
         email: cuentaData.email,
         password: cuentaData.password,
       });
-      if (signInError) throw new Error('Cuenta creada, pero no se pudo iniciar sesiÃ³n automÃ¡ticamente.');
+      if (signInError) throw new Error('Cuenta creada, pero no se pudo iniciar sesión automáticamente.');
       await trpc.operacion.aceptarLegales.mutate({
         privacidadVersion: '2026-08-05',
         cookiesVersion: '2026-08-05',
@@ -177,9 +177,9 @@ export default function RegistroPage() {
       maxWidth={paso === 1 || paso === 3 ? 420 : 620}
       footer={(
         <>
-          Â¿Ya tienes cuenta?{' '}
+          ¿Ya tienes cuenta?{' '}
           <button type="button" className="auth-link" style={linkButton} onClick={() => router.push('/login')}>
-            Inicia sesiÃ³n
+            Inicia sesión
           </button>
         </>
       )}
@@ -189,21 +189,21 @@ export default function RegistroPage() {
       </div>
 
       {paso === 1 ? (
-        <form onSubmit={cuenta.handleSubmit(handleCrearCuenta)} style={{ display: 'flex', flexDirection: 'column', gap: 16 }} noValidate aria-label="Formulario de creaciÃ³n de cuenta">
+        <form onSubmit={cuenta.handleSubmit(handleCrearCuenta)} style={{ display: 'flex', flexDirection: 'column', gap: 16 }} noValidate aria-label="Formulario de creación de cuenta">
           <div>
             <label htmlFor="nombre" style={labelBase}>Nombre completo</label>
-            <input id="nombre" type="text" className="auth-inp" placeholder="Juan PÃ©rez" autoComplete="name" aria-required="true" aria-describedby={cuenta.formState.errors.nombre ? 'nombre-err' : undefined} aria-invalid={!!cuenta.formState.errors.nombre} style={inputBase} {...cuenta.register('nombre')} />
+            <input id="nombre" type="text" className="auth-inp" placeholder="Juan Pérez" autoComplete="name" aria-required="true" aria-describedby={cuenta.formState.errors.nombre ? 'nombre-err' : undefined} aria-invalid={!!cuenta.formState.errors.nombre} style={inputBase} {...cuenta.register('nombre')} />
             <FieldError id="nombre-err" message={cuenta.formState.errors.nombre?.message} />
           </div>
           <div>
-            <label htmlFor="reg-email" style={labelBase}>Correo electrÃ³nico</label>
+            <label htmlFor="reg-email" style={labelBase}>Correo electrónico</label>
             <input id="reg-email" type="email" className="auth-inp" placeholder="tu@correo.com" autoComplete="email" aria-required="true" aria-describedby={cuenta.formState.errors.email ? 'email-err' : undefined} aria-invalid={!!cuenta.formState.errors.email} style={inputBase} {...cuenta.register('email')} />
             <FieldError id="email-err" message={cuenta.formState.errors.email?.message} />
           </div>
           <div>
-            <label htmlFor="reg-password" style={labelBase}>ContraseÃ±a</label>
-            <input id="reg-password" type="password" className="auth-inp" placeholder="mÃ­nimo 8 caracteres" autoComplete="new-password" aria-required="true" aria-describedby={cuenta.formState.errors.password ? 'pwd-err' : 'pwd-hint'} aria-invalid={!!cuenta.formState.errors.password} style={inputBase} {...cuenta.register('password')} />
-            <p id="pwd-hint" style={{ fontSize: 12, color: C.textWarm, marginTop: 4 }}>MÃ­nimo 8 caracteres.</p>
+            <label htmlFor="reg-password" style={labelBase}>Contraseña</label>
+            <input id="reg-password" type="password" className="auth-inp" placeholder="mínimo 8 caracteres" autoComplete="new-password" aria-required="true" aria-describedby={cuenta.formState.errors.password ? 'pwd-err' : 'pwd-hint'} aria-invalid={!!cuenta.formState.errors.password} style={inputBase} {...cuenta.register('password')} />
+            <p id="pwd-hint" style={{ fontSize: 12, color: C.textWarm, marginTop: 4 }}>Mínimo 8 caracteres.</p>
             <FieldError id="pwd-err" message={cuenta.formState.errors.password?.message} />
           </div>
           <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 12.5, color: C.textWarm, lineHeight: 1.45, fontWeight: 700 }}>
@@ -228,7 +228,7 @@ export default function RegistroPage() {
         <form onSubmit={perfil.handleSubmit(handleCompletarPerfil)} style={{ display: 'flex', flexDirection: 'column', gap: 16 }} noValidate aria-label="Formulario de perfil de residente">
           <div className="auth-grid-2">
             <div>
-              <label htmlFor="telefono" style={labelBase}>TelÃ©fono</label>
+              <label htmlFor="telefono" style={labelBase}>Teléfono</label>
               <input id="telefono" type="tel" className="auth-inp" placeholder="2281234567" autoComplete="tel" aria-required="true" aria-describedby={perfil.formState.errors.telefono ? 'tel-err' : undefined} aria-invalid={!!perfil.formState.errors.telefono} style={inputBase} {...perfil.register('telefono')} />
               <FieldError id="tel-err" message={perfil.formState.errors.telefono?.message} />
             </div>
@@ -264,11 +264,11 @@ export default function RegistroPage() {
               <div className="auth-grid-2">
                 <div>
                   <label htmlFor="nombrePropietario" style={labelBase}>Nombre del propietario</label>
-                  <input id="nombrePropietario" type="text" className="auth-inp" placeholder="Nombre completo del dueÃ±o" aria-required="true" aria-describedby={perfil.formState.errors.nombrePropietario ? 'nprop-err' : undefined} aria-invalid={!!perfil.formState.errors.nombrePropietario} style={inputBase} {...perfil.register('nombrePropietario')} />
+                  <input id="nombrePropietario" type="text" className="auth-inp" placeholder="Nombre completo del dueño" aria-required="true" aria-describedby={perfil.formState.errors.nombrePropietario ? 'nprop-err' : undefined} aria-invalid={!!perfil.formState.errors.nombrePropietario} style={inputBase} {...perfil.register('nombrePropietario')} />
                   <FieldError id="nprop-err" message={perfil.formState.errors.nombrePropietario?.message} />
                 </div>
                 <div>
-                  <label htmlFor="telefonoPropietario" style={labelBase}>TelÃ©fono del propietario</label>
+                  <label htmlFor="telefonoPropietario" style={labelBase}>Teléfono del propietario</label>
                   <input id="telefonoPropietario" type="tel" className="auth-inp" placeholder="2281234567" aria-required="true" aria-describedby={perfil.formState.errors.telefonoPropietario ? 'tprop-err' : undefined} aria-invalid={!!perfil.formState.errors.telefonoPropietario} style={inputBase} {...perfil.register('telefonoPropietario')} />
                   <FieldError id="tprop-err" message={perfil.formState.errors.telefonoPropietario?.message} />
                 </div>
@@ -293,14 +293,14 @@ export default function RegistroPage() {
                   <FieldError id="depto-letra-err" message={perfil.formState.errors.deptoLetra?.message} />
                 </div>
               </div>
-              <p id="depto-preview" style={{ fontSize: 12, color: C.textWarm, marginTop: 4 }}>NÃºmero + letra: <strong aria-live="polite">{deptoNumero || '___'}{deptoLetra}</strong></p>
+              <p id="depto-preview" style={{ fontSize: 12, color: C.textWarm, marginTop: 4 }}>Número + letra: <strong aria-live="polite">{deptoNumero || '___'}{deptoLetra}</strong></p>
             </div>
           </div>
           {serverError && <div role="alert" aria-live="assertive" style={{ background: C.dangerBg, border: '1px solid #F3BFBF', borderRadius: 14, padding: '10px 14px', fontSize: 13, color: C.danger, fontWeight: 700 }}>{serverError}</div>}
           <button className="auth-primary" type="submit" disabled={submitting} aria-busy={submitting} style={{ ...buttonGold, opacity: submitting ? 0.75 : 1, marginTop: 2 }}>{submitting ? 'Guardando...' : 'Finalizar registro'}</button>
           <div style={{ textAlign: 'center' }}>
             <button type="button" className="auth-link" style={{ ...linkButton, color: '#C98A0E' }} onClick={() => setPaso(1)}>
-              â€¹ Volver al paso anterior
+              ‹ Volver al paso anterior
             </button>
           </div>
         </form>
@@ -346,4 +346,5 @@ export default function RegistroPage() {
     </AuthCard>
   );
 }
+
 
