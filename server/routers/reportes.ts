@@ -12,7 +12,7 @@ import { gastosCircuito, ingresosAdicionales } from '@/db/schema';
 // ─── helpers ───────────────────────────────────────────────────────────────
 
 // Edif. 8 < Edif. 10; dentro del edificio: 314a, 315a, 314b, 315b, 314c, 315c
-function parsarDepto(depto: string): { letra: string; numero: number } {
+function parsearDepto(depto: string): { letra: string; numero: number } {
   const m = depto.match(/^(\d+)([a-zA-Z]?)$/);
   if (m) return { numero: parseInt(m[1], 10), letra: m[2].toLowerCase() };
   return { numero: 0, letra: depto.toLowerCase() };
@@ -23,10 +23,20 @@ function sortPorEdificio<T extends { edificio: string; departamento: string }>(a
     const ea = parseInt(a.edificio, 10), eb = parseInt(b.edificio, 10);
     const edifCmp = isNaN(ea) || isNaN(eb) ? a.edificio.localeCompare(b.edificio) : ea - eb;
     if (edifCmp !== 0) return edifCmp;
-    const da = parsarDepto(a.departamento), db = parsarDepto(b.departamento);
+    const da = parsearDepto(a.departamento), db = parsearDepto(b.departamento);
     if (da.letra !== db.letra) return da.letra.localeCompare(db.letra);
     return da.numero - db.numero;
   });
+}
+
+function montoDisponibleCircuito(pago: {
+  monto: string;
+  montoBase?: string | null;
+  montoNetoRepresentante?: string | null;
+}) {
+  // En tarjeta, `monto` puede incluir comisión/cobro bruto. El reporte del circuito
+  // debe cuadrar contra lo disponible para administración, no contra lo cobrado por MP.
+  return Number(pago.montoNetoRepresentante ?? pago.montoBase ?? pago.monto);
 }
 
 function ultimos12Meses(): { mes: number; anio: number }[] {
@@ -231,14 +241,15 @@ export const reportesRouter = router({
         }),
       ]);
 
-      const totalPagos             = pagosPeriodo.reduce((s, p) => s + Number(p.monto), 0);
+      const totalPagos             = pagosPeriodo.reduce((s, p) => s + montoDisponibleCircuito(p), 0);
       const totalIngresosAdicionales = ingresosPeriodo.reduce((s, i) => s + Number(i.monto), 0);
       const totalRecaudado         = totalPagos + totalIngresosAdicionales;
       const totalGastos            = gastosPeriodo.reduce((s, g) => s + Number(g.monto), 0);
       const montoMensual   = Number(circuito.montoMensual);
-      const totalEsperado  = residentes.length * montoMensual;
-      const porcentajeCobranza = totalEsperado > 0
-        ? Math.round((totalRecaudado / totalEsperado) * 100 * 10) / 10
+      const perfilesPagados = new Set(pagosPeriodo.map((p) => p.perfilId));
+      const totalPagaron = perfilesPagados.size;
+      const porcentajeCobranza = residentes.length > 0
+        ? Math.round((totalPagaron / residentes.length) * 100 * 10) / 10
         : 0;
 
       // Agrupar por edificio
@@ -249,7 +260,7 @@ export const reportesRouter = router({
         const pagoIds = new Set(pagosEdificio.map((p) => p.perfilId));
         return {
           edificio:          ed,
-          totalPagado:       pagosEdificio.reduce((s, p) => s + Number(p.monto), 0),
+          totalPagado:       pagosEdificio.reduce((s, p) => s + montoDisponibleCircuito(p), 0),
           cantidadPagos:     pagosEdificio.length,
           residentesActivos: resEdificio.filter((r) => pagoIds.has(r.id)).length,
           residentesMorosos: resEdificio.filter((r) => !pagoIds.has(r.id)).length,
@@ -264,8 +275,8 @@ export const reportesRouter = router({
         totalPagos,
         totalIngresosAdicionales,
         totalResidentes:         residentes.length,
-        totalPagaron:            pagosPeriodo.length,
-        totalMorosos:            residentes.length - pagosPeriodo.length,
+        totalPagaron,
+        totalMorosos:            residentes.length - totalPagaron,
         porcentajeCobranza,
         totalGastos,
         saldo:                   totalRecaudado - totalGastos,

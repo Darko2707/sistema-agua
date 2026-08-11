@@ -84,6 +84,16 @@ async function registrarAuditoria(input: {
   });
 }
 
+const auditoriaPublicColumns = {
+  id:        auditoria.id,
+  actorId:   auditoria.actorId,
+  accion:    auditoria.accion,
+  entidad:   auditoria.entidad,
+  entidadId: auditoria.entidadId,
+  detalle:   auditoria.detalle,
+  creadoEn:  auditoria.creadoEn,
+};
+
 export const operacionRouter = router({
   aceptarLegales: authenticatedProcedure
     .input(z.object({
@@ -151,23 +161,23 @@ export const operacionRouter = router({
           .filter((id): id is string => Boolean(id));
         if (input?.entidadId && !ids.includes(input.entidadId)) throw new TRPCError({ code: 'FORBIDDEN' });
         if (ids.length === 0) return [];
-        return db.query.auditoria.findMany({
-          where: input?.entidadId
+        return db.select(auditoriaPublicColumns)
+          .from(auditoria)
+          .where(input?.entidadId
             ? and(eq(auditoria.entidad, entidadRepresentante), eq(auditoria.entidadId, input.entidadId))
-            : and(eq(auditoria.entidad, entidadRepresentante), inArray(auditoria.entidadId, ids)),
-          orderBy: [desc(auditoria.creadoEn)],
-          limit: input?.limit ?? 50,
-        });
+            : and(eq(auditoria.entidad, entidadRepresentante), inArray(auditoria.entidadId, ids)))
+          .orderBy(desc(auditoria.creadoEn))
+          .limit(input?.limit ?? 50);
       }
-      return db.query.auditoria.findMany({
-        where: input?.entidad
+      return db.select(auditoriaPublicColumns)
+        .from(auditoria)
+        .where(input?.entidad
           ? input.entidadId
             ? and(eq(auditoria.entidad, input.entidad), eq(auditoria.entidadId, input.entidadId))
             : eq(auditoria.entidad, input.entidad)
-          : undefined,
-        orderBy: [desc(auditoria.creadoEn)],
-        limit: input?.limit ?? 50,
-      });
+          : undefined)
+        .orderBy(desc(auditoria.creadoEn))
+        .limit(input?.limit ?? 50);
     }),
 
   resumenDeuda: protectedProcedure

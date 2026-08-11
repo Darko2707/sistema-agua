@@ -21,6 +21,35 @@ const checkoutSchema = z.object({
 const IDEMPOTENCY_WINDOW_MS = 10 * 60 * 1000;
 const PREFERENCE_LIFETIME_WINDOWS = 2;
 
+function addMonths(mes: number, anio: number, offset: number) {
+  const total = mes - 1 + offset;
+  return {
+    mes:  (total % 12) + 1,
+    anio: anio + Math.floor(total / 12),
+  };
+}
+
+function periodoKey(periodo: { mes: number; anio: number }) {
+  return `${periodo.anio}${String(periodo.mes).padStart(2, '0')}`;
+}
+
+async function nextUnpaidPeriods(perfilId: string, count: number) {
+  const periodo = PeriodoVO.vigente();
+  const pagados = await db.query.pagos.findMany({
+    where: (p, { eq, and }) => and(eq(p.perfilId, perfilId), eq(p.estado, 'pagado')),
+    columns: { mes: true, anio: true },
+  });
+  const paidKeys = new Set(pagados.map(pago => periodoKey(pago)));
+  const result: Array<{ mes: number; anio: number }> = [];
+
+  for (let offset = 0; result.length < count && offset < 36; offset += 1) {
+    const candidate = addMonths(periodo.mes, periodo.anio, offset);
+    if (!paidKeys.has(periodoKey(candidate))) result.push(candidate);
+  }
+
+  return result;
+}
+
 export function mercadoPagoCheckoutMetadata(input: {
   perfilId: string;
   circuitoId: string;
@@ -82,27 +111,10 @@ export async function POST(request: Request) {
     return Response.json({ error: 'El representante de tu circuito aun no tiene Mercado Pago configurado' }, { status: 400 });
   }
 
-  const periodo = PeriodoVO.vigente();
   const mesesAdelantados = body.data.mesesAdelantados ?? 1;
-  const periodosSolicitados = Array.from({ length: mesesAdelantados }, (_, index) => {
-    const totalMeses = periodo.mes - 1 + index;
-    return {
-      mes: (totalMeses % 12) + 1,
-      anio: periodo.anio + Math.floor(totalMeses / 12),
-    };
-  });
-  const pagoExistente = await db.query.pagos.findFirst({
-    where: (p, { eq, and, or }) => and(
-      eq(p.perfilId, perfil.id),
-      eq(p.estado, 'pagado'),
-      or(...periodosSolicitados.map(periodoSolicitado => and(
-        eq(p.mes, periodoSolicitado.mes),
-        eq(p.anio, periodoSolicitado.anio),
-      ))),
-    ),
-  });
-  if (pagoExistente) {
-    return Response.json({ error: 'Uno o mas periodos seleccionados ya estan pagados' }, { status: 400 });
+  const periodosSolicitados = await nextUnpaidPeriods(perfil.id, mesesAdelantados);
+  if (periodosSolicitados.length !== mesesAdelantados) {
+    return Response.json({ error: 'No hay suficientes periodos disponibles para pagar' }, { status: 400 });
   }
 
   const esReconexion = perfil.estadoAgua === 'cortado';
@@ -112,11 +124,9 @@ export async function POST(request: Request) {
   const desglose = calcularDesglosePago(montoBase);
 
   const externalReference = [
-    'agua2',
+    'agua3',
     perfil.id,
-    periodo.mes,
-    periodo.anio,
-    mesesAdelantados,
+    periodosSolicitados.map(periodoKey).join(','),
     esReconexion ? '1' : '0',
     montoMensual.toFixed(2),
     montoReconexion.toFixed(2),
@@ -125,6 +135,7 @@ export async function POST(request: Request) {
   const referenceParam = encodeURIComponent(externalReference);
   const { preferenceClient } = createMercadoPagoClients(accessToken);
   const mesesLabel = mesesAdelantados === 1 ? '1 mes' : `${mesesAdelantados} meses`;
+  const primerPeriodo = periodosSolicitados[0];
   const checkoutMetadata = mercadoPagoCheckoutMetadata({
     perfilId: perfil.id,
     circuitoId: perfil.circuito.id,
@@ -137,7 +148,7 @@ export async function POST(request: Request) {
       items: [{
         id:          externalReference,
         title:       esReconexion ? 'Pago de agua, reconexion y meses adelantados' : 'Pago de agua adelantado',
-        description: `${mesesLabel} desde ${periodo.mes}/${periodo.anio}`,
+        description: `${mesesLabel} desde ${primerPeriodo.mes}/${primerPeriodo.anio}`,
         quantity:    1,
         currency_id: 'MXN',
         unit_price:  Number(desglose.total),

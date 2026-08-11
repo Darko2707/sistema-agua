@@ -84,4 +84,23 @@ describe('parseExternalReference', () => {
       { perfilId: 'perf-abc', mes: 1, anio: 2027, esReconexion: false, monto: '100.00' },
     ]);
   });
+
+  it('expande referencia v3 con periodos exactos no consecutivos', () => {
+    const ref = parseExternalReference('agua3|perf-abc|202609,202611|0|100|0');
+    expect(ref).toMatchObject({
+      perfilId: 'perf-abc',
+      mes: 9,
+      anio: 2026,
+      monto: '200.00',
+      mesesAdelantados: 2,
+      periodos: [
+        { mes: 9, anio: 2026 },
+        { mes: 11, anio: 2026 },
+      ],
+    });
+    expect(ref && expandExternalReference(ref)).toEqual([
+      { perfilId: 'perf-abc', mes: 9, anio: 2026, esReconexion: false, monto: '100.00' },
+      { perfilId: 'perf-abc', mes: 11, anio: 2026, esReconexion: false, monto: '100.00' },
+    ]);
+  });
 });

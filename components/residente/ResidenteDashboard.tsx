@@ -100,6 +100,18 @@ function formatFecha(date: Date | string | null | undefined): string {
   return d.toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
+function addMonths(mes: number, anio: number, offset: number) {
+  const total = mes - 1 + offset;
+  return {
+    mes:  (total % 12) + 1,
+    anio: anio + Math.floor(total / 12),
+  };
+}
+
+function pagoKey(pago: { mes: number; anio: number }) {
+  return `${pago.anio}-${pago.mes}`;
+}
+
 // ── Dropdown menu item ─────────────────────────────────────────────────────────
 function MenuItem({
   label, icon, danger, onClick,
@@ -243,6 +255,15 @@ export function ResidenteDashboard() {
 
   const initials = userName.trim().split(/\s+/).map(n => n[0]).slice(0, 2).join('').toUpperCase();
   const periodoActual = `${MESES[mesActual - 1]} ${anioActual}`;
+  const pagadosKeys = new Set(pagos.filter(p => p.estado === 'pagado').map(pagoKey));
+  const periodosPendientesTarjeta: Array<{ mes: number; anio: number }> = [];
+  for (let offset = 0; periodosPendientesTarjeta.length < 12 && offset < 36; offset += 1) {
+    const periodo = addMonths(mesActual, anioActual, offset);
+    if (!pagadosKeys.has(pagoKey(periodo))) periodosPendientesTarjeta.push(periodo);
+  }
+  const primerPeriodoTarjeta = periodosPendientesTarjeta[0] ?? { mes: mesActual, anio: anioActual };
+  const periodoTarjetaLabel = `${MESES[primerPeriodoTarjeta.mes - 1]} ${primerPeriodoTarjeta.anio}`;
+  const puedePagarConTarjeta = perfil.estadoAgua !== 'pendiente_reconexion' && periodosPendientesTarjeta.length > 0;
 
   const pagoReconexion = pagos.find(p => p.esReconexion && p.estado === 'pagado' && p.mes === mesActual && p.anio === anioActual)
     ?? pagos.find(p => p.esReconexion && p.estado === 'pagado');
@@ -457,8 +478,12 @@ export function ResidenteDashboard() {
           <div style={{ background: '#fff', borderRadius: 26, padding: 22, boxShadow: '0 10px 28px rgba(120,90,30,.10)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 }}>
               <div>
-                <div style={{ fontFamily: FB, fontSize: 18, fontWeight: 700, color: C.green }}>{periodoActual}</div>
-                <div style={{ fontSize: 12.5, color: C.textWarm, marginTop: 2, fontWeight: 600 }}>Estado del mes actual</div>
+                <div style={{ fontFamily: FB, fontSize: 18, fontWeight: 700, color: C.green }}>
+                  {yaPagoEsteMes && !esReconexion ? 'Adelantar pago' : periodoActual}
+                </div>
+                <div style={{ fontSize: 12.5, color: C.textWarm, marginTop: 2, fontWeight: 600 }}>
+                  {yaPagoEsteMes && !esReconexion ? `Siguiente periodo: ${periodoTarjetaLabel}` : 'Estado del mes actual'}
+                </div>
               </div>
               <span
                 role="status"
@@ -468,12 +493,12 @@ export function ResidenteDashboard() {
               </span>
             </div>
 
-            {!yaPagoEsteMes && perfil.estadoAgua !== 'pendiente_reconexion' && (
+            {puedePagarConTarjeta && (
               <>
                 {/* Amount box */}
                 <div style={{ background: C.header, borderRadius: 18, padding: '16px 18px', marginTop: 14 }}>
                   <div style={{ fontSize: 12.5, color: C.textWarm, fontWeight: 700 }}>
-                    {esReconexion ? 'Cuota + reconexión' : 'Cuota mensual'}
+                    {esReconexion ? 'Cuota + reconexión' : yaPagoEsteMes ? 'Meses adelantados' : 'Cuota mensual'}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, marginTop: 5 }}>
                     <span style={{ fontFamily: FB, fontSize: 46, fontWeight: 800, color: C.green, letterSpacing: '-.02em', lineHeight: 1 }}>
@@ -492,7 +517,7 @@ export function ResidenteDashboard() {
                       <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 7 }}>
                         <span style={{ fontSize: 12, color: C.textWarm, fontWeight: 800 }}>Meses a pagar</span>
                         <span style={{ fontSize: 12, color: C.green, fontWeight: 800 }}>
-                          {mesesAdelantados === 1 ? 'Mes actual' : 'Adelanto'}
+                          {yaPagoEsteMes || mesesAdelantados > 1 ? 'Adelanto' : 'Mes actual'}
                         </span>
                       </span>
                       <span style={{ position: 'relative', display: 'block' }}>
@@ -519,7 +544,7 @@ export function ResidenteDashboard() {
                         >
                           {Array.from({ length: 12 }, (_, i) => i + 1).map(n => (
                             <option key={n} value={n}>
-                              {n === 1 ? '1 mes (actual)' : `${n} meses`}
+                              {n === 1 ? `1 mes (${yaPagoEsteMes ? periodoTarjetaLabel : 'actual'})` : `${n} meses`}
                             </option>
                           ))}
                         </select>
@@ -541,8 +566,8 @@ export function ResidenteDashboard() {
                       </span>
                       <span style={{ display: 'block', marginTop: 7, fontSize: 11.5, color: C.textWarm2, fontWeight: 600 }}>
                         {mesesAdelantados === 1
-                          ? 'Pagaras solo el periodo vigente.'
-                          : `Se registraran ${mesesAdelantados} meses consecutivos.`}
+                          ? `Se registrara ${yaPagoEsteMes ? periodoTarjetaLabel : 'el periodo vigente'}.`
+                          : `Se registraran ${mesesAdelantados} proximos periodos no pagados.`}
                       </span>
                     </label>
                   )}
@@ -631,7 +656,7 @@ export function ResidenteDashboard() {
             {yaPagoEsteMes && (
               <div style={{ background: C.greenBg, borderRadius: 18, padding: '16px 18px', marginTop: 14, display: 'flex', alignItems: 'center', gap: 12 }}>
                 <CheckIcon size={20} />
-                <span style={{ fontSize: 14, color: C.green2, fontWeight: 700 }}>¡Ya pagaste este mes! Gracias.</span>
+                <span style={{ fontSize: 14, color: C.green2, fontWeight: 700 }}>¡Ya pagaste este mes! Puedes adelantar próximos periodos.</span>
               </div>
             )}
           </div>
@@ -663,7 +688,7 @@ export function ResidenteDashboard() {
                 </span>
                 <p style={{ fontSize: 14, color: C.textWarm2, fontWeight: 600 }}>Aún no tienes pagos registrados</p>
                 <p style={{ fontSize: 12, color: C.textWarm3, marginTop: 4 }}>Tu historial aparecerá aquí una vez que realices tu primer pago.</p>
-                {!yaPagoEsteMes && perfil.estadoAgua !== 'pendiente_reconexion' && (
+                {puedePagarConTarjeta && (
                   <button
                     type="button"
                     onClick={() => checkout(esReconexion, mesesAdelantados)}

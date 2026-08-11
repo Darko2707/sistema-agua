@@ -3,13 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const {
   mockGetSession,
   mockFindByUserIdWithPaymentConfig,
-  mockFindPago,
+  mockFindPagos,
   mockPreferenceCreate,
   mockDecryptTokenSafe,
 } = vi.hoisted(() => ({
   mockGetSession: vi.fn(),
   mockFindByUserIdWithPaymentConfig: vi.fn(),
-  mockFindPago: vi.fn(),
+  mockFindPagos: vi.fn(),
   mockPreferenceCreate: vi.fn(),
   mockDecryptTokenSafe: vi.fn(),
 }));
@@ -27,7 +27,7 @@ vi.mock('@/src/infrastructure/db/repositories', () => ({
 }));
 
 vi.mock('@/db', () => ({
-  db: { query: { pagos: { findFirst: mockFindPago } } },
+  db: { query: { pagos: { findMany: mockFindPagos } } },
 }));
 
 vi.mock('@/lib/crypto', () => ({
@@ -80,7 +80,7 @@ beforeEach(() => {
     user: { id: 'user-001', email: 'residente@example.com', name: 'Residente Uno' },
   });
   mockFindByUserIdWithPaymentConfig.mockResolvedValue(PERFIL);
-  mockFindPago.mockResolvedValue(null);
+  mockFindPagos.mockResolvedValue([]);
   mockDecryptTokenSafe.mockReturnValue('token-plano');
   mockPreferenceCreate.mockResolvedValue({ init_point: 'https://mercadopago.example/preference' });
 });
@@ -122,15 +122,17 @@ describe('POST /api/mercadopago/checkout', () => {
     expect(keys[0]).not.toBe(keys[2]);
   });
 
-  it('no crea una preferencia si cualquiera de los periodos solicitados ya esta pagado', async () => {
-    mockFindPago.mockResolvedValue({ id: 'pago-existente' });
+  it('salta periodos ya pagados y cobra los siguientes no pagados', async () => {
+    mockFindPagos.mockResolvedValue([
+      { mes: 8, anio: 2026 },
+      { mes: 10, anio: 2026 },
+    ]);
 
-    const response = await POST(request(12));
+    const response = await POST(request(2));
 
-    expect(response.status).toBe(400);
-    expect(await response.json()).toMatchObject({
-      error: 'Uno o mas periodos seleccionados ya estan pagados',
-    });
-    expect(mockPreferenceCreate).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    const preference = mockPreferenceCreate.mock.calls[0][0];
+    expect(preference.body.external_reference).toContain('agua3|perfil-001|202609,202611|0|100.00|0.00');
+    expect(preference.body.items[0].description).toBe('2 meses desde 9/2026');
   });
 });

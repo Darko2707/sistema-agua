@@ -1,4 +1,4 @@
-﻿import { auth } from '@/lib/auth';
+import { auth } from '@/lib/auth';
 import { db } from '@/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import {
@@ -15,7 +15,7 @@ import type {
 export const dynamic = 'force-dynamic';
 const MAX_RANGO_MESES = 36;
 
-// Genera lista de (mes, anio) entre dos perÃ­odos inclusive
+// Genera la lista de periodos entre dos meses, inclusive.
 function getMesesEnRango(
   mesDesde: number, anioDesde: number,
   mesHasta: number, anioHasta: number,
@@ -37,6 +37,16 @@ function isMesValido(mes: number): boolean {
 
 function isAnioValido(anio: number): boolean {
   return Number.isInteger(anio) && anio >= 2020 && anio <= 2100;
+}
+
+function montoDisponibleCircuito(pago: {
+  monto: string;
+  montoBase?: string | null;
+  montoNetoRepresentante?: string | null;
+}) {
+  // En pagos con tarjeta, `monto` puede incluir comisiones. El reporte financiero
+  // debe sumar lo disponible para el circuito para que cuadre con caja.
+  return Number(pago.montoNetoRepresentante ?? pago.montoBase ?? pago.monto);
 }
 
 async function resolverCircuito(userId: string) {
@@ -75,7 +85,7 @@ export async function GET(req: Request) {
   const mesHastaRaw  = url.searchParams.get('mesHasta');
   const anioHastaRaw = url.searchParams.get('anioHasta');
 
-  // â”€â”€ Rango de meses â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Exportación por rango: se usa para cierres mensuales y auditoría de tesorería.
   if (mesDesdeRaw && anioDesdeRaw && mesHastaRaw && anioHastaRaw) {
     const mesDesde  = parseInt(mesDesdeRaw,  10);
     const anioDesde = parseInt(anioDesdeRaw, 10);
@@ -83,12 +93,12 @@ export async function GET(req: Request) {
     const anioHasta = parseInt(anioHastaRaw, 10);
 
     if (!isMesValido(mesDesde) || !isMesValido(mesHasta) || !isAnioValido(anioDesde) || !isAnioValido(anioHasta))
-      return new Response('ParÃ¡metros invÃ¡lidos', { status: 400 });
+      return new Response('Parámetros inválidos', { status: 400 });
 
     const desdeNum = anioDesde * 100 + mesDesde;
     const hastaNum = anioHasta * 100 + mesHasta;
     if (hastaNum < desdeNum)
-      return new Response('El rango de fechas es invÃ¡lido', { status: 400 });
+      return new Response('El rango de fechas es inválido', { status: 400 });
 
     const mesesLista = getMesesEnRango(mesDesde, anioDesde, mesHasta, anioHasta);
     if (mesesLista.length > MAX_RANGO_MESES)
@@ -127,7 +137,7 @@ export async function GET(req: Request) {
       const pagosM   = pagosTodos.filter(p => p.mes === mes && p.anio === anio);
       const gastosM  = gastosTodos.filter(g => g.mes === mes && g.anio === anio);
       const ingresosM = ingresosTodos.filter(i => i.mes === mes && i.anio === anio);
-      const totalPagos               = pagosM.reduce((s, p) => s + Number(p.monto), 0);
+      const totalPagos               = pagosM.reduce((s, p) => s + montoDisponibleCircuito(p), 0);
       const totalIngresosAdicionales = ingresosM.reduce((s, i) => s + Number(i.monto), 0);
       const totalRecaudado           = totalPagos + totalIngresosAdicionales;
       const totalGastos              = gastosM.reduce((s, g) => s + Number(g.monto), 0);
@@ -148,7 +158,7 @@ export async function GET(req: Request) {
       const pagIds = new Set(pagEd.map(p => p.perfilId));
       return {
         edificio:          ed,
-        totalPagado:       pagEd.reduce((s, p) => s + Number(p.monto), 0),
+        totalPagado:       pagEd.reduce((s, p) => s + montoDisponibleCircuito(p), 0),
         cantidadPagos:     pagEd.length,
         residentesActivos: resEd.filter(r => pagIds.has(r.id)).length,
         residentesMorosos: resEd.filter(r => !pagIds.has(r.id)).length,
@@ -198,11 +208,11 @@ export async function GET(req: Request) {
     });
   }
 
-  // â”€â”€ Un solo mes (comportamiento anterior) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Exportación de un solo mes.
   const mes  = parseInt(url.searchParams.get('mes')  ?? String(new Date().getMonth() + 1), 10);
   const anio = parseInt(url.searchParams.get('anio') ?? String(new Date().getFullYear()), 10);
 
-  if (!isMesValido(mes) || !isAnioValido(anio)) return new Response('ParÃ¡metros invÃ¡lidos', { status: 400 });
+  if (!isMesValido(mes) || !isAnioValido(anio)) return new Response('Parámetros inválidos', { status: 400 });
 
   const [residentes, pagosPeriodo, gastosPeriodo, ingresosPeriodo] = await Promise.all([
     db.query.perfilesResidente.findMany({
@@ -222,14 +232,14 @@ export async function GET(req: Request) {
     }),
   ]);
 
-  const totalPagos               = pagosPeriodo.reduce((s, p) => s + Number(p.monto), 0);
+  const totalPagos               = pagosPeriodo.reduce((s, p) => s + montoDisponibleCircuito(p), 0);
   const totalIngresosAdicionales = ingresosPeriodo.reduce((s, i) => s + Number(i.monto), 0);
   const totalRecaudado           = totalPagos + totalIngresosAdicionales;
   const totalGastos              = gastosPeriodo.reduce((s, g) => s + Number(g.monto), 0);
-  const montoMensual   = Number(circuito.montoMensual);
-  const totalEsperado  = residentes.length * montoMensual;
-  const porcentajeCobranza = totalEsperado > 0
-    ? Math.round((totalRecaudado / totalEsperado) * 100 * 10) / 10
+  const perfilesPagados = new Set(pagosPeriodo.map((p) => p.perfilId));
+  const totalPagaron = perfilesPagados.size;
+  const porcentajeCobranza = residentes.length > 0
+    ? Math.round((totalPagaron / residentes.length) * 100 * 10) / 10
     : 0;
 
   const edificios = [...new Set(residentes.map(r => r.edificio))].sort();
@@ -239,7 +249,7 @@ export async function GET(req: Request) {
     const pagIds = new Set(pagEd.map(p => p.perfilId));
     return {
       edificio:          ed,
-      totalPagado:       pagEd.reduce((s, p) => s + Number(p.monto), 0),
+      totalPagado:       pagEd.reduce((s, p) => s + montoDisponibleCircuito(p), 0),
       cantidadPagos:     pagEd.length,
       residentesActivos: resEd.filter(r => pagIds.has(r.id)).length,
       residentesMorosos: resEd.filter(r => !pagIds.has(r.id)).length,
@@ -254,8 +264,8 @@ export async function GET(req: Request) {
     totalPagos,
     totalIngresosAdicionales,
     totalResidentes:    residentes.length,
-    totalPagaron:       pagosPeriodo.length,
-    totalMorosos:       residentes.length - pagosPeriodo.length,
+    totalPagaron,
+    totalMorosos:       residentes.length - totalPagaron,
     porcentajeCobranza,
     saldo:              totalRecaudado - totalGastos,
     totalGastos,
