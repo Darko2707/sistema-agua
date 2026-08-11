@@ -19,7 +19,14 @@ const loggerMocks = vi.hoisted(() => ({
   error: vi.fn(),
 }));
 
+const fechaNegocioMock = vi.hoisted(() => ({
+  value: { dia: 1, mes: 8, anio: 2026 },
+}));
+
 vi.mock('@/lib/logger', () => ({ logger: loggerMocks }));
+vi.mock('@/src/domain/shared/fecha-negocio', () => ({
+  fechaNegocio: vi.fn(() => fechaNegocioMock.value),
+}));
 
 const UNIQUE_VIVIENDA = 'uq_perfiles_residente_ubicacion';
 
@@ -56,8 +63,8 @@ const command: CrearPerfilCommand = {
   sexo: 'femenino',
   tenencia: 'propietario',
   circuitoId: circuitoActivo.id,
-  edificio: '  ０８  ',
-  departamento: '  ０３１４ａ  ',
+  edificio: '  08  ',
+  departamento: '  0314a  ',
 };
 
 function makeResidenteRepo(): ResidenteRepository {
@@ -122,10 +129,11 @@ async function capturarError(promise: Promise<unknown>): Promise<unknown> {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fechaNegocioMock.value = { dia: 1, mes: 8, anio: 2026 };
 });
 
 describe('CrearPerfilHandler', () => {
-  it('canonicaliza la vivienda, crea el perfil y registra el log sólo después del éxito', async () => {
+  it('canonicaliza la vivienda, crea el perfil y registra el log solo despues del exito', async () => {
     const { handler, residenteRepo } = makeHandler();
 
     const result = await handler.execute(command);
@@ -147,6 +155,21 @@ describe('CrearPerfilHandler', () => {
     expect(loggerMocks.info).toHaveBeenCalledWith('usuario.perfil.creado', {
       userId: 'user-new',
       estadoInicial: 'activo',
+    });
+  });
+
+  it('crea como pendiente de corte si el alta ocurre despues del dia de corte', async () => {
+    fechaNegocioMock.value = { dia: 11, mes: 8, anio: 2026 };
+    const { handler, residenteRepo } = makeHandler();
+
+    await handler.execute(command);
+
+    expect(residenteRepo.create).toHaveBeenCalledWith(expect.objectContaining({
+      estadoAgua: 'pendiente_corte',
+    }));
+    expect(loggerMocks.info).toHaveBeenCalledWith('usuario.perfil.creado', {
+      userId: 'user-new',
+      estadoInicial: 'pendiente_corte',
     });
   });
 
@@ -180,7 +203,7 @@ describe('CrearPerfilHandler', () => {
     expect(loggerMocks.info).not.toHaveBeenCalled();
   });
 
-  it('convierte la violación directa de la vivienda única en un CONFLICT amistoso sin filtrar datos', async () => {
+  it('convierte la violacion directa de la vivienda unica en un CONFLICT amistoso sin filtrar datos', async () => {
     const { handler, residenteRepo } = makeHandler();
     const privateDetail = 'victima@example.com telefono=2289999999 edificio=8 departamento=314A';
     vi.mocked(residenteRepo.create).mockRejectedValue(
@@ -199,7 +222,7 @@ describe('CrearPerfilHandler', () => {
     expect(loggerMocks.info).not.toHaveBeenCalled();
   });
 
-  it('reconoce la violación de vivienda anidada en cause', async () => {
+  it('reconoce la violacion de vivienda anidada en cause', async () => {
     const { handler, residenteRepo } = makeHandler();
     const databaseError = pgUniqueError(UNIQUE_VIVIENDA, 'dato-sensible');
     const wrappedError = Object.assign(new Error('Drizzle query failed'), {
@@ -215,7 +238,7 @@ describe('CrearPerfilHandler', () => {
     expect(loggerMocks.info).not.toHaveBeenCalled();
   });
 
-  it('propaga una violación 23505 de otra restricción', async () => {
+  it('propaga una violacion 23505 de otra restriccion', async () => {
     const { handler, residenteRepo } = makeHandler();
     const databaseError = pgUniqueError('perfiles_residente_user_id_unique');
     vi.mocked(residenteRepo.create).mockRejectedValue(databaseError);

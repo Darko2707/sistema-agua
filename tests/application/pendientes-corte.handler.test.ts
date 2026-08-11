@@ -69,4 +69,19 @@ describe('PendientesCorteHandler', () => {
     expect(residenteRepo.findByEstado).not.toHaveBeenCalled();
     expect(residenteRepo.findByCircuitoYEstado).toHaveBeenCalledWith('circuito-2', 'pendiente_reconexion');
   });
+  it('falla con mensaje claro si la cuadrilla no tiene perfil/circuito', async () => {
+    const { residenteRepo, circuitoRepo } = createDeps();
+    residenteRepo.findByUserId.mockResolvedValue(null);
+    const handler = new PendientesCorteHandler({ residenteRepo, circuitoRepo });
+
+    await expect(handler.execute({
+      rol: 'cuadrilla_cortes',
+      userId: 'trab-sin-circuito',
+      tipo: 'corte',
+    })).rejects.toMatchObject({
+      code:    'FORBIDDEN',
+      message: expect.stringContaining('no tiene un circuito asignado'),
+    });
+    expect(residenteRepo.findByCircuitoYEstado).not.toHaveBeenCalled();
+  });
 });

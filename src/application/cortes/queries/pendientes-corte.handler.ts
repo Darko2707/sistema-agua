@@ -1,3 +1,4 @@
+import { TRPCError } from '@trpc/server';
 import type { ResidenteRepository } from '../../ports/residente.repository';
 import type { CircuitoRepository } from '../../ports/circuito.repository';
 import type { PendientesCortQuery } from './pendientes-corte.query';
@@ -26,10 +27,16 @@ export class PendientesCorteHandler {
     }
 
     const perfilTrabajador = await residenteRepo.findByUserId(query.userId);
-    if (!perfilTrabajador) return [];
+    if (!perfilTrabajador) {
+      throw new TRPCError({
+        code:    'FORBIDDEN',
+        message: 'Esta cuenta de cuadrilla no tiene un circuito asignado. Asigna el rol a un residente del circuito desde el panel del representante.',
+      });
+    }
     return residenteRepo.findByCircuitoYEstado(
       perfilTrabajador.circuitoId,
       query.tipo === 'reconexion' ? 'pendiente_reconexion' : 'pendiente_corte',
     );
   }
 }
+
