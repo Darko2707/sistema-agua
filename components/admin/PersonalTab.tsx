@@ -1,23 +1,18 @@
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Shield } from 'lucide-react';
-import { CircuitoForm } from './CircuitoForm';
-import { ROLES, type Personal, type Circuito } from '@/hooks/useAdmin';
+import { ROLES, type Personal } from '@/hooks/useAdmin';
 
 type Props = {
   personal:              Personal[];
-  circuitos:             Circuito[];
   actualizando:          string | null;
   onCambiarRol:          (userId: string, rol: string) => void;
-  onAsignarRepresentante:(circuitoId: string, userId: string) => void;
 };
 
 export function PersonalTab({
   personal,
-  circuitos,
   actualizando,
   onCambiarRol,
-  onAsignarRepresentante,
 }: Props) {
   return (
     <div className="space-y-6">
@@ -62,12 +57,6 @@ export function PersonalTab({
         </CardContent>
       </Card>
 
-      <CircuitoForm
-        circuitos={circuitos}
-        personal={personal}
-        actualizando={actualizando}
-        onAsignar={onAsignarRepresentante}
-      />
     </div>
   );
 }

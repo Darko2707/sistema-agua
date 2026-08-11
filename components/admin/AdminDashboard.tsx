@@ -43,7 +43,6 @@ export function AdminDashboard() {
     residentesFiltrados,
     morosos,
     cambiarRol,
-    asignarRepresentante,
     registrarPagoRetroactivo,
     salir,
   } = useAdmin();
@@ -164,10 +163,8 @@ export function AdminDashboard() {
         {tab === 'personal' && (
           <PersonalTab
             personal={personal}
-            circuitos={circuitos}
             actualizando={actualizando}
             onCambiarRol={cambiarRol}
-            onAsignarRepresentante={asignarRepresentante}
           />
         )}
         {tab === 'residentes' && (

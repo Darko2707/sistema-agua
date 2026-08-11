@@ -162,9 +162,10 @@ export class DrizzleUserRepository implements UserRepository {
     if (!existente) throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
 
     let nuevaCircuitoId: string | undefined;
+    let anteriorRepresentanteId: string | undefined;
     let anteriorTesoreraId: string | undefined;
 
-    if (nuevoRol === 'tesorera') {
+    if (nuevoRol === 'representante' || nuevoRol === 'tesorera') {
       const perfil = await db.query.perfilesResidente.findFirst({
         where: (p, { eq }) => eq(p.userId, userId),
       });
@@ -173,7 +174,10 @@ export class DrizzleUserRepository implements UserRepository {
         const circ = await db.query.circuitos.findFirst({
           where: (c, { eq }) => eq(c.id, perfil.circuitoId!),
         });
-        if (circ?.tesoreraId && circ.tesoreraId !== userId) {
+        if (nuevoRol === 'representante' && circ?.representanteId && circ.representanteId !== userId) {
+          anteriorRepresentanteId = circ.representanteId;
+        }
+        if (nuevoRol === 'tesorera' && circ?.tesoreraId && circ.tesoreraId !== userId) {
           anteriorTesoreraId = circ.tesoreraId;
         }
       }
@@ -186,7 +190,13 @@ export class DrizzleUserRepository implements UserRepository {
       if (existente.role === 'tesorera' && nuevoRol !== 'tesorera') {
         await tx.update(circuitos).set({ tesoreraId: null }).where(eq(circuitos.tesoreraId, userId));
       }
-      if (nuevaCircuitoId) {
+      if (nuevaCircuitoId && nuevoRol === 'representante') {
+        if (anteriorRepresentanteId) {
+          await tx.update(user).set({ role: 'residente', updatedAt: new Date() }).where(eq(user.id, anteriorRepresentanteId));
+        }
+        await tx.update(circuitos).set({ representanteId: userId }).where(eq(circuitos.id, nuevaCircuitoId));
+      }
+      if (nuevaCircuitoId && nuevoRol === 'tesorera') {
         if (anteriorTesoreraId) {
           await tx.update(user).set({ role: 'residente' }).where(eq(user.id, anteriorTesoreraId));
         }
@@ -194,6 +204,9 @@ export class DrizzleUserRepository implements UserRepository {
       }
       await tx.update(user).set({ role: nuevoRol, updatedAt: new Date() }).where(eq(user.id, userId));
       await tx.delete(session).where(eq(session.userId, userId));
+      if (anteriorRepresentanteId) {
+        await tx.delete(session).where(eq(session.userId, anteriorRepresentanteId));
+      }
       if (anteriorTesoreraId) {
         await tx.delete(session).where(eq(session.userId, anteriorTesoreraId));
       }
