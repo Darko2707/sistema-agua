@@ -1,12 +1,14 @@
-import type { MetodoPago } from '../../ports/pago.repository';
-
-export type ProcesarPagoMpCommand = {
-  perfilId: string;
+export type ProcesarPagoMpPeriodo = {
   mes: number;
   anio: number;
   monto: string;
   esReconexion: boolean;
-  mercadoPagoPaymentId?: string;
+};
+
+export type ProcesarPagoMpCommand = {
+  perfilId: string;
+  periodos: ProcesarPagoMpPeriodo[];
+  mercadoPagoPaymentId: string;
   mercadoPagoCollectorId?: string | null;
-  metodo: MetodoPago;
+  metodo: 'mercado_pago';
 };

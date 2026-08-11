@@ -28,3 +28,8 @@ export const trpcLimiter = makeLimiter(120, '1 m');
 
 // Checkout: 5 req/min por IP — cada llamada crea una preferencia en MP
 export const checkoutLimiter = makeLimiter(5, '1 m');
+
+// Recuperacion por representante: el codigo es corto y humano, asi que el
+// servidor tambien limita intentos por correo/IP y generacion por representante.
+export const representativeResetRedeemLimiter = makeLimiter(10, '10 m');
+export const representativeResetGenerateLimiter = makeLimiter(10, '10 m');

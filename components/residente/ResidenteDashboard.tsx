@@ -51,7 +51,7 @@ const PAYMENT_RESULT = {
     Icon:    CheckCircle2,
   },
   pending: {
-    msg:     'Tu pago está siendo verificado por Mercado Pago. Te notificaremos cuando se confirme.',
+    msg:     'Tu pago está siendo verificado por Mercado Pago. Consulta aquí el estado; si activaste las notificaciones push, te avisaremos cuando se confirme.',
     bg:      '#FFF8E6',
     text:    '#8A5800',
     iconBg:  '#FFD980',

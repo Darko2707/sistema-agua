@@ -7,7 +7,7 @@ import { TRPCError } from '@trpc/server';
 // eslint-disable-next-line no-restricted-imports -- complex financial aggregations not yet in a repo
 import { db } from '@/db';
 // eslint-disable-next-line no-restricted-imports -- complex financial aggregations not yet in a repo
-import { gastosCircuito, ingresosAdicionales, circuitos } from '@/db/schema';
+import { gastosCircuito, ingresosAdicionales } from '@/db/schema';
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 
@@ -46,7 +46,8 @@ async function getCircuitoDelTesorera(userId: string) {
   });
   if (byId) return byId;
 
-  // Fallback: buscar por perfilesResidente (datos previos al fix de tesoreraId)
+  // Fallback solo de lectura para datos previos al fix de tesoreraId. No se
+  // reasigna el circuito desde una query: esa correccion debe hacerla admin.
   const perfil = await db.query.perfilesResidente.findFirst({
     where: (p, { eq }) => eq(p.userId, userId),
   });
@@ -59,8 +60,9 @@ async function getCircuitoDelTesorera(userId: string) {
   if (!byPerfil) {
     throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes un circuito asignado.' });
   }
-  // Sincronizar tesoreraId para evitar el fallback en consultas futuras
-  await db.update(circuitos).set({ tesoreraId: userId }).where(eq(circuitos.id, byPerfil.id));
+  if (byPerfil.tesoreraId && byPerfil.tesoreraId !== userId) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'Este circuito ya tiene otra tesorera asignada.' });
+  }
   return byPerfil;
 }
 

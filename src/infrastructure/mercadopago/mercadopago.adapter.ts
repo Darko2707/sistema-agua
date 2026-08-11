@@ -1,4 +1,4 @@
-import { MercadoPagoConfig, Preference, Payment } from 'mercadopago';
+﻿import { MercadoPagoConfig, Preference, Payment } from 'mercadopago';
 import type { PaymentGateway, CrearPreferenciaInput } from '@/src/application/ports/payment-gateway';
 
 export class MercadoPagoAdapter implements PaymentGateway {
@@ -35,11 +35,11 @@ export class MercadoPagoAdapter implements PaymentGateway {
       },
     });
     const url = pref.init_point ?? pref.sandbox_init_point;
-    if (!url) throw new Error('Mercado Pago no devolvió una URL de pago');
+    if (!url) throw new Error('Mercado Pago no devolviÃ³ una URL de pago');
     return { url, preferenceId: pref.id ?? '' };
   }
 
-  async obtenerPago(paymentId: string, _accessToken: string) {
+  async obtenerPago(paymentId: string) {
     const payment = await this.paymentClient.get({ id: paymentId });
     return {
       id:                String(payment.id),

@@ -5,10 +5,10 @@ import { useEffect } from 'react';
 
 export default function GlobalError({
   error,
-  unstable_retry,
+  retry,
 }: {
   error: Error & { digest?: string };
-  unstable_retry: () => void;
+  retry: () => void;
 }) {
   useEffect(() => {
     Sentry.captureException(error);
@@ -22,7 +22,7 @@ export default function GlobalError({
             Algo salió mal
           </h1>
           <p style={{ color: '#64748b', marginBottom: '1.5rem', fontSize: '0.9rem' }}>
-            Ocurrió un error inesperado. El equipo ha sido notificado automáticamente.
+            Ocurrió un error inesperado. Intenta cargar la aplicación nuevamente.
             {error.digest && (
               <span style={{ display: 'block', marginTop: '0.5rem', fontFamily: 'monospace', fontSize: '0.75rem', color: '#94a3b8' }}>
                 ID: {error.digest}
@@ -30,7 +30,8 @@ export default function GlobalError({
             )}
           </p>
           <button
-            onClick={unstable_retry}
+            type="button"
+            onClick={retry}
             style={{ background: '#0ea5e9', color: 'white', border: 'none', borderRadius: '6px', padding: '0.6rem 1.5rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.9rem' }}
           >
             Intentar de nuevo

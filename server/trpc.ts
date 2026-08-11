@@ -1,10 +1,11 @@
 import { cache } from 'react';
 import { initTRPC, TRPCError } from '@trpc/server';
 import { auth } from '@/lib/auth';
-import { residenteRepo, circuitoRepo } from '@/src/infrastructure/db/repositories';
+import { residenteRepo, circuitoRepo, userRepo } from '@/src/infrastructure/db/repositories';
 import {
   VerificarAccesoService,
   CircuitoInhabilitadoError,
+  PerfilIncompletoError,
 } from '@/src/application/acceso/verificar-acceso.service';
 
 // ── Shared auth types ──────────────────────────────────────────────────────────
@@ -16,7 +17,6 @@ export type AuthUser = {
   id:            string;
   name:          string;
   email:         string;
-  emailVerified: boolean;
   image?:        string | null;
   createdAt:     Date;
   updatedAt:     Date;
@@ -30,6 +30,9 @@ export function mapDomainError(err: unknown): never {
   if (err instanceof TRPCError) throw err;
 
   if (err instanceof CircuitoInhabilitadoError) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: err.message });
+  }
+  if (err instanceof PerfilIncompletoError) {
     throw new TRPCError({ code: 'FORBIDDEN', message: err.message });
   }
 
@@ -57,21 +60,22 @@ const verificarAcceso = cache((userId: string, role: UserRole) =>
 // ── Context ────────────────────────────────────────────────────────────────────
 export const createTRPCContext = async (opts: { headers: Headers }) => {
   const session = await auth.api.getSession({ headers: opts.headers });
-  if (!session?.user) return { user: null };
+  if (!session?.user) return { user: null, headers: opts.headers };
 
-  const raw = session.user as Record<string, unknown>;
+  const currentUser = await userRepo.findById(session.user.id);
+  if (!currentUser) return { user: null, headers: opts.headers };
+
   const user: AuthUser = {
-    id:            session.user.id,
-    name:          session.user.name,
-    email:         session.user.email,
-    emailVerified: session.user.emailVerified,
+    id:            currentUser.id,
+    name:          currentUser.name,
+    email:         currentUser.email,
     image:         session.user.image ?? null,
     createdAt:     session.user.createdAt,
     updatedAt:     session.user.updatedAt,
-    role:          (raw.role as UserRole | null | undefined) ?? 'residente',
+    role:          currentUser.role,
   };
 
-  return { user };
+  return { user, headers: opts.headers };
 };
 
 // ── tRPC instance ──────────────────────────────────────────────────────────────
@@ -81,8 +85,6 @@ export const router          = t.router;
 export const publicProcedure = t.procedure;
 
 // ── Procedures ─────────────────────────────────────────────────────────────────
-// Requires a session but NOT email verification — use for onboarding flows
-// that run before the user has had a chance to click the verification link.
 export const authenticatedProcedure = t.procedure.use(({ ctx, next }) => {
   if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
   return next({ ctx: { user: ctx.user } });

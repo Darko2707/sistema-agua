@@ -58,7 +58,7 @@ let FIXTURE_PERF_IDS: string[] = [];
 beforeAll(async () => {
   await db.insert(user).values({
     id: FX.repId, name: 'Rep Morosos', email: FX.repEmail,
-    role: 'representante', emailVerified: true,
+    role: 'representante',
   });
   const [circ] = await db.insert(circuitos).values({
     nombre: `Circ-Morosos-${suffix}`, representanteId: FX.repId,
@@ -73,11 +73,11 @@ beforeAll(async () => {
     depto: string,
   ) {
     await db.insert(user).values({
-      id, name: `Res ${depto}`, email, role: 'residente', emailVerified: true,
+      id, name: `Res ${depto}`, email, role: 'residente',
     });
     const [p] = await db.insert(perfilesResidente).values({
       userId: id, telefono: '5500000000', sexo: 'otro', tenencia: 'propietario',
-      circuitoId: FX.circId, edificio: 'INT', departamento: depto, estadoAgua: estado,
+      circuitoId: FX.circId, edificio: '999991', departamento: String(Number(depto)), estadoAgua: estado,
     }).returning({ id: perfilesResidente.id });
     return p.id;
   }

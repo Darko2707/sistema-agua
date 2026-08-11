@@ -1,6 +1,6 @@
-import { and, count, eq, notInArray } from 'drizzle-orm';
+import { count, eq, sql } from 'drizzle-orm';
 import { db } from '@/db';
-import { perfilesResidente, pagos } from '@/db/schema';
+import { perfilesResidente } from '@/db/schema';
 import type { EstadoAgua } from '@/src/domain/agua/state-machine';
 import type {
   ResidenteRepository,
@@ -8,7 +8,17 @@ import type {
   ResidenteConRelaciones,
   PaginatedResult,
   CircuitoRef,
+  CircuitoPaymentConfigRef,
 } from '@/src/application/ports/residente.repository';
+
+const circuitoSafeColumns = {
+  id: true,
+  nombre: true,
+  montoMensual: true,
+  montoReconexion: true,
+  representanteId: true,
+  activo: true,
+} as const;
 
 type WithRelaciones = typeof perfilesResidente.$inferSelect & {
   usuario?: { id: string; name: string; email: string; role: string } | null;
@@ -55,6 +65,17 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
   async findByUserId(userId: string) {
     const row = await db.query.perfilesResidente.findFirst({
       where: (p, { eq }) => eq(p.userId, userId),
+      with: { circuito: { columns: circuitoSafeColumns } },
+    });
+    if (!row) return null;
+    return { ...toData(row), circuito: row.circuito ?? null };
+  }
+
+  async findByUserIdWithPaymentConfig(userId: string): Promise<(
+    ResidenteData & { circuito?: CircuitoPaymentConfigRef | null }
+  ) | null> {
+    const row = await db.query.perfilesResidente.findFirst({
+      where: (p, { eq }) => eq(p.userId, userId),
       with: { circuito: true },
     });
     if (!row) return null;
@@ -64,7 +85,7 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
   async findByCircuito(circuitoId: string): Promise<ResidenteConRelaciones[]> {
     const rows = await db.query.perfilesResidente.findMany({
       where: (p, { eq }) => eq(p.circuitoId, circuitoId),
-      with: { usuario: true, circuito: true, pagos: true, cortes: true },
+      with: { usuario: true, circuito: { columns: circuitoSafeColumns }, pagos: true, cortes: true },
       orderBy: (p, { desc }) => [desc(p.creadoEn)],
     });
     return rows.map(r => toConRelaciones(r as WithRelaciones));
@@ -72,7 +93,7 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
 
   async findAll(): Promise<ResidenteConRelaciones[]> {
     const rows = await db.query.perfilesResidente.findMany({
-      with: { usuario: true, circuito: true, pagos: true, cortes: true },
+      with: { usuario: true, circuito: { columns: circuitoSafeColumns }, pagos: true, cortes: true },
       orderBy: (p, { desc }) => [desc(p.creadoEn)],
     });
     return rows.map(r => toConRelaciones(r as WithRelaciones));
@@ -82,7 +103,7 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
     const offset = (page - 1) * pageSize;
     const [rows, [{ total }]] = await Promise.all([
       db.query.perfilesResidente.findMany({
-        with: { usuario: true, circuito: true, pagos: true, cortes: true },
+        with: { usuario: true, circuito: { columns: circuitoSafeColumns }, pagos: true, cortes: true },
         orderBy: (p, { desc }) => [desc(p.creadoEn)],
         limit: pageSize,
         offset,
@@ -103,7 +124,7 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
     const [rows, [{ total }]] = await Promise.all([
       db.query.perfilesResidente.findMany({
         where: (p, { eq }) => eq(p.circuitoId, circuitoId),
-        with: { usuario: true, circuito: true, pagos: true, cortes: true },
+        with: { usuario: true, circuito: { columns: circuitoSafeColumns }, pagos: true, cortes: true },
         orderBy: (p, { desc }) => [desc(p.creadoEn)],
         limit: pageSize,
         offset,
@@ -123,7 +144,7 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
   async findByEstado(estado: EstadoAgua): Promise<ResidenteConRelaciones[]> {
     const rows = await db.query.perfilesResidente.findMany({
       where: (p, { eq }) => eq(p.estadoAgua, estado),
-      with: { usuario: true, circuito: true },
+      with: { usuario: true, circuito: { columns: circuitoSafeColumns } },
       orderBy: (p, { desc }) => [desc(p.creadoEn)],
     });
     return rows.map(r => toConRelaciones(r as WithRelaciones));
@@ -132,7 +153,7 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
   async findByCircuitoYEstado(circuitoId: string, estado: EstadoAgua): Promise<ResidenteConRelaciones[]> {
     const rows = await db.query.perfilesResidente.findMany({
       where: (p, { eq, and }) => and(eq(p.circuitoId, circuitoId), eq(p.estadoAgua, estado)),
-      with: { usuario: true, circuito: true },
+      with: { usuario: true, circuito: { columns: circuitoSafeColumns } },
       orderBy: (p, { desc }) => [desc(p.creadoEn)],
     });
     return rows.map(r => toConRelaciones(r as WithRelaciones));
@@ -161,20 +182,31 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
   }
 
   async marcarMorososDelMes(mes: number, anio: number): Promise<number> {
-    const pagadosSubquery = db
-      .select({ perfilId: pagos.perfilId })
-      .from(pagos)
-      .where(and(eq(pagos.mes, mes), eq(pagos.anio, anio), eq(pagos.estado, 'pagado')));
+    // Pagos y operaciones de corte bloquean la misma fila de perfil. SKIP
+    // LOCKED evita marcar con un snapshot viejo a quien esta pagando; las
+    // siguientes ejecuciones idempotentes recogen filas omitidas.
+    const result = await db.execute<{ id: string }>(sql`
+      WITH candidatos AS MATERIALIZED (
+        SELECT perfil.id
+        FROM perfiles_residente AS perfil
+        WHERE perfil.estado_agua = 'activo'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM pagos AS pago
+            WHERE pago.perfil_id = perfil.id
+              AND pago.mes = ${mes}
+              AND pago.anio = ${anio}
+              AND pago.estado = 'pagado'
+          )
+        FOR UPDATE OF perfil SKIP LOCKED
+      )
+      UPDATE perfiles_residente AS perfil
+      SET estado_agua = 'pendiente_corte'
+      FROM candidatos
+      WHERE perfil.id = candidatos.id
+      RETURNING perfil.id
+    `);
 
-    const actualizados = await db
-      .update(perfilesResidente)
-      .set({ estadoAgua: 'pendiente_corte' })
-      .where(and(
-        eq(perfilesResidente.estadoAgua, 'activo'),
-        notInArray(perfilesResidente.id, pagadosSubquery),
-      ))
-      .returning({ id: perfilesResidente.id });
-
-    return actualizados.length;
+    return result.rows.length;
   }
 }

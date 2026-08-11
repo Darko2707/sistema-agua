@@ -62,11 +62,35 @@ export const ticketsRouter = router({
       where: (t, { inArray }) => inArray(t.pagoId, ids),
       with: {
         pago: {
+          columns: {
+            id: true,
+            mes: true,
+            anio: true,
+            monto: true,
+            montoBase: true,
+            comisionMercadoPago: true,
+            retencionIsr: true,
+            retencionIva: true,
+            estado: true,
+            metodo: true,
+            folio: true,
+            fechaPago: true,
+            esReconexion: true,
+          },
           with: {
-            circuito: true,
+            circuito: {
+              columns: {
+                id: true,
+                nombre: true,
+                montoMensual: true,
+                montoReconexion: true,
+                activo: true,
+              },
+            },
             perfil: {
+              columns: { id: true, edificio: true, departamento: true },
               with: {
-                usuario: true,
+                usuario: { columns: { id: true, name: true, email: true } },
               },
             },
           },

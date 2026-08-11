@@ -1,15 +1,13 @@
-'use client';
+﻿'use client';
 
 import { Suspense, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { authClient } from '@/lib/auth-client';
+import Link from 'next/link';
+import { trpc } from '@/lib/trpc-client';
 import { AuthCard, C, inputBase, labelBase, buttonGold, linkButton, FM } from '../auth-styles';
 
 function ResetPasswordContent() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const token = searchParams.get('token');
-
+  const [email, setEmail] = useState('');
+  const [code, setCode] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -31,34 +29,61 @@ function ResetPasswordContent() {
       return;
     }
     try {
-      if (!token) throw new Error('Token no válido');
-      await authClient.resetPassword({ newPassword: password, token });
+      await trpc.usuarios.restablecerConCodigoRepresentante.mutate({
+        email:       email.trim().toLowerCase(),
+        code,
+        newPassword: password,
+      });
       setSuccess(true);
-      setTimeout(() => router.push('/login'), 3000);
+      setPassword('');
+      setConfirmPassword('');
+      setCode('');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Error al restablecer la contraseña');
     }
     setLoading(false);
   }
 
-  if (!token) {
-    return (
-      <AuthCard title="Restablecer contraseña" subtitle="El enlace no es válido o expiró">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, textAlign: 'center' }}>
-          <div style={{ background: C.dangerBg, border: '1px solid #F3BFBF', borderRadius: 14, padding: '12px 16px', fontSize: 14, color: C.danger, fontWeight: 700 }}>
-            Enlace de recuperación inválido o expirado.
-          </div>
-          <button className="auth-primary" onClick={() => router.push('/login')} style={buttonGold}>
-            Volver al inicio de sesión
-          </button>
-        </div>
-      </AuthCard>
-    );
-  }
-
   return (
-    <AuthCard title="Restablecer contraseña" subtitle="Ingresa tu nueva contraseña">
+    <AuthCard
+      title="Restablecer contraseña"
+      subtitle="Usa el código de 6 dígitos que te dio tu representante"
+    >
       <form onSubmit={handleResetPassword} style={{ display: 'flex', flexDirection: 'column', gap: 16 }} noValidate>
+        <div>
+          <label htmlFor="rp-email" style={labelBase}>Correo electrónico</label>
+          <input
+            id="rp-email"
+            type="email"
+            className="auth-inp"
+            placeholder="tu@correo.com"
+            autoComplete="email"
+            required
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            style={inputBase}
+          />
+        </div>
+        <div>
+          <label htmlFor="rp-code" style={labelBase}>Código del representante</label>
+          <input
+            id="rp-code"
+            inputMode="numeric"
+            pattern="[0-9 ]*"
+            className="auth-inp"
+            placeholder="123456"
+            autoComplete="one-time-code"
+            required
+            minLength={6}
+            maxLength={8}
+            value={code}
+            onChange={e => setCode(e.target.value.replace(/[^\d ]/g, '').slice(0, 8))}
+            style={{ ...inputBase, letterSpacing: '0.16em', fontWeight: 800, textAlign: 'center' }}
+          />
+          <p style={{ fontSize: 12, color: C.textWarm, marginTop: 5, lineHeight: 1.4 }}>
+            El código caduca 10 minutos después de generarse y solo se puede usar una vez.
+          </p>
+        </div>
         <div>
           <label htmlFor="rp-password" style={labelBase}>Nueva contraseña</label>
           <input
@@ -96,8 +121,8 @@ function ResetPasswordContent() {
           </div>
         )}
         {success && (
-          <div role="alert" style={{ background: C.okBg, border: '1px solid #B0DFC0', borderRadius: 14, padding: '10px 14px', fontSize: 13, color: C.ok, fontWeight: 700 }}>
-            ✓ Contraseña restablecida. Redirigiendo al login...
+          <div role="status" aria-live="polite" style={{ background: C.okBg, border: '1px solid #B0DFC0', borderRadius: 14, padding: '10px 14px', fontSize: 13, color: C.ok, fontWeight: 700 }}>
+            ✓ Contraseña restablecida. Ya puedes iniciar sesión.
           </div>
         )}
 
@@ -106,9 +131,9 @@ function ResetPasswordContent() {
         </button>
 
         <div style={{ textAlign: 'center' }}>
-          <button type="button" className="auth-link" style={{ ...linkButton, color: '#C98A0E' }} onClick={() => router.push('/login')}>
+          <Link className="auth-link" style={{ ...linkButton, color: '#C98A0E' }} href="/login">
             ‹ Volver al inicio de sesión
-          </button>
+          </Link>
         </div>
       </form>
     </AuthCard>
@@ -118,7 +143,7 @@ function ResetPasswordContent() {
 export default function ResetPasswordPage() {
   return (
     <Suspense fallback={
-      <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: FM, color: C.textWarm, fontSize: 14 }}>
+      <div role="status" aria-live="polite" style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: FM, color: C.textWarm, fontSize: 14 }}>
         Cargando...
       </div>
     }>

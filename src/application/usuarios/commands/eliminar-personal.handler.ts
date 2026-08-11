@@ -17,6 +17,14 @@ export class EliminarPersonalHandler {
   async execute(cmd: EliminarPersonalCommand): Promise<void> {
     const { userRepo, circuitoRepo } = this.deps;
 
+    const target = await userRepo.findById(cmd.id);
+    if (!target) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
+    }
+    if (target.role !== cmd.role) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'El usuario no corresponde al tipo de personal indicado' });
+    }
+
     const tieneRegistros = await userRepo.hasFinancialRecords(cmd.id);
     if (tieneRegistros) {
       throw new TRPCError({

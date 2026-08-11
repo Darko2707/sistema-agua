@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono, Mulish, Bricolage_Grotesque, Manrope, Space_Grotesk } from 'next/font/google'
 import { Providers } from '@/components/providers'
 import './globals.css'
@@ -34,8 +34,25 @@ const spaceGrotesk = Space_Grotesk({
 })
 
 export const metadata: Metadata = {
-  title: 'Sistema de Agua',
-  description: 'Sistema de gestión de pagos de agua',
+  title: {
+    default: 'SIS4S - Sistema de Agua',
+    template: '%s | SIS4S',
+  },
+  description: 'Consulta pagos, recibos y el estado de tu servicio de agua.',
+  applicationName: 'SIS4S Agua',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'SIS4S Agua',
+  },
+  icons: {
+    apple: '/logo1SIS4S.png',
+  },
+}
+
+export const viewport: Viewport = {
+  themeColor: '#15493A',
+  colorScheme: 'light',
 }
 
 export default function RootLayout({
@@ -47,7 +64,6 @@ export default function RootLayout({
     <html
       lang="es"
       className={`${geistSans.variable} ${geistMono.variable} ${mulish.variable} ${bricolage.variable} ${manrope.variable} ${spaceGrotesk.variable}`}
-      suppressHydrationWarning
     >
       <body className="min-h-screen bg-slate-50 font-sans antialiased">
         <a

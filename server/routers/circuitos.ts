@@ -3,6 +3,17 @@ import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import { circuitoRepo } from '@/src/infrastructure/db/repositories';
 
+const circuitoOutputColumns = {
+  id: true,
+  nombre: true,
+  representanteId: true,
+  tesoreraId: true,
+  montoMensual: true,
+  montoReconexion: true,
+  mercadoPagoCollectorId: true,
+  activo: true,
+} as const;
+
 export const circuitosRouter = router({
   listar: roleProcedure('admin').query(async () => {
     return circuitoRepo.findAll();
@@ -38,6 +49,7 @@ export const circuitosRouter = router({
     const { db } = await import('@/db');
     const circuito = await db.query.circuitos.findFirst({
       where: (c, { eq }) => eq(c.representanteId, ctx.user.id),
+      columns: circuitoOutputColumns,
       with: { representante: { columns: { id: true, name: true, email: true } } },
     });
     if (!circuito) throw new TRPCError({ code: 'NOT_FOUND', message: 'No tienes un circuito asignado' });
@@ -49,6 +61,7 @@ export const circuitosRouter = router({
     const { db } = await import('@/db');
     const circuito = await db.query.circuitos.findFirst({
       where: (c, { eq }) => eq(c.tesoreraId, ctx.user.id),
+      columns: circuitoOutputColumns,
     });
     if (!circuito) throw new TRPCError({ code: 'NOT_FOUND', message: 'No tienes un circuito asignado' });
     return circuito;

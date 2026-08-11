@@ -1,4 +1,8 @@
+import type { Metadata } from 'next';
+
 import { LegalPage, legalStyles as s } from '../legal-styles';
+
+export const metadata: Metadata = { title: 'Política de cookies' };
 
 export default function CookiesPage() {
   return (

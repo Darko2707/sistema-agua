@@ -1,3 +1,5 @@
+import type { PushNotificationInput } from './push-notification';
+
 export type MetodoPago = 'efectivo' | 'transferencia' | 'mercado_pago';
 
 export type PagoData = {
@@ -46,6 +48,35 @@ export type CrearPagoInput = {
   fechaPago: Date;
 };
 
+export type CrearPagosMercadoPagoBatchInput = {
+  perfilId: string;
+  mercadoPagoPaymentId: string;
+  pagos: CrearPagoInput[];
+  pushNotification: PushNotificationInput;
+};
+
+export type CrearPagosMercadoPagoBatchResult = {
+  pagos: PagoData[];
+  yaRegistrado: boolean;
+};
+
+export type CrearPagosManualBatchInput = {
+  perfilId: string;
+  pagos: CrearPagoInput[];
+  actualizarEstadoAgua: boolean;
+  pushNotification: PushNotificationInput;
+  auditoria: {
+    actorId: string;
+    accion: 'pago.manual.tesorera' | 'pago.retroactivo.admin';
+    metodo: 'efectivo' | 'transferencia';
+  };
+};
+
+export type CrearPagosManualBatchResult = {
+  pagos: PagoData[];
+  omitidos: Array<{ mes: number; anio: number }>;
+};
+
 export type CorteData = {
   id: string;
   perfilId: string;
@@ -77,7 +108,17 @@ export interface PagoRepository {
   findByPerfilId(perfilId: string, limit?: number): Promise<PagoData[]>;
   findAllPagadosPorMes(mes: number, anio: number): Promise<PagoData[]>;
   findPagadosByMes(mes: number, anio: number): Promise<Array<{ perfilId: string }>>;
-  createWithLock(perfilId: string, input: CrearPagoInput): Promise<PagoData>;
+  createWithLock(
+    perfilId: string,
+    input: CrearPagoInput,
+    pushNotification?: PushNotificationInput,
+  ): Promise<PagoData>;
+  createMercadoPagoBatchWithLock(
+    input: CrearPagosMercadoPagoBatchInput,
+  ): Promise<CrearPagosMercadoPagoBatchResult>;
+  createManualBatchWithLock(
+    input: CrearPagosManualBatchInput,
+  ): Promise<CrearPagosManualBatchResult>;
   findCorteActivo(perfilId: string): Promise<CorteData | null>;
   crearCorte(data: { perfilId: string; trabajadorId: string; motivo: string }): Promise<CorteData>;
   cerrarCorte(corteId: string, fecha: Date, reconectadoPor?: string): Promise<void>;

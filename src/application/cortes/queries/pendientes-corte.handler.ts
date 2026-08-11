@@ -13,8 +13,10 @@ export class PendientesCorteHandler {
   async execute(query: PendientesCortQuery) {
     const { residenteRepo, circuitoRepo } = this.deps;
 
-    if (query.tipo === 'reconexion') {
-      return residenteRepo.findByEstado('pendiente_reconexion');
+    if (query.rol === 'admin') {
+      return query.tipo === 'reconexion'
+        ? residenteRepo.findByEstado('pendiente_reconexion')
+        : residenteRepo.findByEstado('pendiente_corte');
     }
 
     if (query.rol === 'representante') {
@@ -23,6 +25,11 @@ export class PendientesCorteHandler {
       return residenteRepo.findByCircuitoYEstado(circ.id, 'pendiente_corte');
     }
 
-    return residenteRepo.findByEstado('pendiente_corte');
+    const perfilTrabajador = await residenteRepo.findByUserId(query.userId);
+    if (!perfilTrabajador) return [];
+    return residenteRepo.findByCircuitoYEstado(
+      perfilTrabajador.circuitoId,
+      query.tipo === 'reconexion' ? 'pendiente_reconexion' : 'pendiente_corte',
+    );
   }
 }

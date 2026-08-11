@@ -1,9 +1,9 @@
-import { eq, ne, asc, isNull, and } from 'drizzle-orm';
+import { eq, asc, isNull, and } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import bcrypt from 'bcryptjs';
 import { TRPCError } from '@trpc/server';
 import { db } from '@/db';
-import { user, account, circuitos, perfilesResidente } from '@/db/schema';
+import { user, account, session, circuitos } from '@/db/schema';
 import type {
   UserRepository,
   UserData,
@@ -36,7 +36,7 @@ export class DrizzleUserRepository implements UserRepository {
     const hashed = await bcrypt.hash(input.password, 10);
     await db.insert(user).values({
       id: userId, name: input.nombre, email: input.email,
-      role: input.role, emailVerified: true,
+      role: input.role,
     });
     await db.insert(account).values({
       id: nanoid(), accountId: input.email, providerId: 'credential',
@@ -55,16 +55,28 @@ export class DrizzleUserRepository implements UserRepository {
   }
 
   async updatePassword(userId: string, hashedPassword: string): Promise<void> {
-    await db.update(account).set({ password: hashedPassword }).where(eq(account.userId, userId));
+    await db.transaction(async (tx) => {
+      await tx.update(account)
+        .set({ password: hashedPassword, updatedAt: new Date() })
+        .where(and(eq(account.userId, userId), eq(account.providerId, 'credential')));
+      await tx.delete(session).where(eq(session.userId, userId));
+    });
   }
 
   async updateRole(id: string, role: UserRole): Promise<void> {
-    await db.update(user).set({ role }).where(eq(user.id, id));
+    await db.transaction(async (tx) => {
+      await tx.update(user).set({ role, updatedAt: new Date() }).where(eq(user.id, id));
+      await tx.delete(session).where(eq(session.userId, id));
+    });
   }
 
   async delete(id: string): Promise<void> {
-    // Soft delete: preserve audit trail and FK integrity
-    await db.update(user).set({ deletedAt: new Date() }).where(eq(user.id, id));
+    await db.transaction(async (tx) => {
+      await tx.delete(session).where(eq(session.userId, id));
+      await tx.update(user)
+        .set({ deletedAt: new Date(), updatedAt: new Date() })
+        .where(eq(user.id, id));
+    });
   }
 
   async hasFinancialRecords(id: string): Promise<boolean> {
@@ -180,7 +192,11 @@ export class DrizzleUserRepository implements UserRepository {
         }
         await tx.update(circuitos).set({ tesoreraId: userId }).where(eq(circuitos.id, nuevaCircuitoId));
       }
-      await tx.update(user).set({ role: nuevoRol }).where(eq(user.id, userId));
+      await tx.update(user).set({ role: nuevoRol, updatedAt: new Date() }).where(eq(user.id, userId));
+      await tx.delete(session).where(eq(session.userId, userId));
+      if (anteriorTesoreraId) {
+        await tx.delete(session).where(eq(session.userId, anteriorTesoreraId));
+      }
     });
   }
 
@@ -203,10 +219,12 @@ export class DrizzleUserRepository implements UserRepository {
       if (existente.role === 'tesorera' && nuevoRol !== 'tesorera') {
         await tx.update(circuitos).set({ tesoreraId: null }).where(eq(circuitos.tesoreraId, userId));
       }
-      await tx.update(user).set({ role: nuevoRol }).where(eq(user.id, userId));
+      await tx.update(user).set({ role: nuevoRol, updatedAt: new Date() }).where(eq(user.id, userId));
+      await tx.delete(session).where(eq(session.userId, userId));
       if (nuevoRol === 'tesorera') {
         if (circ?.tesoreraId && circ.tesoreraId !== userId) {
           await tx.update(user).set({ role: 'residente' }).where(eq(user.id, circ.tesoreraId));
+          await tx.delete(session).where(eq(session.userId, circ.tesoreraId));
         }
         await tx.update(circuitos).set({ tesoreraId: userId }).where(eq(circuitos.id, circuitoId));
       }

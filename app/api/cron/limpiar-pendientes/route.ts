@@ -32,7 +32,6 @@ export async function GET(req: Request) {
   if (!token || !timingSafeCompare(token, cronSecret)) {
     logger.warn('cron.limpiar-pendientes.unauthorized', {
       path:      '/api/cron/limpiar-pendientes',
-      ip:        req.headers.get('x-forwarded-for') ?? req.headers.get('x-real-ip') ?? 'unknown',
       hasToken:  !!token,
     });
     return new Response('Unauthorized', { status: 401 });

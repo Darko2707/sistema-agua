@@ -1,6 +1,7 @@
 import { DIA_CORTE } from '@/src/domain/pagos/constants';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
-import type { ResidenteRepository, ResidenteConRelaciones, PaginatedResult } from '../../ports/residente.repository';
+import { fechaNegocio } from '@/src/domain/shared/fecha-negocio';
+import type { ResidenteRepository, ResidenteConRelaciones } from '../../ports/residente.repository';
 import type { CircuitoRepository } from '../../ports/circuito.repository';
 
 export type ListarResidentesQuery = {
@@ -46,7 +47,7 @@ export class ListarResidentesHandler {
   async execute(query: ListarResidentesQuery) {
     const { residenteRepo, circuitoRepo } = this.deps;
     const periodo = PeriodoVO.vigente();
-    const vencido = new Date().getDate() > DIA_CORTE;
+    const vencido = fechaNegocio().dia > DIA_CORTE;
 
     const page     = query.page     ?? 1;
     const pageSize = query.pageSize ?? 50;

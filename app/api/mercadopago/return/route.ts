@@ -1,10 +1,13 @@
 import { createMercadoPagoClients } from '@/lib/mercadopago';
+import * as Sentry from '@sentry/nextjs';
 import { decryptTokenSafe } from '@/lib/crypto';
 import { db } from '@/db';
 import { expandExternalReference, parseExternalReference, type ExternalReference } from '@/src/infrastructure/mercadopago/parser';
 import { residenteRepo, pagoRepo, circuitoRepo } from '@/src/infrastructure/db/repositories';
 import { ProcesarPagoMpHandler } from '@/src/application/pagos/commands/procesar-pago-mp.handler';
+import { MercadoPagoPeriodConflictError } from '@/src/application/pagos/errors/mercado-pago-period-conflict.error';
 import { logger } from '@/lib/logger';
+import { schedulePushDispatch } from '@/lib/push-dispatcher';
 
 const procesarPagoMpHandler = new ProcesarPagoMpHandler({ residenteRepo, pagoRepo, circuitoRepo });
 
@@ -37,7 +40,7 @@ export async function GET(request: Request) {
     }
 
     const payment = await paymentClient.get({ id: paymentId });
-    const paymentReference = parseExternalReference(payment.external_reference) ?? reference;
+    const paymentReference = parseExternalReference(payment.external_reference);
 
     if (payment.status !== 'approved' || !paymentReference) {
       fallbackUrl.searchParams.set('payment', payment.status === 'pending' ? 'pending' : 'failure');
@@ -54,18 +57,39 @@ export async function GET(request: Request) {
       esReconexion: paymentReference.esReconexion,
       mesesAdelantados: references.length,
     });
-    for (const referenceItem of references) {
-      await procesarPagoMpHandler.execute({
-        ...referenceItem,
-        metodo:                'mercado_pago',
-        mercadoPagoPaymentId:   payment.id ? String(payment.id) : undefined,
-        mercadoPagoCollectorId: payment.collector_id ? String(payment.collector_id) : undefined,
-      });
-    }
+    const result = await procesarPagoMpHandler.execute({
+      perfilId: paymentReference.perfilId,
+      periodos: references.map(({ mes, anio, monto, esReconexion }) => ({
+        mes,
+        anio,
+        monto,
+        esReconexion,
+      })),
+      metodo: 'mercado_pago',
+      mercadoPagoPaymentId: String(payment.id ?? paymentId),
+      mercadoPagoCollectorId: payment.collector_id ? String(payment.collector_id) : undefined,
+    });
+    if (!result.yaRegistrado) schedulePushDispatch();
 
     fallbackUrl.searchParams.set('payment', 'success');
     return Response.redirect(fallbackUrl);
   } catch (error) {
+    if (error instanceof MercadoPagoPeriodConflictError) {
+      Sentry.captureException(error, {
+        tags: { component: 'mercadopago-return', error_type: 'payment_period_conflict' },
+        level: 'error',
+        extra: {
+          requestedPaymentId: error.requestedPaymentId,
+          conflicts: error.conflicts,
+        },
+      });
+      logger.error('mp.return.conflicto_periodos', error, {
+        paymentId: error.requestedPaymentId,
+        periodos: error.conflicts.map(conflict => `${conflict.anio}-${conflict.mes}`),
+      });
+      fallbackUrl.searchParams.set('payment', 'failure');
+      return Response.redirect(fallbackUrl);
+    }
     logger.error('mp.return.error', error, { paymentId: paymentId ?? 'unknown' });
     fallbackUrl.searchParams.set('payment', 'failure');
     return Response.redirect(fallbackUrl);

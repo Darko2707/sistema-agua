@@ -32,8 +32,6 @@ export async function GET(req: Request) {
   if (!token || !timingSafeCompare(token, cronSecret)) {
     logger.warn('cron.cortes.unauthorized', {
       path:      '/api/cron/cortes',
-      ip:        req.headers.get('x-forwarded-for') ?? req.headers.get('x-real-ip') ?? 'unknown',
-      userAgent: req.headers.get('user-agent') ?? 'unknown',
       hasToken:  !!token,
     });
     return new Response('Unauthorized', { status: 401 });

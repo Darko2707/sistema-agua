@@ -12,7 +12,7 @@ function getIp(req: NextRequest): string {
 }
 
 // Only rate-limit auth endpoints that accept credentials or trigger emails.
-// get-session / sign-out / verify-email are called constantly by the client
+// get-session / sign-out are called constantly by the client
 // and must NOT be throttled — a 429 on get-session causes an infinite retry loop.
 const AUTH_SENSITIVE = new Set([
   '/api/auth/sign-in/email',

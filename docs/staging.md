@@ -57,18 +57,25 @@ DIRECT_URL="postgresql://...@ep-staging-branch.neon.tech/neondb?sslmode=require"
 BETTER_AUTH_URL="https://sistema-agua-staging.vercel.app"
 NEXT_PUBLIC_APP_URL="https://sistema-agua-staging.vercel.app"
 
-# Mercado Pago — usa credenciales de SANDBOX, no producción
-MP_ACCESS_TOKEN="TEST-..."
+# Mercado Pago — usa credenciales de SANDBOX, no producción.
+# El Access Token se captura desde el panel admin por circuito, no como variable global.
 MP_WEBHOOK_SECRET="..."
+MP_ENCRYPTION_KEY="<64 caracteres hex, 32 bytes>"
 
 # El resto de las variables pueden ser las mismas que producción
 # (Redis, Resend, Sentry DSN, etc.)
 CRON_SECRET="<otro secreto aleatorio>"
 BETTER_AUTH_SECRET="<otro secreto aleatorio>"
+NEXT_PUBLIC_VAPID_PUBLIC_KEY="<clave publica de staging>"
+VAPID_PRIVATE_KEY="<clave privada de staging>"
+VAPID_SUBJECT="mailto:correo-real@gmail.com"
 ```
 
 > **Importante:** Las credenciales de Mercado Pago para staging deben ser del modo
 > **sandbox** (`TEST-...`). Obtente en [developers.mercadopago.com](https://developers.mercadopago.com).
+> En SIS4S, el `Access Token` se asigna al circuito desde el panel de admin al
+> crear/editar representante o tesorera. `MP_WEBHOOK_SECRET` es la clave secreta
+> de Webhooks de la app de Mercado Pago.
 
 ---
 
@@ -95,6 +102,7 @@ DATABASE_URL="<staging_url>" npx tsx db/seed.ts
 - [ ] Migraciones aplicadas en staging sin errores
 - [ ] Flujo de registro de residente funcional
 - [ ] Flujo de pago MP sandbox (success / pending / failure)
-- [ ] Crons ejecutados manualmente (`GET /api/cron/cortes`, `/api/cron/limpiar-pendientes`)
+- [ ] Web Push activado y recibido en un dispositivo real
+- [ ] Crons ejecutados manualmente (`GET /api/cron/cortes`, `/api/cron/avisos-corte`, `/api/cron/notificaciones`, `/api/cron/limpiar-pendientes`)
 - [ ] Reportes Excel y PDF generados correctamente
 - [ ] Sin errores en Sentry staging

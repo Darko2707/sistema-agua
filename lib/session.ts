@@ -1,25 +1,31 @@
 ﻿import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
+import { userRepo } from '@/src/infrastructure/db/repositories';
+import type { UserRole } from '@/src/application/ports/user.repository';
 
 /**
- * Validates session, role, and account verification for protected layouts.
- * Admin is exempt because it is created manually by the system owner.
+ * Validates session and role for protected layouts.
  */
-export async function requireSession(opts?: { roles?: string[] }) {
+export async function requireSession(opts?: { roles?: UserRole[] }) {
   const session = await auth.api.getSession({ headers: await headers() });
 
   if (!session) redirect('/login');
 
-  const { user } = session;
+  const currentUser = await userRepo.findById(session.user.id);
+  if (!currentUser) redirect('/login');
 
-  if (opts?.roles && !opts.roles.includes(user.role as string)) {
+  if (opts?.roles && !opts.roles.includes(currentUser.role)) {
     redirect('/');
   }
 
-  if (user.role !== 'admin' && !user.emailVerified) {
-    redirect('/verificar-email');
-  }
-
-  return session;
+  return {
+    ...session,
+    user: {
+      ...session.user,
+      name: currentUser.name,
+      email: currentUser.email,
+      role: currentUser.role,
+    },
+  };
 }

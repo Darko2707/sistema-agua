@@ -7,10 +7,10 @@ import { Button } from '@/components/ui/button';
 
 export default function ErrorPage({
   error,
-  unstable_retry,
+  retry,
 }: {
   error: Error & { digest?: string };
-  unstable_retry: () => void;
+  retry: () => void;
 }) {
   useEffect(() => {
     Sentry.captureException(error);
@@ -24,14 +24,14 @@ export default function ErrorPage({
         </div>
         <h1 className="text-xl font-bold text-slate-900 mb-2">Algo salió mal</h1>
         <p className="text-slate-500 text-sm mb-6">
-          Ocurrió un error inesperado. El equipo ha sido notificado automáticamente.
+          Ocurrió un error inesperado. Intenta cargar esta sección nuevamente.
           {error.digest && (
             <span className="block mt-1 font-mono text-xs text-slate-400">
               ID: {error.digest}
             </span>
           )}
         </p>
-        <Button onClick={unstable_retry}>Intentar de nuevo</Button>
+        <Button type="button" onClick={retry}>Intentar de nuevo</Button>
       </div>
     </div>
   );

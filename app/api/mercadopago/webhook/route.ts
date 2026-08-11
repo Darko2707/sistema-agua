@@ -7,7 +7,9 @@ import { db } from '@/db';
 import { expandExternalReference, parseExternalReference, type ExternalReference } from '@/src/infrastructure/mercadopago/parser';
 import { residenteRepo, pagoRepo, circuitoRepo } from '@/src/infrastructure/db/repositories';
 import { ProcesarPagoMpHandler } from '@/src/application/pagos/commands/procesar-pago-mp.handler';
+import { MercadoPagoPeriodConflictError } from '@/src/application/pagos/errors/mercado-pago-period-conflict.error';
 import { logger } from '@/lib/logger';
+import { schedulePushDispatch } from '@/lib/push-dispatcher';
 
 const procesarPagoMpHandler = new ProcesarPagoMpHandler({ residenteRepo, pagoRepo, circuitoRepo });
 
@@ -67,7 +69,9 @@ export async function POST(request: Request) {
     if (!paymentClient) return Response.json({ received: true });
 
     const payment = await paymentClient.get({ id: paymentId });
-    const reference = parseExternalReference(payment.external_reference) ?? referenceFromUrl;
+    // La referencia de la URL solo sirve para elegir las credenciales del
+    // vendedor. La acreditacion siempre usa la referencia inmutable del pago.
+    const reference = parseExternalReference(payment.external_reference);
 
     if (payment.status === 'approved' && reference) {
       const references = expandExternalReference(reference);
@@ -80,14 +84,19 @@ export async function POST(request: Request) {
         esReconexion: reference.esReconexion,
         mesesAdelantados: references.length,
       });
-      for (const referenceItem of references) {
-        await procesarPagoMpHandler.execute({
-          ...referenceItem,
-          metodo:                'mercado_pago',
-          mercadoPagoPaymentId:   payment.id ? String(payment.id) : undefined,
-          mercadoPagoCollectorId: payment.collector_id ? String(payment.collector_id) : undefined,
-        });
-      }
+      const result = await procesarPagoMpHandler.execute({
+        perfilId: reference.perfilId,
+        periodos: references.map(({ mes, anio, monto, esReconexion }) => ({
+          mes,
+          anio,
+          monto,
+          esReconexion,
+        })),
+        metodo: 'mercado_pago',
+        mercadoPagoPaymentId: String(payment.id ?? paymentId),
+        mercadoPagoCollectorId: payment.collector_id ? String(payment.collector_id) : undefined,
+      });
+      if (!result.yaRegistrado) schedulePushDispatch();
     }
 
     return Response.json({ received: true });
@@ -99,6 +108,23 @@ export async function POST(request: Request) {
       });
       logger.warn('mp.webhook.firma_invalida', { reason: error.reason });
       return Response.json({ error: 'Firma invalida' }, { status: 401 });
+    }
+    if (error instanceof MercadoPagoPeriodConflictError) {
+      Sentry.captureException(error, {
+        tags: { component: 'webhook', error_type: 'payment_period_conflict' },
+        level: 'error',
+        extra: {
+          requestedPaymentId: error.requestedPaymentId,
+          conflicts: error.conflicts,
+        },
+      });
+      logger.error('mp.webhook.conflicto_periodos', error, {
+        paymentId: error.requestedPaymentId,
+        periodos: error.conflicts.map(conflict => `${conflict.anio}-${conflict.mes}`),
+      });
+      // Se reconoce el webhook para evitar reintentos infinitos, pero ningun
+      // periodo se acredita: la transaccion completa ya fue revertida.
+      return Response.json({ received: true, credited: false, conflict: true });
     }
     Sentry.captureException(error, {
       tags: { component: 'webhook', error_type: 'processing_error' },

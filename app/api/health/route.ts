@@ -6,9 +6,11 @@ const REQUIRED_ENV = [
   'MP_WEBHOOK_SECRET',
   'MP_ENCRYPTION_KEY',
   'CRON_SECRET',
-  'RESEND_API_KEY',
   'UPSTASH_REDIS_REST_URL',
   'UPSTASH_REDIS_REST_TOKEN',
+  'NEXT_PUBLIC_VAPID_PUBLIC_KEY',
+  'VAPID_PRIVATE_KEY',
+  'VAPID_SUBJECT',
 ] as const;
 
 type CheckResult = { status: 'ok' | 'error'; latencyMs?: number; detail?: string };

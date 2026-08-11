@@ -34,6 +34,11 @@ export function parseExternalReference(value: string | null | undefined): Extern
   const result = ExternalReferenceSchema.safeParse({ prefix, perfilId, mes, anio, esReconexion, monto });
   if (!result.success) return null;
 
-  const { prefix: _prefix, ...ref } = result.data;
-  return ref;
+  return {
+    perfilId: result.data.perfilId,
+    mes: result.data.mes,
+    anio: result.data.anio,
+    esReconexion: result.data.esReconexion,
+    monto: result.data.monto,
+  };
 }

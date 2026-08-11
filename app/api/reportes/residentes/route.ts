@@ -1,7 +1,6 @@
-import { auth } from '@/lib/auth';
+﻿import { auth } from '@/lib/auth';
 import { db } from '@/db';
-import { eq } from 'drizzle-orm';
-import { circuitos } from '@/db/schema';
+import { and, eq, isNull } from 'drizzle-orm';
 import { generarReporteResidentesExcel } from '@/server/services/excel-reportes';
 
 function parsarDepto(depto: string) {
@@ -45,7 +44,7 @@ export async function GET(req: Request) {
   if (!session?.user) return new Response('No autorizado', { status: 401 });
 
   const dbUser = await db.query.user.findFirst({
-    where: (u, { eq }) => eq(u.id, session.user.id),
+    where: (u) => and(eq(u.id, session.user.id), isNull(u.deletedAt)),
   });
   if (dbUser?.role !== 'tesorera') return new Response('Prohibido', { status: 403 });
 
@@ -60,9 +59,7 @@ export async function GET(req: Request) {
       circuito = await db.query.circuitos.findFirst({
         where: (c, { eq }) => eq(c.id, perfil.circuitoId!),
       });
-      if (circuito) {
-        await db.update(circuitos).set({ tesoreraId: session.user.id }).where(eq(circuitos.id, circuito.id));
-      }
+      if (circuito?.tesoreraId && circuito.tesoreraId !== session.user.id) circuito = undefined;
     }
   }
   if (!circuito) return new Response('Sin circuito asignado', { status: 404 });
@@ -166,6 +163,8 @@ export async function GET(req: Request) {
     headers: {
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': `attachment; filename="reporte-residentes-${nombre}.xlsx"`,
+      'Cache-Control': 'private, no-store',
+      'X-Content-Type-Options': 'nosniff',
     },
   });
 }

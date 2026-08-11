@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { router, protectedProcedure, roleProcedure } from '../trpc';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
@@ -10,12 +11,13 @@ import { MetricasAdminHandler } from '@/src/application/pagos/queries/metricas-a
 import { ResolverCircuitoTesoreraService } from '@/src/application/circuitos/queries/resolver-circuito-tesorera.service';
 // eslint-disable-next-line no-restricted-imports -- inline MP webhook queries not yet in a repo
 import { db } from '@/db';
-// eslint-disable-next-line no-restricted-imports -- inline MP webhook queries not yet in a repo
-import { auditoria, notificaciones, pagos as pagosTable, tickets } from '@/db/schema';
+// eslint-disable-next-line no-restricted-imports -- legacy audit write in registrarManual
+import { auditoria } from '@/db/schema';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
 import { calcularDesglosePagoManual, calcularMontoBase } from '@/src/domain/pagos/calculator';
 import { FolioVO } from '@/src/domain/pagos/folio.vo';
 import { logger } from '@/lib/logger';
+import { schedulePushDispatch } from '@/lib/push-dispatcher';
 
 const resolverCircuitoTesoreraService = new ResolverCircuitoTesoreraService({ circuitoRepo, residenteRepo });
 
@@ -37,14 +39,15 @@ function addMonths(mes: number, anio: number, offset: number) {
 async function nextUnpaidPeriods(perfilId: string, count: number) {
   const periodo = PeriodoVO.vigente();
   const result: Array<{ mes: number; anio: number }> = [];
+  const pagados = await db.query.pagos.findMany({
+    where: (p, { eq, and }) => and(eq(p.perfilId, perfilId), eq(p.estado, 'pagado')),
+    columns: { mes: true, anio: true },
+  });
+  const paidKeys = new Set(pagados.map(pago => `${pago.anio}-${pago.mes}`));
 
   for (let offset = 0; result.length < count && offset < 36; offset++) {
     const candidate = addMonths(periodo.mes, periodo.anio, offset);
-    const yaPago = await db.query.pagos.findFirst({
-      where: (p, { eq, and }) =>
-        and(eq(p.perfilId, perfilId), eq(p.mes, candidate.mes), eq(p.anio, candidate.anio), eq(p.estado, 'pagado')),
-    });
-    if (!yaPago) result.push(candidate);
+    if (!paidKeys.has(`${candidate.anio}-${candidate.mes}`)) result.push(candidate);
   }
 
   return result;
@@ -54,25 +57,6 @@ export const pagosRouter = router({
   miHistorial: protectedProcedure.query(async ({ ctx }) => {
     return historialPagosHandler.execute({ perfilId: ctx.user.id });
   }),
-
-  pagar: roleProcedure('residente')
-    .input(z.object({ metodo: z.enum(['transferencia', 'efectivo']) }))
-    .mutation(async ({ ctx, input }) => {
-      // Solo residentes pueden registrar su propio pago
-      const perfil = await residenteRepo.findByUserId(ctx.user.id);
-      if (!perfil) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Completa tu perfil primero' });
-      if (!perfil.circuito) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Circuito no encontrado' });
-      if (!perfil.circuito.activo) throw new TRPCError({ code: 'FORBIDDEN', message: 'Tu circuito esta inhabilitado' });
-
-      if (!perfil.circuito.representanteId)
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Tu circuito no tiene un representante asignado' });
-
-      return registrarPagoManualHandler.execute({
-        perfilId: perfil.id,
-        metodo: input.metodo,
-        representanteId: perfil.circuito.representanteId,
-      });
-    }),
 
   historialDe: roleProcedure('admin', 'representante')
     .input(z.object({ perfilId: z.uuid() }))
@@ -105,6 +89,7 @@ export const pagosRouter = router({
           entidadId: result.folio,
           detalle: { perfilId: input.perfilId, metodo: input.metodo, folio: result.folio },
         });
+        schedulePushDispatch();
         return result;
       });
     }),
@@ -252,69 +237,62 @@ export const pagosRouter = router({
       }
 
       const esReconexion = perfil.estadoAgua === 'cortado';
-      const folios: string[] = [];
-      const omitidos: string[] = [];
-      let total = 0;
-
-      for (const [index, periodo] of periodos.entries()) {
+      const loteId = randomUUID();
+      const fechaPago = new Date();
+      const pagosLote = periodos.map((periodo, index) => {
         const incluyeReconexion = index === 0 && esReconexion;
         const montoBase  = calcularMontoBase(circuito.montoMensual, incluyeReconexion, circuito.montoReconexion);
         const desglose   = calcularDesglosePagoManual(montoBase);
-        const folio      = FolioVO.generate().toString();
+        return {
+          perfilId:               perfil.id,
+          circuitoId:             circuito.id,
+          representanteId:        circuito.representanteId ?? null,
+          mes:                    periodo.mes,
+          anio:                   periodo.anio,
+          monto:                  desglose.total,
+          montoBase:              desglose.montoBase,
+          iva:                    desglose.iva,
+          comisionMercadoPago:    desglose.comisionMercadoPago,
+          retencionIsr:           desglose.retencionIsr,
+          retencionIva:           desglose.retencionIva,
+          montoNetoRepresentante: desglose.montoNetoRepresentante,
+          mercadoPagoCollectorId: circuito.mercadoPagoCollectorId,
+          estado:                 'pagado' as const,
+          metodo:                 input.metodo,
+          folio:                  FolioVO.generate().toString(),
+          esReconexion:           incluyeReconexion,
+          fechaPago,
+        };
+      });
 
-        try {
-          await pagoRepo.createWithLock(perfil.id, {
-            perfilId:               perfil.id,
-            circuitoId:             circuito.id,
-            representanteId:        circuito.representanteId ?? null,
-            mes:                    periodo.mes,
-            anio:                   periodo.anio,
-            monto:                  desglose.total,
-            montoBase:              desglose.montoBase,
-            iva:                    desglose.iva,
-            comisionMercadoPago:    desglose.comisionMercadoPago,
-            retencionIsr:           desglose.retencionIsr,
-            retencionIva:           desglose.retencionIva,
-            montoNetoRepresentante: desglose.montoNetoRepresentante,
-            mercadoPagoCollectorId: circuito.mercadoPagoCollectorId,
-            estado:                 'pagado',
-            metodo:                 input.metodo,
-            folio,
-            esReconexion:           incluyeReconexion,
-            fechaPago:              new Date(),
-          });
-
-          folios.push(folio);
-          total += Number(desglose.total);
-        } catch (err) {
-          if (err instanceof TRPCError && err.code === 'BAD_REQUEST') {
-            omitidos.push(`${MESES_CORTO[periodo.mes - 1]} ${periodo.anio}`);
-            continue;
-          }
-          throw err;
-        }
-      }
+      const batchResult = await pagoRepo.createManualBatchWithLock({
+        perfilId: perfil.id,
+        pagos: pagosLote,
+        actualizarEstadoAgua: true,
+        pushNotification: {
+          userId: perfil.userId,
+          perfilId: perfil.id,
+          tipo: 'pago_confirmado',
+          mensaje: 'Tu pago fue confirmado. Abre la app para consultar los folios y los detalles.',
+          dedupeKey: `pago_confirmado:lote:${perfil.id}:${loteId}`,
+        },
+        auditoria: {
+          actorId: ctx.user.id,
+          accion: 'pago.manual.tesorera',
+          metodo: input.metodo,
+        },
+      });
+      const folios = batchResult.pagos
+        .map(pago => pago.folio)
+        .filter((folio): folio is string => Boolean(folio));
+      const omitidos = batchResult.omitidos
+        .map(periodo => `${MESES_CORTO[periodo.mes - 1]} ${periodo.anio}`);
+      const total = batchResult.pagos.reduce((sum, pago) => sum + Number(pago.monto), 0);
 
       logger.info('pago.tesorera.manual', {
         folios, perfilId: perfil.id, tesoreraId: ctx.user.id, registrados: folios.length, omitidos: omitidos.length,
       });
-      await db.insert(auditoria).values({
-        actorId: ctx.user.id,
-        accion: 'pago.manual.tesorera',
-        entidad: 'pago',
-        entidadId: folios[0] ?? perfil.id,
-        detalle: { perfilId: perfil.id, metodo: input.metodo, folios, omitidos, periodos },
-      });
-      if (perfil.telefono && folios.length > 0) {
-        await db.insert(notificaciones).values({
-          userId: perfil.userId,
-          perfilId: perfil.id,
-          canal: 'whatsapp',
-          tipo: 'pago_confirmado',
-          destino: perfil.telefono,
-          mensaje: `Tu pago fue registrado. Folios: ${folios.join(', ')}`,
-        });
-      }
+      if (folios.length > 0) schedulePushDispatch();
       return {
         folio: folios[0],
         folios,
@@ -343,75 +321,58 @@ export const pagosRouter = router({
       const circuito = await circuitoRepo.findById(perfil.circuitoId);
       if (!circuito) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Circuito no encontrado' });
 
-      const montoBase = calcularMontoBase(circuito.montoMensual, false, circuito.montoReconexion);
-      const desglose  = calcularDesglosePagoManual(montoBase);
+      const loteId = randomUUID();
+      const fechaPago = new Date();
+      const pagosLote = input.meses.map(({ mes, anio }) => {
+        const montoBase = calcularMontoBase(circuito.montoMensual, false, circuito.montoReconexion);
+        const desglose  = calcularDesglosePagoManual(montoBase);
+        return {
+          perfilId:               perfil.id,
+          circuitoId:             circuito.id,
+          representanteId:        circuito.representanteId ?? null,
+          mes,
+          anio,
+          monto:                  desglose.total,
+          montoBase:              desglose.montoBase,
+          iva:                    desglose.iva,
+          comisionMercadoPago:    desglose.comisionMercadoPago,
+          retencionIsr:           desglose.retencionIsr,
+          retencionIva:           desglose.retencionIva,
+          montoNetoRepresentante: desglose.montoNetoRepresentante,
+          mercadoPagoCollectorId: circuito.mercadoPagoCollectorId,
+          estado:                 'pagado' as const,
+          metodo:                 input.metodo,
+          folio:                  FolioVO.generate().toString(),
+          esReconexion:           false,
+          fechaPago,
+        };
+      });
 
-      let registrados = 0;
-      const omitidos: string[] = [];
-
-      for (const { mes, anio } of input.meses) {
-        try {
-          const inserted = await db.transaction(async (tx) => {
-            const yaPago = await tx.query.pagos.findFirst({
-              where: (p, { eq, and }) =>
-                and(eq(p.perfilId, perfil.id), eq(p.mes, mes), eq(p.anio, anio), eq(p.estado, 'pagado')),
-            });
-            if (yaPago) return false;
-
-            const folio = FolioVO.generate().toString();
-            const [pago] = await tx.insert(pagosTable).values({
-              perfilId:               perfil.id,
-              circuitoId:             circuito.id,
-              representanteId:        circuito.representanteId ?? null,
-              mes,
-              anio,
-              monto:                  desglose.total,
-              montoBase:              desglose.montoBase,
-              iva:                    desglose.iva,
-              comisionMercadoPago:    desglose.comisionMercadoPago,
-              retencionIsr:           desglose.retencionIsr,
-              retencionIva:           desglose.retencionIva,
-              montoNetoRepresentante: desglose.montoNetoRepresentante,
-              mercadoPagoCollectorId: circuito.mercadoPagoCollectorId,
-              estado:                 'pagado',
-              metodo:                 input.metodo,
-              folio,
-              esReconexion:           false,
-              fechaPago:              new Date(),
-            }).returning();
-            await tx.insert(tickets).values({ pagoId: pago.id, folio, pdfUrl: null });
-            return true;
-          });
-          if (inserted) registrados++;
-          else omitidos.push(`${MESES_CORTO[mes - 1]} ${anio}`);
-        } catch (err) {
-          const isUniqueViolation = typeof err === 'object' && err !== null && 'code' in err &&
-            (err as { code: string }).code === '23505';
-          if (isUniqueViolation) omitidos.push(`${MESES_CORTO[mes - 1]} ${anio}`);
-          else throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: `Error al registrar ${MESES_CORTO[mes - 1]} ${anio}` });
-        }
-      }
+      const batchResult = await pagoRepo.createManualBatchWithLock({
+        perfilId: perfil.id,
+        pagos: pagosLote,
+        actualizarEstadoAgua: false,
+        pushNotification: {
+          userId: perfil.userId,
+          perfilId: perfil.id,
+          tipo: 'pago_confirmado',
+          mensaje: 'Tu pago fue confirmado. Abre la app para consultar los folios y los detalles.',
+          dedupeKey: `pago_confirmado:lote:${perfil.id}:${loteId}`,
+        },
+        auditoria: {
+          actorId: ctx.user.id,
+          accion: 'pago.retroactivo.admin',
+          metodo: input.metodo,
+        },
+      });
+      const registrados = batchResult.pagos.length;
+      const omitidos = batchResult.omitidos
+        .map(periodo => `${MESES_CORTO[periodo.mes - 1]} ${periodo.anio}`);
 
       logger.info('pago.retroactivo.admin.lote', {
         perfilId: perfil.id, adminId: ctx.user.id, registrados, omitidos: omitidos.length,
       });
-      await db.insert(auditoria).values({
-        actorId: ctx.user.id,
-        accion: 'pago.retroactivo.admin',
-        entidad: 'pago',
-        entidadId: perfil.id,
-        detalle: { perfilId: perfil.id, metodo: input.metodo, registrados, omitidos, meses: input.meses },
-      });
-      if (perfil.telefono && registrados > 0) {
-        await db.insert(notificaciones).values({
-          userId: perfil.userId,
-          perfilId: perfil.id,
-          canal: 'whatsapp',
-          tipo: 'pago_confirmado',
-          destino: perfil.telefono,
-          mensaje: `Se registraron ${registrados} pago(s) en tu cuenta.`,
-        });
-      }
+      if (registrados > 0) schedulePushDispatch();
       return { registrados, omitidos };
     }),
 });

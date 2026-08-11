@@ -10,6 +10,14 @@ export class CircuitoInhabilitadoError extends Error {
   }
 }
 
+export class PerfilIncompletoError extends Error {
+  readonly code = 'FORBIDDEN' as const;
+  constructor() {
+    super('Completa tu perfil antes de continuar.');
+    this.name = 'PerfilIncompletoError';
+  }
+}
+
 type Deps = {
   residenteRepo: ResidenteRepository;
   circuitoRepo:  CircuitoRepository;
@@ -21,6 +29,7 @@ export class VerificarAccesoService {
   async execute(userId: string, role: UserRole): Promise<void> {
     if (role === 'residente') {
       const perfil = await this.deps.residenteRepo.findByUserId(userId);
+      if (!perfil) throw new PerfilIncompletoError();
       if (perfil?.circuito && !perfil.circuito.activo) {
         throw new CircuitoInhabilitadoError('Tu circuito esta inhabilitado. Contacta al administrador.');
       }

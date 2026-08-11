@@ -1,70 +1,42 @@
-import { describe, it, expect, vi } from 'vitest';
-import { ConfirmarCorteHandler } from '@/src/application/cortes/commands/confirmar-corte.handler';
-import type { ResidenteRepository } from '@/src/application/ports/residente.repository';
-import type { PagoRepository } from '@/src/application/ports/pago.repository';
+import { describe, expect, it, vi } from 'vitest';
 
-const mockPerfil = {
-  id: 'perf-001', userId: 'user-001', circuitoId: 'circ-001',
-  edificio: 'A', departamento: '101', estadoAgua: 'pendiente_corte' as const, creadoEn: null,
-};
+import { ConfirmarCorteHandler } from '@/src/application/cortes/commands/confirmar-corte.handler';
 
 const mockCorte = {
-  id: 'corte-001', perfilId: 'perf-001', trabajadorId: 'trab-001',
-  motivo: 'falta_pago', activo: true, fechaCorte: new Date(),
-  fechaReconexion: null, reconectadoPor: null,
+  id: 'corte-001',
+  perfilId: 'perf-001',
+  trabajadorId: 'trab-001',
+  motivo: 'falta_pago',
+  activo: true,
+  fechaCorte: new Date('2026-08-09T12:00:00.000Z'),
+  fechaReconexion: null,
+  reconectadoPor: null,
 };
 
-function makeDeps() {
-  const residenteRepo: ResidenteRepository = {
-    findById: vi.fn().mockResolvedValue(mockPerfil),
-    findByUserId: vi.fn(),
-    findByCircuito: vi.fn(),
-    findAll: vi.fn(),
-    findByEstado: vi.fn(),
-    findByCircuitoYEstado: vi.fn(),
-    create: vi.fn(),
-    updateEstado: vi.fn().mockResolvedValue(undefined),
-    marcarMorososDelMes: vi.fn().mockResolvedValue(0),
-    findAllPaginated: vi.fn(),
-    findByCircuitoPaginated: vi.fn(),
-  };
-  const pagoRepo: PagoRepository = {
-    findByPerfilYMes: vi.fn(),
-    findByPerfilId: vi.fn(),
-    findAllPagadosPorMes: vi.fn(),
-    findPagadosByMes: vi.fn(),
-    createWithLock: vi.fn(),
-    findCorteActivo: vi.fn(),
-    crearCorte: vi.fn().mockResolvedValue(mockCorte),
-    cerrarCorte: vi.fn(),
-    crearTicket: vi.fn(),
-    marcarPendientesVencidos: vi.fn(),
-    getMetricasAdmin: vi.fn(),
-  };
-  return { residenteRepo, pagoRepo };
-}
-
 describe('ConfirmarCorteHandler', () => {
-  it('confirma corte para residente en pendiente_corte', async () => {
-    const deps = makeDeps();
-    const handler = new ConfirmarCorteHandler(deps);
-    const result = await handler.execute({ perfilId: 'perf-001', trabajadorId: 'trab-001' });
-    expect(result?.id).toBe('corte-001');
-    expect(deps.residenteRepo.updateEstado).toHaveBeenCalledWith('perf-001', 'cortado');
-    expect(deps.pagoRepo.crearCorte).toHaveBeenCalledOnce();
+  it('delega la operación completa al servicio transaccional', async () => {
+    const confirmarCorte = vi.fn().mockResolvedValue(mockCorte);
+    const handler = new ConfirmarCorteHandler({
+      corteOperacionService: { confirmarCorte },
+    });
+
+    const command = { perfilId: 'perf-001', trabajadorId: 'trab-001' };
+    await expect(handler.execute(command)).resolves.toBe(mockCorte);
+    expect(confirmarCorte).toHaveBeenCalledOnce();
+    expect(confirmarCorte).toHaveBeenCalledWith(command);
   });
 
-  it('lanza NOT_FOUND si el perfil no existe', async () => {
-    const deps = makeDeps();
-    vi.mocked(deps.residenteRepo.findById).mockResolvedValue(null);
-    const handler = new ConfirmarCorteHandler(deps);
-    await expect(handler.execute({ perfilId: 'no-existe', trabajadorId: 'trab-001' })).rejects.toThrow();
-  });
+  it('propaga el error del servicio sin ejecutar una ruta alterna', async () => {
+    const failure = new Error('falló la transacción');
+    const confirmarCorte = vi.fn().mockRejectedValue(failure);
+    const handler = new ConfirmarCorteHandler({
+      corteOperacionService: { confirmarCorte },
+    });
 
-  it('lanza si el estado es inválido para EJECUTAR_CORTE', async () => {
-    const deps = makeDeps();
-    vi.mocked(deps.residenteRepo.findById).mockResolvedValue({ ...mockPerfil, estadoAgua: 'activo' });
-    const handler = new ConfirmarCorteHandler(deps);
-    await expect(handler.execute({ perfilId: 'perf-001', trabajadorId: 'trab-001' })).rejects.toThrow();
+    await expect(handler.execute({
+      perfilId: 'perf-001',
+      trabajadorId: 'trab-001',
+    })).rejects.toBe(failure);
+    expect(confirmarCorte).toHaveBeenCalledOnce();
   });
 });

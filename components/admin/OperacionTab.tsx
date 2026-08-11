@@ -28,10 +28,18 @@ type NotificacionRow = {
   id: string;
   tipo: string;
   canal: string;
-  destino: string;
   estado: string;
   creadoEn: string | Date;
 };
+
+async function obtenerOperacion() {
+  const [dashboard, auditoria, notificaciones] = await Promise.all([
+    trpc.operacion.dashboardEjecutivo.query(),
+    trpc.operacion.auditoria.query({ limit: 10 }),
+    trpc.operacion.notificaciones.query({ limit: 10 }),
+  ]);
+  return { dashboard, auditoria, notificaciones };
+}
 
 export function OperacionTab() {
   const [dashboard, setDashboard] = useState<Ejecutivo | null>(null);
@@ -44,14 +52,10 @@ export function OperacionTab() {
     setLoading(true);
     setError('');
     try {
-      const [dash, audit, notif] = await Promise.all([
-        trpc.operacion.dashboardEjecutivo.query(),
-        trpc.operacion.auditoria.query({ limit: 10 }),
-        trpc.operacion.notificaciones.query({ limit: 10 }),
-      ]);
-      setDashboard(dash as Ejecutivo);
-      setAuditoria(audit as AuditoriaRow[]);
-      setNotificaciones(notif as NotificacionRow[]);
+      const data = await obtenerOperacion();
+      setDashboard(data.dashboard as Ejecutivo);
+      setAuditoria(data.auditoria as AuditoriaRow[]);
+      setNotificaciones(data.notificaciones as NotificacionRow[]);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'No se pudo cargar operacion');
     } finally {
@@ -71,7 +75,21 @@ export function OperacionTab() {
   }
 
   useEffect(() => {
-    void cargar();
+    let active = true;
+    void obtenerOperacion()
+      .then((data) => {
+        if (!active) return;
+        setDashboard(data.dashboard as Ejecutivo);
+        setAuditoria(data.auditoria as AuditoriaRow[]);
+        setNotificaciones(data.notificaciones as NotificacionRow[]);
+      })
+      .catch((err: unknown) => {
+        if (active) setError(err instanceof Error ? err.message : 'No se pudo cargar operacion');
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => { active = false; };
   }, []);
 
   if (loading) return <p className="text-sm text-muted-foreground">Cargando operacion...</p>;
@@ -126,7 +144,7 @@ export function OperacionTab() {
             {notificaciones.length === 0 ? <p className="text-sm text-muted-foreground">Sin notificaciones.</p> : notificaciones.map(row => (
               <div key={row.id} className="rounded-lg border p-3 text-sm">
                 <div className="font-semibold">{row.tipo} · {row.estado}</div>
-                <div className="text-muted-foreground">{row.canal} a {row.destino}</div>
+                <div className="text-muted-foreground">Canal: {row.canal}</div>
               </div>
             ))}
           </CardContent>

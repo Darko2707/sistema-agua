@@ -25,6 +25,14 @@ export class ActualizarPersonalHandler {
   async execute(cmd: ActualizarPersonalCommand): Promise<void> {
     const { userRepo, circuitoRepo } = this.deps;
 
+    const target = await userRepo.findById(cmd.id);
+    if (!target) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
+    }
+    if (target.role !== cmd.role) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'El usuario no corresponde al tipo de personal indicado' });
+    }
+
     await userRepo.update(cmd.id, { nombre: cmd.nombre, email: cmd.email });
 
     if (cmd.password) {

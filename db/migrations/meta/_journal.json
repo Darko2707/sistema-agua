@@ -33,7 +33,7 @@
     {
       "idx": 4,
       "version": "7",
-      "when": 1781821714418,
+      "when": 1781822401000,
       "tag": "0004_demonic_harry_osborn",
       "breakpoints": true
     },
@@ -117,7 +117,7 @@
     {
       "idx": 16,
       "version": "7",
-      "when": 1750870800000,
+      "when": 1782440003000,
       "tag": "0016_add_perf_indexes",
       "breakpoints": true
     },
@@ -126,6 +126,27 @@
       "version": "7",
       "when": 1786150000000,
       "tag": "0017_operational_controls",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1786150001000,
+      "tag": "0018_unique_resident_location",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1786240000000,
+      "tag": "0019_web_push",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1786240001000,
+      "tag": "0020_representative_password_reset",
       "breakpoints": true
     }
   ]

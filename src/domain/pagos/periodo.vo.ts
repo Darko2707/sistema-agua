@@ -1,5 +1,6 @@
 import { ValueObject } from '../shared/value-object';
 import { DIA_CORTE } from './constants';
+import { fechaNegocio } from '../shared/fecha-negocio';
 
 type PeriodoValue = { mes: number; anio: number };
 
@@ -22,15 +23,15 @@ export class PeriodoVO extends ValueObject<PeriodoValue> {
   }
 
   static vigente(): PeriodoVO {
-    const ahora = new Date();
-    return new PeriodoVO({ mes: ahora.getMonth() + 1, anio: ahora.getFullYear() });
+    const ahora = fechaNegocio();
+    return new PeriodoVO({ mes: ahora.mes, anio: ahora.anio });
   }
 
   get mes(): number  { return this.value.mes; }
   get anio(): number { return this.value.anio; }
 
   get vencido(): boolean {
-    return new Date().getDate() > DIA_CORTE;
+    return fechaNegocio().dia > DIA_CORTE;
   }
 
   toString(): string {

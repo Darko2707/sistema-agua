@@ -1,27 +1,22 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { TRPCError } from '@trpc/server';
+import { describe, expect, it, vi } from 'vitest';
+
 import { ProcesarPagoMpHandler } from '@/src/application/pagos/commands/procesar-pago-mp.handler';
-import type { ResidenteRepository } from '@/src/application/ports/residente.repository';
-import type { PagoRepository, PagoData } from '@/src/application/ports/pago.repository';
+import { MercadoPagoPeriodConflictError } from '@/src/application/pagos/errors/mercado-pago-period-conflict.error';
+import { calcularDesglosePago } from '@/src/domain/pagos/calculator';
 import type { CircuitoRepository } from '@/src/application/ports/circuito.repository';
+import type {
+  CrearPagosMercadoPagoBatchInput,
+  PagoData,
+  PagoRepository,
+} from '@/src/application/ports/pago.repository';
+import type { ResidenteRepository } from '@/src/application/ports/residente.repository';
 
 const CMD = {
   perfilId: 'perf-001',
-  mes: 6,
-  anio: 2025,
-  monto: '100.00',
-  esReconexion: false,
+  periodos: [{ mes: 6, anio: 2025, monto: '100.00', esReconexion: false }],
   metodo: 'mercado_pago' as const,
-  mercadoPagoPaymentId:   '12345',
+  mercadoPagoPaymentId: '12345',
   mercadoPagoCollectorId: null as string | null,
-};
-
-const PAGO: PagoData = {
-  id: 'pago-001', folio: 'AGU-001', perfilId: 'perf-001', circuitoId: 'circ-001',
-  representanteId: 'rep-001', mes: 6, anio: 2025, monto: '100.00', montoBase: '100.00',
-  iva: '0.00', comisionMercadoPago: '4.85', retencionIsr: '0.00', retencionIva: '0.00',
-  montoNetoRepresentante: '95.15', mercadoPagoPaymentId: '12345', mercadoPagoCollectorId: null,
-  estado: 'pagado', metodo: 'mercado_pago', esReconexion: false, fechaPago: new Date(), creadoEn: new Date(),
 };
 
 const PERFIL = {
@@ -35,177 +30,182 @@ const CIRCUITO = {
   mercadoPagoAccessToken: null, mercadoPagoCollectorId: 'col-circuito', activo: true,
 };
 
+function pagoDesdeInput(
+  input: CrearPagosMercadoPagoBatchInput['pagos'][number],
+  index: number,
+): PagoData {
+  return {
+    ...input,
+    id: `pago-${index}`,
+    mercadoPagoPaymentId: input.mercadoPagoPaymentId ?? null,
+    mercadoPagoCollectorId: input.mercadoPagoCollectorId ?? null,
+    creadoEn: new Date(),
+  };
+}
+
 function makeDeps() {
+  const createMercadoPagoBatchWithLock = vi.fn(
+    async (input: CrearPagosMercadoPagoBatchInput) => ({
+      pagos: input.pagos.map(pagoDesdeInput),
+      yaRegistrado: false,
+    }),
+  );
   const pagoRepo: PagoRepository = {
-    findByPerfilYMes:     vi.fn().mockResolvedValue(null),
-    findByPerfilId:       vi.fn(),
+    findByPerfilYMes: vi.fn(),
+    findByPerfilId: vi.fn(),
     findAllPagadosPorMes: vi.fn(),
-    findPagadosByMes:     vi.fn(),
-    createWithLock:       vi.fn().mockResolvedValue(PAGO),
-    findCorteActivo:      vi.fn(),
-    crearCorte:           vi.fn(),
-    cerrarCorte:          vi.fn(),
-    crearTicket:          vi.fn(),
+    findPagadosByMes: vi.fn(),
+    createWithLock: vi.fn(),
+    createMercadoPagoBatchWithLock,
+    createManualBatchWithLock: vi.fn(),
+    findCorteActivo: vi.fn(),
+    crearCorte: vi.fn(),
+    cerrarCorte: vi.fn(),
+    crearTicket: vi.fn(),
     marcarPendientesVencidos: vi.fn(),
-    getMetricasAdmin:     vi.fn(),
+    getMetricasAdmin: vi.fn(),
   };
   const residenteRepo: ResidenteRepository = {
-    findById:             vi.fn().mockResolvedValue(PERFIL),
-    findByUserId:         vi.fn(),
-    findByCircuito:       vi.fn(),
-    findAll:              vi.fn(),
-    findByEstado:         vi.fn(),
+    findById: vi.fn().mockResolvedValue(PERFIL),
+    findByUserId: vi.fn(),
+    findByCircuito: vi.fn(),
+    findAll: vi.fn(),
+    findByEstado: vi.fn(),
     findByCircuitoYEstado: vi.fn(),
-    create:               vi.fn(),
-    updateEstado:         vi.fn(),
-    marcarMorososDelMes:  vi.fn(),
-    findAllPaginated:     vi.fn(),
+    create: vi.fn(),
+    updateEstado: vi.fn(),
+    marcarMorososDelMes: vi.fn(),
+    findAllPaginated: vi.fn(),
     findByCircuitoPaginated: vi.fn(),
   };
   const circuitoRepo: CircuitoRepository = {
-    findById:                 vi.fn().mockResolvedValue(CIRCUITO),
-    findByRepresentante:      vi.fn(),
-    findByTesorera:           vi.fn(),
-    findAll:                  vi.fn(),
-    findActivos:              vi.fn(),
-    updateActivo:             vi.fn(),
-    updateMontos:             vi.fn(),
-    updateRepresentante:      vi.fn(),
-    updateTesorera:           vi.fn(),
+    findById: vi.fn().mockResolvedValue(CIRCUITO),
+    findByRepresentante: vi.fn(),
+    findByTesorera: vi.fn(),
+    findAll: vi.fn(),
+    findActivos: vi.fn(),
+    updateActivo: vi.fn(),
+    updateMontos: vi.fn(),
+    updateRepresentante: vi.fn(),
+    updateTesorera: vi.fn(),
     updateRepresentanteWithMp: vi.fn(),
-    updateTesoreraWithMp:     vi.fn(),
+    updateTesoreraWithMp: vi.fn(),
     clearRepresentanteByUserId: vi.fn(),
-    clearTesoreraByUserId:    vi.fn(),
+    clearTesoreraByUserId: vi.fn(),
   };
-  return { pagoRepo, residenteRepo, circuitoRepo };
+  return { pagoRepo, residenteRepo, circuitoRepo, createMercadoPagoBatchWithLock };
 }
 
 describe('ProcesarPagoMpHandler', () => {
-  describe('idempotencia', () => {
-    it('devuelve el pago existente sin crear uno nuevo', async () => {
-      const deps = makeDeps();
-      vi.mocked(deps.pagoRepo.findByPerfilYMes).mockResolvedValue(PAGO);
-      const result = await new ProcesarPagoMpHandler(deps).execute(CMD);
-      expect(result.yaRegistrado).toBe(true);
-      expect(result.folio).toBe('AGU-001');
-      expect(deps.pagoRepo.createWithLock).not.toHaveBeenCalled();
-      expect(deps.residenteRepo.findById).not.toHaveBeenCalled();
+  it('procesa doce meses mediante una sola operacion batch y un solo outbox', async () => {
+    const deps = makeDeps();
+    const periodos = Array.from({ length: 12 }, (_, index) => ({
+      mes: index + 1,
+      anio: 2026,
+      monto: '100.00',
+      esReconexion: false,
+    }));
+
+    const result = await new ProcesarPagoMpHandler(deps).execute({ ...CMD, periodos });
+
+    expect(deps.createMercadoPagoBatchWithLock).toHaveBeenCalledOnce();
+    const batch = deps.createMercadoPagoBatchWithLock.mock.calls[0][0];
+    expect(batch.pagos).toHaveLength(12);
+    expect(batch.pagos.reduce((total, pago) => total + Number(pago.monto), 0).toFixed(2))
+      .toBe(calcularDesglosePago(1_200).total);
+    expect(batch.pushNotification).toMatchObject({
+      userId: 'user-001',
+      perfilId: 'perf-001',
+      tipo: 'pago_confirmado',
+      dedupeKey: 'pago_confirmado:mp:12345:perf-001',
     });
-
-    it('devuelve esReconexion del pago existente', async () => {
-      const deps = makeDeps();
-      vi.mocked(deps.pagoRepo.findByPerfilYMes).mockResolvedValue({ ...PAGO, esReconexion: true });
-      const result = await new ProcesarPagoMpHandler(deps).execute(CMD);
-      expect(result.esReconexion).toBe(true);
-    });
-
-    it('si createWithLock pierde la carrera (webhook vs return simultáneos), devuelve el pago del ganador en vez de fallar', async () => {
-      const deps = makeDeps();
-      // Fast-path no encuentra nada (aún no se había insertado cuando se consultó)...
-      vi.mocked(deps.pagoRepo.findByPerfilYMes)
-        .mockResolvedValueOnce(null)
-        // ...pero para cuando createWithLock intenta insertar, el otro request ya ganó.
-        .mockResolvedValueOnce(PAGO);
-      vi.mocked(deps.pagoRepo.createWithLock).mockRejectedValue(
-        new TRPCError({ code: 'BAD_REQUEST', message: 'Ya existe un pago registrado para este mes' }),
-      );
-
-      const result = await new ProcesarPagoMpHandler(deps).execute(CMD);
-
-      expect(result.yaRegistrado).toBe(true);
-      expect(result.folio).toBe('AGU-001');
-    });
-
-    it('si createWithLock falla y no hay pago existente, propaga el error', async () => {
-      const deps = makeDeps();
-      vi.mocked(deps.pagoRepo.findByPerfilYMes).mockResolvedValue(null);
-      vi.mocked(deps.pagoRepo.createWithLock).mockRejectedValue(
-        new TRPCError({ code: 'BAD_REQUEST', message: 'Ya existe un pago registrado para este mes' }),
-      );
-
-      await expect(new ProcesarPagoMpHandler(deps).execute(CMD)).rejects.toThrow(TRPCError);
-    });
+    expect(result.folios).toHaveLength(12);
+    expect(deps.pagoRepo.createWithLock).not.toHaveBeenCalled();
   });
 
-  describe('happy path', () => {
-    it('crea el pago y devuelve yaRegistrado=false', async () => {
-      const deps = makeDeps();
-      const result = await new ProcesarPagoMpHandler(deps).execute(CMD);
-      expect(result.yaRegistrado).toBe(false);
-      expect(result.folio).toBe('AGU-001');
-      expect(deps.pagoRepo.createWithLock).toHaveBeenCalledOnce();
-    });
+  it('devuelve como replay el lote que el repositorio asocia al mismo paymentId', async () => {
+    const deps = makeDeps();
+    const existing: PagoData = {
+      id: 'pago-existente',
+      perfilId: 'perf-001',
+      circuitoId: 'circ-001',
+      representanteId: 'rep-001',
+      mes: 6,
+      anio: 2025,
+      monto: '104.85',
+      montoBase: '100.00',
+      iva: '0.00',
+      comisionMercadoPago: '4.85',
+      retencionIsr: '0.00',
+      retencionIva: '0.00',
+      montoNetoRepresentante: '95.15',
+      mercadoPagoPaymentId: '12345',
+      mercadoPagoCollectorId: null,
+      estado: 'pagado',
+      metodo: 'mercado_pago',
+      folio: 'AGU-EXISTENTE',
+      esReconexion: false,
+      fechaPago: new Date(),
+      creadoEn: new Date(),
+    };
+    deps.createMercadoPagoBatchWithLock.mockResolvedValue({ pagos: [existing], yaRegistrado: true });
 
-    it('pasa mes y anio al repositorio', async () => {
-      const deps = makeDeps();
-      await new ProcesarPagoMpHandler(deps).execute(CMD);
-      const [, input] = vi.mocked(deps.pagoRepo.createWithLock).mock.calls[0];
-      expect(input.mes).toBe(6);
-      expect(input.anio).toBe(2025);
-    });
+    const result = await new ProcesarPagoMpHandler(deps).execute(CMD);
 
-    it('pasa el metodo mercado_pago', async () => {
-      const deps = makeDeps();
-      await new ProcesarPagoMpHandler(deps).execute(CMD);
-      const [, input] = vi.mocked(deps.pagoRepo.createWithLock).mock.calls[0];
-      expect(input.metodo).toBe('mercado_pago');
-    });
+    expect(result).toMatchObject({ folio: 'AGU-EXISTENTE', yaRegistrado: true });
+    expect(deps.createMercadoPagoBatchWithLock).toHaveBeenCalledOnce();
   });
 
-  describe('precio reconexión', () => {
-    it('usa siempre cmd.monto como base, incluso cuando esReconexion=true', async () => {
-      // cmd.monto viene congelado desde el checkout (external_reference de MP);
-      // no debe recalcularse con las tarifas actuales del circuito.
-      const deps = makeDeps();
-      await new ProcesarPagoMpHandler(deps).execute({ ...CMD, esReconexion: true, monto: '400.00' });
-      const [, input] = vi.mocked(deps.pagoRepo.createWithLock).mock.calls[0];
-      expect(parseFloat(input.montoBase)).toBeCloseTo(400, 0);
-    });
+  it('propaga un conflicto si el periodo pertenece a otro paymentId', async () => {
+    const deps = makeDeps();
+    deps.createMercadoPagoBatchWithLock.mockRejectedValue(
+      new MercadoPagoPeriodConflictError('12345', [{
+        mes: 6, anio: 2025, existingPaymentId: 'otro-payment',
+      }]),
+    );
 
-    it('usa cmd.monto como base cuando esReconexion=false', async () => {
-      const deps = makeDeps();
-      await new ProcesarPagoMpHandler(deps).execute({ ...CMD, monto: '150.00' });
-      const [, input] = vi.mocked(deps.pagoRepo.createWithLock).mock.calls[0];
-      expect(parseFloat(input.montoBase)).toBeCloseTo(150, 0);
-    });
-
-    it('ignora montoMensual/montoReconexion del circuito si difieren de cmd.monto', async () => {
-      // El circuito (mock) tiene montoMensual=100 y montoReconexion=300 (ver CIRCUITO),
-      // pero cmd.monto (congelado en el checkout) es 100 — debe prevalecer este último.
-      const deps = makeDeps();
-      await new ProcesarPagoMpHandler(deps).execute({ ...CMD, esReconexion: true });
-      const [, input] = vi.mocked(deps.pagoRepo.createWithLock).mock.calls[0];
-      expect(parseFloat(input.montoBase)).toBeCloseTo(100, 0);
-    });
+    await expect(new ProcesarPagoMpHandler(deps).execute(CMD))
+      .rejects.toBeInstanceOf(MercadoPagoPeriodConflictError);
   });
 
-  describe('collectorId', () => {
-    it('usa el collectorId del pago si está disponible', async () => {
-      const deps = makeDeps();
-      await new ProcesarPagoMpHandler(deps).execute({ ...CMD, mercadoPagoCollectorId: 'col-from-payment' });
-      const [, input] = vi.mocked(deps.pagoRepo.createWithLock).mock.calls[0];
-      expect(input.mercadoPagoCollectorId).toBe('col-from-payment');
+  it('usa los importes congelados y el collector del pago', async () => {
+    const deps = makeDeps();
+    await new ProcesarPagoMpHandler(deps).execute({
+      ...CMD,
+      mercadoPagoCollectorId: 'collector-payment',
+      periodos: [{ mes: 6, anio: 2025, monto: '400.00', esReconexion: true }],
     });
 
-    it('usa el collectorId del circuito como fallback', async () => {
-      const deps = makeDeps();
-      await new ProcesarPagoMpHandler(deps).execute({ ...CMD, mercadoPagoCollectorId: null });
-      const [, input] = vi.mocked(deps.pagoRepo.createWithLock).mock.calls[0];
-      expect(input.mercadoPagoCollectorId).toBe('col-circuito');
-    });
+    const pago = deps.createMercadoPagoBatchWithLock.mock.calls[0][0].pagos[0];
+    expect(pago.montoBase).toBe('400.00');
+    expect(pago.esReconexion).toBe(true);
+    expect(pago.mercadoPagoCollectorId).toBe('collector-payment');
   });
 
-  describe('errores', () => {
-    it('lanza si el perfil no existe', async () => {
-      const deps = makeDeps();
-      vi.mocked(deps.residenteRepo.findById).mockResolvedValue(null);
-      await expect(new ProcesarPagoMpHandler(deps).execute(CMD)).rejects.toThrow('Perfil no encontrado');
-    });
+  it('usa el collector del circuito como fallback', async () => {
+    const deps = makeDeps();
+    await new ProcesarPagoMpHandler(deps).execute(CMD);
+    expect(deps.createMercadoPagoBatchWithLock.mock.calls[0][0].pagos[0].mercadoPagoCollectorId)
+      .toBe('col-circuito');
+  });
 
-    it('lanza si el circuito no existe', async () => {
-      const deps = makeDeps();
-      vi.mocked(deps.circuitoRepo.findById).mockResolvedValue(null);
-      await expect(new ProcesarPagoMpHandler(deps).execute(CMD)).rejects.toThrow('Circuito no encontrado');
-    });
+  it('rechaza lotes vacios, repetidos o sin paymentId antes de consultar repositorios', async () => {
+    const deps = makeDeps();
+    const handler = new ProcesarPagoMpHandler(deps);
+    await expect(handler.execute({ ...CMD, periodos: [] })).rejects.toThrow('entre 1 y 12');
+    await expect(handler.execute({ ...CMD, mercadoPagoPaymentId: ' ' })).rejects.toThrow('obligatorio');
+    await expect(handler.execute({ ...CMD, periodos: [CMD.periodos[0], CMD.periodos[0]] }))
+      .rejects.toThrow('Periodo duplicado');
+    expect(deps.residenteRepo.findById).not.toHaveBeenCalled();
+  });
+
+  it('lanza si no existen el perfil o el circuito', async () => {
+    const deps = makeDeps();
+    vi.mocked(deps.residenteRepo.findById).mockResolvedValueOnce(null);
+    await expect(new ProcesarPagoMpHandler(deps).execute(CMD)).rejects.toThrow('Perfil no encontrado');
+
+    vi.mocked(deps.residenteRepo.findById).mockResolvedValueOnce(PERFIL);
+    vi.mocked(deps.circuitoRepo.findById).mockResolvedValueOnce(null);
+    await expect(new ProcesarPagoMpHandler(deps).execute(CMD)).rejects.toThrow('Circuito no encontrado');
   });
 });

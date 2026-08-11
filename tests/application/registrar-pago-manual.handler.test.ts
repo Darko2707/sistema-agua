@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { RegistrarPagoManualHandler } from '@/src/application/pagos/commands/registrar-pago-manual.handler';
 import type { ResidenteRepository } from '@/src/application/ports/residente.repository';
 import type { PagoRepository } from '@/src/application/ports/pago.repository';
@@ -44,6 +44,8 @@ function makeDeps() {
     findAllPagadosPorMes: vi.fn(),
     findPagadosByMes: vi.fn(),
     createWithLock: vi.fn().mockResolvedValue(mockPagoCreado),
+    createMercadoPagoBatchWithLock: vi.fn(),
+    createManualBatchWithLock: vi.fn(),
     findCorteActivo: vi.fn(),
     crearCorte: vi.fn(),
     cerrarCorte: vi.fn(),
@@ -77,6 +79,34 @@ describe('RegistrarPagoManualHandler', () => {
     expect(result.monto).toBe('50.00');
     expect(result.metodo).toBe('efectivo');
     expect(deps.pagoRepo.createWithLock).toHaveBeenCalledOnce();
+    const [, , push] = vi.mocked(deps.pagoRepo.createWithLock).mock.calls[0];
+    expect(push).toMatchObject({
+      userId: 'user-001',
+      perfilId: 'perf-001',
+      tipo: 'pago_confirmado',
+    });
+    expect(push?.dedupeKey).toMatch(/^pago_confirmado:folio:/);
+  });
+
+  it('devuelve el folio persistido si otra solicitud concurrente gana', async () => {
+    const deps = makeDeps();
+    vi.mocked(deps.pagoRepo.createWithLock).mockResolvedValue({
+      ...mockPagoCreado,
+      folio: 'AGU-GANADOR001',
+      monto: '75.00',
+      metodo: 'transferencia',
+    });
+    const handler = new RegistrarPagoManualHandler(deps);
+
+    await expect(handler.execute({
+      perfilId: 'perf-001',
+      metodo: 'efectivo',
+      representanteId: 'rep-001',
+    })).resolves.toEqual({
+      folio: 'AGU-GANADOR001',
+      monto: '75.00',
+      metodo: 'transferencia',
+    });
   });
 
   it('lanza si el circuito está inhabilitado', async () => {

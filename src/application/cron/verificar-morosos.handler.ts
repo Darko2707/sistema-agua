@@ -2,6 +2,7 @@ import type { ResidenteRepository } from '../ports/residente.repository';
 import type { PagoRepository } from '../ports/pago.repository';
 import { DIA_CORTE } from '@/src/domain/pagos/constants';
 import { logger } from '@/lib/logger';
+import { fechaNegocio } from '@/src/domain/shared/fecha-negocio';
 
 type Deps = {
   residenteRepo: ResidenteRepository;
@@ -12,10 +13,7 @@ export class VerificarMorososHandler {
   constructor(private deps: Deps) {}
 
   async execute() {
-    const ahora = new Date();
-    const dia   = ahora.getDate();
-    const mes   = ahora.getMonth() + 1;
-    const anio  = ahora.getFullYear();
+    const { dia, mes, anio } = fechaNegocio();
 
     if (dia <= DIA_CORTE) {
       logger.info('morosos.omitido', { dia, diaCorte: DIA_CORTE, mes, anio });

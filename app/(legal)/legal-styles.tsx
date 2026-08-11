@@ -32,6 +32,14 @@ const sections = {
     fontSize: 14,
     lineHeight: 1.6,
   },
+  topNav: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    flexWrap: 'wrap' as const,
+    marginBottom: 20,
+  },
   h2: {
     marginTop: 28,
     marginBottom: 8,
@@ -63,6 +71,18 @@ const sections = {
     fontWeight: 800,
     textDecoration: 'none',
   },
+  loginLink: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    minHeight: 40,
+    padding: '8px 14px',
+    border: '1px solid #D8C8A9',
+    borderRadius: 999,
+    background: '#F8F3E8',
+    color: '#15493A',
+    fontWeight: 800,
+    textDecoration: 'none',
+  },
 };
 
 export function LegalPage({
@@ -75,19 +95,25 @@ export function LegalPage({
   children: React.ReactNode;
 }) {
   return (
-    <main style={sections.page}>
+    <div style={sections.page}>
       <article style={sections.shell}>
-        <Link href="/" style={sections.link}>SIS4S</Link>
+        <nav aria-label="Acceso principal" style={sections.topNav}>
+          <Link href="/" style={sections.link}>SIS4S</Link>
+          <Link href="/login" style={sections.loginLink}>
+            ← Volver al inicio de sesión
+          </Link>
+        </nav>
         <h1 style={sections.title}>{title}</h1>
-        <p style={sections.subtitle}>Ultima actualizacion: {updated}</p>
+        <p style={sections.subtitle}>Última actualización: {updated}</p>
         {children}
-        <nav aria-label="Documentos legales" style={sections.nav}>
+        <nav aria-label="Documentos legales y acceso" style={sections.nav}>
           <Link href="/privacidad" style={sections.link}>Privacidad</Link>
           <Link href="/cookies" style={sections.link}>Cookies</Link>
-          <Link href="/terminos" style={sections.link}>Terminos y condiciones</Link>
+          <Link href="/terminos" style={sections.link}>Términos y condiciones</Link>
+          <Link href="/login" style={sections.link}>Iniciar sesión</Link>
         </nav>
       </article>
-    </main>
+    </div>
   );
 }
 

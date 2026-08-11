@@ -19,13 +19,15 @@ function emit(level: LogLevel, event: string, data: Record<string, unknown>): vo
 
   if (IS_PROD) {
     const entry = JSON.stringify({ level, event, timestamp: new Date().toISOString(), ...data });
-    level === 'error' ? console.error(entry) : console.log(entry);
+    if (level === 'error') console.error(entry);
+    else console.log(entry);
     return;
   }
 
   const prefix = `[${level.toUpperCase().padEnd(5)}] ${new Date().toISOString()} ${event}`;
   const rest = Object.keys(data).length ? data : undefined;
-  level === 'error' ? console.error(prefix, rest ?? '') : console.log(prefix, rest ?? '');
+  if (level === 'error') console.error(prefix, rest ?? '');
+  else console.log(prefix, rest ?? '');
 }
 
 export const logger = {

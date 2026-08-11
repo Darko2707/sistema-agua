@@ -1,8 +1,12 @@
-import { z } from 'zod';
+﻿import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
-import { and, desc, eq, sql } from 'drizzle-orm';
-import { router, protectedProcedure, roleProcedure } from '../trpc';
+// Legacy operations in this router still share a transaction boundary directly.
+// eslint-disable-next-line no-restricted-imports
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { router, authenticatedProcedure, protectedProcedure, roleProcedure } from '../trpc';
+// eslint-disable-next-line no-restricted-imports
 import { db } from '@/db';
+// eslint-disable-next-line no-restricted-imports
 import {
   auditoria,
   bitacoraCortes,
@@ -15,6 +19,9 @@ import {
 } from '@/db/schema';
 import { circuitoRepo, residenteRepo } from '@/src/infrastructure/db/repositories';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
+import { DIA_CORTE } from '@/src/domain/pagos/constants';
+import { fechaNegocio } from '@/src/domain/shared/fecha-negocio';
+import { schedulePushDispatch } from '@/lib/push-dispatcher';
 
 const LEGAL_VERSION = '2026-08-05';
 
@@ -26,21 +33,35 @@ function getRequestMeta(headers?: Headers) {
 }
 
 async function assertPerfilVisible(userId: string, role: string, perfilId: string) {
-  if (role === 'admin') return;
-
   const perfil = await residenteRepo.findById(perfilId);
   if (!perfil) throw new TRPCError({ code: 'NOT_FOUND', message: 'Residente no encontrado' });
+  if (role === 'admin') return;
+  if (role === 'residente') {
+    if (perfil.userId !== userId) throw new TRPCError({ code: 'FORBIDDEN' });
+    return;
+  }
 
   if (role === 'representante') {
     const circuito = await circuitoRepo.findByRepresentante(userId);
     if (!circuito || perfil.circuitoId !== circuito.id) throw new TRPCError({ code: 'FORBIDDEN' });
+    return;
   }
 
   if (role === 'tesorera') {
     const circuitos = await circuitoRepo.findAll();
     const circuito = circuitos.find(c => c.tesoreraId === userId);
     if (!circuito || perfil.circuitoId !== circuito.id) throw new TRPCError({ code: 'FORBIDDEN' });
+    return;
   }
+
+  if (role === 'cuadrilla_cortes') {
+    const perfilTrabajador = await residenteRepo.findByUserId(userId);
+    if (!perfilTrabajador || perfil.circuitoId !== perfilTrabajador.circuitoId) {
+      throw new TRPCError({ code: 'FORBIDDEN' });
+    }
+    return;
+  }
+  throw new TRPCError({ code: 'FORBIDDEN' });
 }
 
 async function registrarAuditoria(input: {
@@ -64,28 +85,32 @@ async function registrarAuditoria(input: {
 }
 
 export const operacionRouter = router({
-  aceptarLegales: protectedProcedure
+  aceptarLegales: authenticatedProcedure
     .input(z.object({
-      privacidadVersion: z.string().default(LEGAL_VERSION),
-      cookiesVersion:    z.string().default(LEGAL_VERSION),
-      terminosVersion:   z.string().default(LEGAL_VERSION),
+      privacidadVersion: z.literal(LEGAL_VERSION).default(LEGAL_VERSION),
+      cookiesVersion:    z.literal(LEGAL_VERSION).default(LEGAL_VERSION),
+      terminosVersion:   z.literal(LEGAL_VERSION).default(LEGAL_VERSION),
     }))
     .mutation(async ({ ctx, input }) => {
-      const meta = getRequestMeta();
-      await db.insert(consentimientosLegales).values({
-        userId: ctx.user.id,
-        privacidadVersion: input.privacidadVersion,
-        cookiesVersion: input.cookiesVersion,
-        terminosVersion: input.terminosVersion,
-        ip: meta.ip,
-        userAgent: meta.userAgent,
-      });
-      await registrarAuditoria({
-        actorId: ctx.user.id,
-        accion: 'legales.aceptados',
-        entidad: 'user',
-        entidadId: ctx.user.id,
-        detalle: input,
+      const meta = getRequestMeta(ctx.headers);
+      await db.transaction(async (tx) => {
+        await tx.insert(consentimientosLegales).values({
+          userId: ctx.user.id,
+          privacidadVersion: input.privacidadVersion,
+          cookiesVersion: input.cookiesVersion,
+          terminosVersion: input.terminosVersion,
+          ip: meta.ip,
+          userAgent: meta.userAgent,
+        });
+        await tx.insert(auditoria).values({
+          actorId: ctx.user.id,
+          accion: 'legales.aceptados',
+          entidad: 'user',
+          entidadId: ctx.user.id,
+          detalle: input,
+          ip: meta.ip,
+          userAgent: meta.userAgent,
+        });
       });
       return { ok: true };
     }),
@@ -104,8 +129,35 @@ export const operacionRouter = router({
       limit:     z.number().int().min(1).max(200).default(50),
     }).optional())
     .query(async ({ ctx, input }) => {
-      if (ctx.user.role !== 'admin' && input?.entidad !== 'pago' && input?.entidad !== 'corte') {
+      const entidad = input?.entidad;
+      if (ctx.user.role !== 'admin' && entidad !== 'pago' && entidad !== 'corte') {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Solo admin puede ver auditoria global' });
+      }
+      if (ctx.user.role === 'representante') {
+        const entidadRepresentante: 'pago' | 'corte' = entidad === 'pago' ? 'pago' : 'corte';
+        const circuito = await circuitoRepo.findByRepresentante(ctx.user.id);
+        if (!circuito) return [];
+        const pagoIds = entidadRepresentante === 'pago'
+          ? await db.select({ id: pagos.id }).from(pagos).where(eq(pagos.circuitoId, circuito.id))
+          : [];
+        const corteIds = entidadRepresentante === 'corte'
+          ? await db.select({ id: bitacoraCortes.corteId })
+            .from(bitacoraCortes)
+            .innerJoin(perfilesResidente, eq(perfilesResidente.id, bitacoraCortes.perfilId))
+            .where(eq(perfilesResidente.circuitoId, circuito.id))
+          : [];
+        const ids = (entidadRepresentante === 'pago' ? pagoIds : corteIds)
+          .map(row => row.id)
+          .filter((id): id is string => Boolean(id));
+        if (input?.entidadId && !ids.includes(input.entidadId)) throw new TRPCError({ code: 'FORBIDDEN' });
+        if (ids.length === 0) return [];
+        return db.query.auditoria.findMany({
+          where: input?.entidadId
+            ? and(eq(auditoria.entidad, entidadRepresentante), eq(auditoria.entidadId, input.entidadId))
+            : and(eq(auditoria.entidad, entidadRepresentante), inArray(auditoria.entidadId, ids)),
+          orderBy: [desc(auditoria.creadoEn)],
+          limit: input?.limit ?? 50,
+        });
       }
       return db.query.auditoria.findMany({
         where: input?.entidad
@@ -178,6 +230,7 @@ export const operacionRouter = router({
       await assertPerfilVisible(ctx.user.id, ctx.user.role, pago.perfilId);
       if (pago.estado !== 'pagado') throw new TRPCError({ code: 'BAD_REQUEST', message: 'Solo se pueden reversar pagos pagados' });
 
+      let notificarReverso = false;
       await db.transaction(async (tx) => {
         await tx.update(pagos).set({ estado: 'vencido' }).where(eq(pagos.id, pago.id));
         await tx.insert(reversosPago).values({
@@ -187,6 +240,33 @@ export const operacionRouter = router({
           estadoAnterior: pago.estado ?? 'pagado',
         });
         await tx.delete(tickets).where(eq(tickets.pagoId, pago.id));
+
+        const periodo = PeriodoVO.vigente();
+        const esMesActual = pago.mes === periodo.mes && pago.anio === periodo.anio;
+        const diaNegocio = fechaNegocio().dia;
+        const nuevoEstado = pago.esReconexion && pago.perfil?.estadoAgua === 'pendiente_reconexion'
+          ? 'cortado'
+          : esMesActual && pago.perfil?.estadoAgua === 'activo' && diaNegocio > DIA_CORTE
+            ? 'pendiente_corte'
+            : null;
+
+        if (nuevoEstado) {
+          await tx.update(perfilesResidente)
+            .set({ estadoAgua: nuevoEstado })
+            .where(eq(perfilesResidente.id, pago.perfilId));
+          if (pago.perfil?.userId) {
+            notificarReverso = true;
+            await tx.insert(notificaciones).values({
+              userId: pago.perfil.userId,
+              perfilId: pago.perfilId,
+              canal: 'push',
+              tipo: 'pago_reversado',
+              destino: 'push',
+              mensaje: 'Un pago fue reversado. Abre la app para consultar tu estado actualizado.',
+              dedupeKey: `pago_reversado:${pago.id}`,
+            }).onConflictDoNothing();
+          }
+        }
       });
       await registrarAuditoria({
         actorId: ctx.user.id,
@@ -195,6 +275,7 @@ export const operacionRouter = router({
         entidadId: pago.id,
         detalle: { folio: pago.folio, motivo: input.motivo, mes: pago.mes, anio: pago.anio },
       });
+      if (notificarReverso) schedulePushDispatch();
       return { ok: true };
     }),
 
@@ -217,6 +298,7 @@ export const operacionRouter = router({
       fotoUrl:  z.string().url().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      await assertPerfilVisible(ctx.user.id, ctx.user.role, input.perfilId);
       const [row] = await db.insert(bitacoraCortes).values({
         perfilId: input.perfilId,
         corteId: input.corteId ?? null,
@@ -240,12 +322,33 @@ export const operacionRouter = router({
       estado: z.enum(['pendiente', 'enviada', 'fallida']).optional(),
       limit:  z.number().int().min(1).max(200).default(50),
     }).optional())
-    .query(async ({ input }) => {
-      return db.query.notificaciones.findMany({
-        where: input?.estado ? eq(notificaciones.estado, input.estado) : undefined,
-        orderBy: [desc(notificaciones.creadoEn)],
-        limit: input?.limit ?? 50,
-      });
+    .query(async ({ ctx, input }) => {
+      const estadoFilter = input?.estado ? eq(notificaciones.estado, input.estado) : undefined;
+      let visibilityFilter = estadoFilter;
+
+      if (ctx.user.role === 'representante') {
+        const circuito = await circuitoRepo.findByRepresentante(ctx.user.id);
+        if (!circuito) return [];
+        visibilityFilter = and(
+          estadoFilter,
+          eq(perfilesResidente.circuitoId, circuito.id),
+        );
+      }
+
+      // Never return Web Push endpoints/keys (stored in push_subscriptions) or
+      // the legacy destination field. They are capability secrets.
+      return db.select({
+        id: notificaciones.id,
+        tipo: notificaciones.tipo,
+        canal: notificaciones.canal,
+        estado: notificaciones.estado,
+        creadoEn: notificaciones.creadoEn,
+      })
+        .from(notificaciones)
+        .leftJoin(perfilesResidente, eq(perfilesResidente.id, notificaciones.perfilId))
+        .where(visibilityFilter)
+        .orderBy(desc(notificaciones.creadoEn))
+        .limit(input?.limit ?? 50);
     }),
 
   exportacionCompleta: roleProcedure('admin').query(async () => {
@@ -270,6 +373,7 @@ export const operacionRouter = router({
     const periodo = PeriodoVO.vigente();
     const circuito = ctx.user.role === 'representante' ? await circuitoRepo.findByRepresentante(ctx.user.id) : null;
     const circuitoFilter = circuito ? eq(perfilesResidente.circuitoId, circuito.id) : undefined;
+    const pagoCircuitoFilter = circuito ? eq(pagos.circuitoId, circuito.id) : undefined;
 
     const [residentesRow] = await db.select({ total: sql<number>`count(*)::int` }).from(perfilesResidente).where(circuitoFilter);
     const [pagosRow] = await db.select({
@@ -278,9 +382,9 @@ export const operacionRouter = router({
       efectivo: sql<number>`count(*) filter (where ${pagos.metodo} = 'efectivo')::int`,
       transferencia: sql<number>`count(*) filter (where ${pagos.metodo} = 'transferencia')::int`,
       mercadoPago: sql<number>`count(*) filter (where ${pagos.metodo} = 'mercado_pago')::int`,
-    }).from(pagos).where(and(eq(pagos.estado, 'pagado'), eq(pagos.mes, periodo.mes), eq(pagos.anio, periodo.anio)));
-    const [cortesPendientes] = await db.select({ total: sql<number>`count(*)::int` }).from(perfilesResidente).where(eq(perfilesResidente.estadoAgua, 'pendiente_corte'));
-    const [reconexionesPendientes] = await db.select({ total: sql<number>`count(*)::int` }).from(perfilesResidente).where(eq(perfilesResidente.estadoAgua, 'pendiente_reconexion'));
+    }).from(pagos).where(and(eq(pagos.estado, 'pagado'), eq(pagos.mes, periodo.mes), eq(pagos.anio, periodo.anio), pagoCircuitoFilter));
+    const [cortesPendientes] = await db.select({ total: sql<number>`count(*)::int` }).from(perfilesResidente).where(and(eq(perfilesResidente.estadoAgua, 'pendiente_corte'), circuitoFilter));
+    const [reconexionesPendientes] = await db.select({ total: sql<number>`count(*)::int` }).from(perfilesResidente).where(and(eq(perfilesResidente.estadoAgua, 'pendiente_reconexion'), circuitoFilter));
 
     const totalResidentes = residentesRow?.total ?? 0;
     const totalPagos = pagosRow?.total ?? 0;

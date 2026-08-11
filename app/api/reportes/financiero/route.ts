@@ -1,7 +1,6 @@
-import { auth } from '@/lib/auth';
+﻿import { auth } from '@/lib/auth';
 import { db } from '@/db';
-import { eq } from 'drizzle-orm';
-import { circuitos } from '@/db/schema';
+import { and, eq, isNull } from 'drizzle-orm';
 import {
   generarReporteFinancieroExcel,
   generarReporteFinancieroRangoExcel,
@@ -16,7 +15,7 @@ import type {
 export const dynamic = 'force-dynamic';
 const MAX_RANGO_MESES = 36;
 
-// Genera lista de (mes, anio) entre dos períodos inclusive
+// Genera lista de (mes, anio) entre dos perÃ­odos inclusive
 function getMesesEnRango(
   mesDesde: number, anioDesde: number,
   mesHasta: number, anioHasta: number,
@@ -52,9 +51,7 @@ async function resolverCircuito(userId: string) {
       circuito = await db.query.circuitos.findFirst({
         where: (c, { eq }) => eq(c.id, perfil.circuitoId!),
       });
-      if (circuito) {
-        await db.update(circuitos).set({ tesoreraId: userId }).where(eq(circuitos.id, circuito.id));
-      }
+      if (circuito?.tesoreraId && circuito.tesoreraId !== userId) return null;
     }
   }
   return circuito ?? null;
@@ -65,7 +62,7 @@ export async function GET(req: Request) {
   if (!session?.user) return new Response('No autorizado', { status: 401 });
 
   const dbUser = await db.query.user.findFirst({
-    where: (u, { eq }) => eq(u.id, session.user.id),
+    where: (u) => and(eq(u.id, session.user.id), isNull(u.deletedAt)),
   });
   if (dbUser?.role !== 'tesorera') return new Response('Prohibido', { status: 403 });
 
@@ -78,7 +75,7 @@ export async function GET(req: Request) {
   const mesHastaRaw  = url.searchParams.get('mesHasta');
   const anioHastaRaw = url.searchParams.get('anioHasta');
 
-  // ── Rango de meses ────────────────────────────────────────────────────────
+  // â”€â”€ Rango de meses â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (mesDesdeRaw && anioDesdeRaw && mesHastaRaw && anioHastaRaw) {
     const mesDesde  = parseInt(mesDesdeRaw,  10);
     const anioDesde = parseInt(anioDesdeRaw, 10);
@@ -86,12 +83,12 @@ export async function GET(req: Request) {
     const anioHasta = parseInt(anioHastaRaw, 10);
 
     if (!isMesValido(mesDesde) || !isMesValido(mesHasta) || !isAnioValido(anioDesde) || !isAnioValido(anioHasta))
-      return new Response('Parámetros inválidos', { status: 400 });
+      return new Response('ParÃ¡metros invÃ¡lidos', { status: 400 });
 
     const desdeNum = anioDesde * 100 + mesDesde;
     const hastaNum = anioHasta * 100 + mesHasta;
     if (hastaNum < desdeNum)
-      return new Response('El rango de fechas es inválido', { status: 400 });
+      return new Response('El rango de fechas es invÃ¡lido', { status: 400 });
 
     const mesesLista = getMesesEnRango(mesDesde, anioDesde, mesHasta, anioHasta);
     if (mesesLista.length > MAX_RANGO_MESES)
@@ -195,15 +192,17 @@ export async function GET(req: Request) {
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         'Content-Disposition': `attachment; filename="reporte-financiero-${label}.xlsx"`,
+        'Cache-Control': 'private, no-store',
+        'X-Content-Type-Options': 'nosniff',
       },
     });
   }
 
-  // ── Un solo mes (comportamiento anterior) ─────────────────────────────────
+  // â”€â”€ Un solo mes (comportamiento anterior) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const mes  = parseInt(url.searchParams.get('mes')  ?? String(new Date().getMonth() + 1), 10);
   const anio = parseInt(url.searchParams.get('anio') ?? String(new Date().getFullYear()), 10);
 
-  if (!isMesValido(mes) || !isAnioValido(anio)) return new Response('Parámetros inválidos', { status: 400 });
+  if (!isMesValido(mes) || !isAnioValido(anio)) return new Response('ParÃ¡metros invÃ¡lidos', { status: 400 });
 
   const [residentes, pagosPeriodo, gastosPeriodo, ingresosPeriodo] = await Promise.all([
     db.query.perfilesResidente.findMany({
@@ -278,6 +277,8 @@ export async function GET(req: Request) {
     headers: {
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       'Content-Disposition': `attachment; filename="reporte-financiero-${mes}-${anio}.xlsx"`,
+      'Cache-Control': 'private, no-store',
+      'X-Content-Type-Options': 'nosniff',
     },
   });
 }

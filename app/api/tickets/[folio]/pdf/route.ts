@@ -4,36 +4,46 @@ import { headers } from 'next/headers';
 import { db } from '@/db';
 import { tickets } from '@/db/schema';
 import { auth } from '@/lib/auth';
+import { logger } from '@/lib/logger';
 import { generarTicketPDF } from '@/server/services/pdf';
 import { VercelBlobAdapter } from '@/src/infrastructure/storage/vercel-blob.adapter';
-import { logger } from '@/lib/logger';
 
 export const dynamic = 'force-dynamic';
-
-// PDFs son inmutables: el folio nunca cambia de contenido.
-// private → el browser lo cachea, el CDN no (la auth se verifica en esta ruta).
-const CACHE_CONTROL = 'private, max-age=31536000, immutable';
+export const runtime = 'nodejs';
 
 const storage = new VercelBlobAdapter();
+
+function pdfResponse(pdf: Buffer, folio: string): Response {
+  return new Response(Uint8Array.from(pdf), {
+    headers: {
+      'Content-Type':            'application/pdf',
+      'Content-Disposition':     `attachment; filename="recibo-${folio}.pdf"`,
+      'Content-Length':          String(pdf.byteLength),
+      'Cache-Control':           'private, no-store',
+      'X-Content-Type-Options':  'nosniff',
+      'Content-Security-Policy': 'sandbox',
+      'Referrer-Policy':         'no-referrer',
+    },
+  });
+}
 
 export async function GET(
   _request: Request,
   ctx: { params: Promise<{ folio: string }> },
 ) {
-  // ── Autenticación ──────────────────────────────────────────────────────────
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) {
     return Response.json({ error: 'No autorizado' }, { status: 401 });
   }
 
-  const { folio } = await ctx.params;
-  if (!/^[A-Z0-9-]{4,64}$/i.test(folio)) {
-    return Response.json({ error: 'Folio invalido' }, { status: 400 });
+  const { folio: rawFolio } = await ctx.params;
+  if (!/^[A-Z0-9-]{4,64}$/i.test(rawFolio)) {
+    return Response.json({ error: 'Folio inválido' }, { status: 400 });
   }
+  const folio = rawFolio.toUpperCase();
 
-  // ── Buscar ticket en DB ───────────────────────────────────────────────────
   const ticket = await db.query.tickets.findFirst({
-    where: (t, { eq }) => eq(t.folio, folio),
+    where: (ticketTable, { eq: equals }) => equals(ticketTable.folio, folio),
     with: {
       pago: {
         with: {
@@ -50,13 +60,12 @@ export async function GET(
     return Response.json({ error: 'Folio no encontrado' }, { status: 404 });
   }
 
-  // ── Autorización: dueño, admin o representante del circuito ───────────────
   const usuario = await db.query.user.findFirst({
-    where: (u, { eq }) => eq(u.id, session.user.id),
+    where: (userTable, { eq: equals }) => equals(userTable.id, session.user.id),
   });
   const role = usuario?.role ?? 'residente';
-  const esDuenio       = ticket.pago.perfil.userId === session.user.id;
-  const esAdmin        = role === 'admin';
+  const esDuenio = ticket.pago.perfil.userId === session.user.id;
+  const esAdmin = role === 'admin';
   const esRepresentante =
     role === 'representante' &&
     ticket.pago.circuito?.representanteId === session.user.id;
@@ -65,14 +74,10 @@ export async function GET(
     return Response.json({ error: 'No autorizado' }, { status: 403 });
   }
 
-  // ── Servir desde Blob si ya existe ────────────────────────────────────────
-  if (ticket.pdfUrl) {
-    return Response.redirect(ticket.pdfUrl, 302);
-  }
-
-  // ── Generar PDF, subir a Blob y guardar URL ───────────────────────────────
+  // Siempre regeneramos el recibo con la plantilla vigente. Esto evita servir
+  // PDFs cacheados de versiones anteriores que pudieran incluir QR u otros
+  // elementos retirados del formato oficial.
   logger.info('ticket.pdf.generando', { folio });
-
   const pdf = await generarTicketPDF({
     folio:               ticket.folio,
     fraccionamiento:     process.env.NEXT_PUBLIC_FRACCIONAMIENTO_NOMBRE ?? 'SIS4S',
@@ -90,21 +95,29 @@ export async function GET(
     retencionIva:        ticket.pago.retencionIva,
     emailContacto:       process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? 'contactoservicio4soles@gmail.com',
   });
+
+  // Las versiones anteriores guardaban recibos públicos. Sólo borramos la ruta
+  // histórica exacta de este folio; referencias desconocidas no se siguen.
+  if (ticket.pdfUrl && !storage.isCurrentReference(folio, ticket.pdfUrl)) {
+    try {
+      const removed = await storage.removeLegacyPublicCopy(folio, ticket.pdfUrl);
+      if (!removed) logger.warn('ticket.pdf.legacy_reference_ignored', { folio });
+    } catch (deleteError) {
+      logger.error('ticket.pdf.legacy_delete_error', deleteError, { folio });
+    }
+  }
+
   try {
-    const pdfUrl = await storage.upload(folio, pdf);
-    await db.update(tickets).set({ pdfUrl }).where(eq(tickets.folio, folio));
-    logger.info('ticket.pdf.cacheado', { folio, pdfUrl });
+    const privateReference = await storage.upload(folio, pdf);
+    await db
+      .update(tickets)
+      .set({ pdfUrl: privateReference })
+      .where(eq(tickets.folio, folio));
+    logger.info('ticket.pdf.cacheado', { folio });
   } catch (uploadError) {
-    // Si Blob falla, devolvemos el PDF de todas formas (no bloqueamos al usuario)
+    // Blob es una optimización: un fallo no debe impedir descargar el recibo generado.
     logger.error('ticket.pdf.upload_error', uploadError, { folio });
   }
 
-  return new Response(pdf, {
-    headers: {
-      'Content-Type':        'application/pdf',
-      'Content-Disposition': `attachment; filename="recibo-${folio}.pdf"`,
-      'Cache-Control':       CACHE_CONTROL,
-    },
-  });
+  return pdfResponse(pdf, folio);
 }
-//si

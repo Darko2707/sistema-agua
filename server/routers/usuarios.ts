@@ -1,8 +1,13 @@
-import { router, publicProcedure, protectedProcedure, authenticatedProcedure, roleProcedure } from '../trpc';
+import { router, publicProcedure, authenticatedProcedure, roleProcedure } from '../trpc';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
+import { createHash } from 'node:crypto';
 
 import { residenteRepo, circuitoRepo, userRepo } from '@/src/infrastructure/db/repositories';
+import {
+  representativeResetGenerateLimiter,
+  representativeResetRedeemLimiter,
+} from '@/lib/ratelimit';
 import { CrearPerfilHandler } from '@/src/application/residentes/commands/crear-perfil.handler';
 import { ListarResidentesHandler } from '@/src/application/residentes/queries/listar-residentes.handler';
 import { CrearPersonalHandler } from '@/src/application/usuarios/commands/crear-personal.handler';
@@ -11,6 +16,7 @@ import { EliminarPersonalHandler } from '@/src/application/usuarios/commands/eli
 import { CambiarRolHandler } from '@/src/application/usuarios/commands/cambiar-rol.handler';
 import { CambiarRolEnCircuitoHandler } from '@/src/application/usuarios/commands/cambiar-rol-circuito.handler';
 import { ListarPersonalHandler } from '@/src/application/usuarios/queries/listar-personal.handler';
+import { representativePasswordResetService } from '@/src/infrastructure/db/services/representative-password-reset.service';
 
 const crearPerfilHandler        = new CrearPerfilHandler({ residenteRepo, circuitoRepo });
 const listarResidentesHandler   = new ListarResidentesHandler({ residenteRepo, circuitoRepo });
@@ -21,17 +27,45 @@ const cambiarRolHandler         = new CambiarRolHandler({ userRepo });
 const cambiarRolCircuitoHandler = new CambiarRolEnCircuitoHandler({ userRepo });
 const listarPersonalHandler     = new ListarPersonalHandler({ userRepo, circuitoRepo });
 
+function ipFromHeaders(headers: Headers): string {
+  return headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+    ?? headers.get('x-real-ip')
+    ?? 'anonymous';
+}
+
+async function limitOrThrow(
+  limiter: typeof representativeResetRedeemLimiter,
+  key: string,
+  message = 'Demasiados intentos. Intenta de nuevo mas tarde.',
+) {
+  if (!limiter) return;
+  try {
+    const result = await limiter.limit(key);
+    if (!result.success) {
+      throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message });
+    }
+  } catch (error) {
+    if (error instanceof TRPCError) throw error;
+    // Redis caido no debe bloquear recuperaciones legitimas; registrar/alertar
+    // se maneja a nivel de infraestructura.
+  }
+}
+
+function shortHash(value: string): string {
+  return createHash('sha256').update(value).digest('hex').slice(0, 16);
+}
+
 export const usuariosRouter = router({
   crearPerfil: authenticatedProcedure
     .input(z.object({
-      telefono:            z.string().min(10),
+      telefono:            z.string().trim().regex(/^\d{10,15}$/, 'El telefono debe contener entre 10 y 15 digitos'),
       sexo:                z.enum(['masculino', 'femenino', 'otro']),
       tenencia:            z.enum(['propietario', 'inquilino']),
       circuitoId:          z.string().uuid(),
-      edificio:            z.string().min(1),
-      departamento:        z.string().regex(/^\d+[a-zA-Z]?$/, 'El departamento debe ser un número con letra opcional (ej: 314 o 314a)'),
-      nombrePropietario:   z.string().min(2).optional(),
-      telefonoPropietario: z.string().min(10).optional(),
+      edificio:            z.string().trim().min(1).max(8),
+      departamento:        z.string().trim().min(1).max(8),
+      nombrePropietario:   z.string().trim().min(2).max(120).optional(),
+      telefonoPropietario: z.string().trim().regex(/^\d{10,15}$/, 'El telefono debe contener entre 10 y 15 digitos').optional(),
     }).refine(d => d.tenencia === 'propietario' || (!!d.nombrePropietario && !!d.telefonoPropietario), {
       message: 'Los datos del propietario son requeridos cuando eres inquilino',
       path: ['nombrePropietario'],
@@ -40,13 +74,43 @@ export const usuariosRouter = router({
       return crearPerfilHandler.execute({ userId: ctx.user.id, ...input });
     }),
 
-  miPerfil: protectedProcedure.query(async ({ ctx }) => {
+  miPerfil: authenticatedProcedure.query(async ({ ctx }) => {
     return residenteRepo.findByUserId(ctx.user.id);
   }),
 
   listarCircuitos: publicProcedure.query(async () => {
     return circuitoRepo.findActivos();
   }),
+
+  generarCodigoRecuperacion: roleProcedure('representante')
+    .input(z.object({ perfilId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      await limitOrThrow(
+        representativeResetGenerateLimiter,
+        `pwd-reset:generate:${ctx.user.id}:${ipFromHeaders(ctx.headers)}`,
+        'Generaste muchos codigos. Espera unos minutos.',
+      );
+      return representativePasswordResetService.generateForResident({
+        representanteId: ctx.user.id,
+        perfilId:        input.perfilId,
+      });
+    }),
+
+  restablecerConCodigoRepresentante: publicProcedure
+    .input(z.object({
+      email:       z.string().trim().email(),
+      code:        z.string().trim().min(6).max(20),
+      newPassword: z.string().min(8).max(128),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const email = input.email.trim().toLowerCase();
+      await limitOrThrow(
+        representativeResetRedeemLimiter,
+        `pwd-reset:redeem:${shortHash(email)}:${ipFromHeaders(ctx.headers)}`,
+      );
+      await representativePasswordResetService.redeem(input);
+      return { ok: true };
+    }),
 
   listarResidentes: roleProcedure('admin', 'representante')
     .input(z.object({
@@ -94,7 +158,7 @@ export const usuariosRouter = router({
       circuitoId: z.string().uuid(),
       userId:     z.string().min(1),
     }))
-    .mutation(async ({ ctx, input }) => {
+    .mutation(async ({ input }) => {
       const circuito = await circuitoRepo.findById(input.circuitoId);
       if (!circuito) throw new TRPCError({ code: 'NOT_FOUND', message: 'Circuito no encontrado' });
 

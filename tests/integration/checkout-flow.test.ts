@@ -17,6 +17,7 @@ import { user, circuitos, perfilesResidente, pagos, tickets } from '@/db/schema'
 import { ProcesarPagoMpHandler } from '@/src/application/pagos/commands/procesar-pago-mp.handler';
 import { residenteRepo, pagoRepo, circuitoRepo } from '@/src/infrastructure/db/repositories';
 import { parseExternalReference } from '@/src/infrastructure/mercadopago/parser';
+import { calcularDesglosePago } from '@/src/domain/pagos/calculator';
 
 // ── Fixtures ───────────────────────────────────────────────────────────────────
 const suffix = nanoid(8);
@@ -38,7 +39,7 @@ const handler = new ProcesarPagoMpHandler({ residenteRepo, pagoRepo, circuitoRep
 beforeAll(async () => {
   await db.insert(user).values({
     id: FX.repId, name: 'Test Representante', email: FX.repEmail,
-    role: 'representante', emailVerified: true,
+    role: 'representante',
   });
 
   const [circ] = await db.insert(circuitos).values({
@@ -53,7 +54,7 @@ beforeAll(async () => {
 
   await db.insert(user).values({
     id: FX.resId, name: 'Test Residente', email: FX.resEmail,
-    role: 'residente', emailVerified: true,
+    role: 'residente',
   });
 
   const [perfil] = await db.insert(perfilesResidente).values({
@@ -62,8 +63,8 @@ beforeAll(async () => {
     sexo:         'otro',
     tenencia:     'propietario',
     circuitoId:   FX.circId,
-    edificio:     'INTEG',
-    departamento: '001a',
+    edificio:     '999990',
+    departamento: '1A',
     estadoAgua:   'activo',
   }).returning({ id: perfilesResidente.id });
   FX.perfilId = perfil.id;
@@ -108,12 +109,14 @@ function cmd(mes: number, overrides: Partial<{
 }> = {}) {
   return {
     perfilId:               FX.perfilId,
-    mes,
-    anio:                   ANIO,
-    monto:                  overrides.monto ?? '100.00',
-    esReconexion:           overrides.esReconexion ?? false,
+    periodos: [{
+      mes,
+      anio: ANIO,
+      monto: overrides.monto ?? '100.00',
+      esReconexion: overrides.esReconexion ?? false,
+    }],
     metodo:                 'mercado_pago' as const,
-    mercadoPagoPaymentId:   overrides.mercadoPagoPaymentId ?? 'mp-001',
+    mercadoPagoPaymentId:   overrides.mercadoPagoPaymentId ?? `mp-${mes}`,
     mercadoPagoCollectorId: overrides.mercadoPagoCollectorId ?? `col-${suffix}`,
   };
 }
@@ -144,7 +147,7 @@ describe('Checkout flow — integración con BD real', () => {
       expect(pago).toBeDefined();
       expect(pago!.estado).toBe('pagado');
       expect(pago!.metodo).toBe('mercado_pago');
-      expect(pago!.mercadoPagoPaymentId).toBe('mp-001');
+      expect(pago!.mercadoPagoPaymentId).toBe('mp-1');
       expect(pago!.mercadoPagoCollectorId).toBe(`col-${suffix}`);
       expect(pago!.circuitoId).toBe(FX.circId);
       expect(pago!.mes).toBe(1);
@@ -188,6 +191,43 @@ describe('Checkout flow — integración con BD real', () => {
         .from(pagos)
         .where(and(eq(pagos.perfilId, FX.perfilId), eq(pagos.mes, 2), eq(pagos.anio, ANIO)));
       expect(rows).toHaveLength(1);
+    });
+  });
+
+  describe('Lote de doce meses', () => {
+    it('confirma todos los pagos y tickets con un solo outbox', async () => {
+      const periodos = Array.from({ length: 12 }, (_, index) => ({
+        mes: ((6 + index) % 12) + 1,
+        anio: ANIO + Math.floor((6 + index) / 12),
+        monto: '100.00',
+        esReconexion: false,
+      }));
+
+      const result = await handler.execute({
+        perfilId: FX.perfilId,
+        periodos,
+        metodo: 'mercado_pago',
+        mercadoPagoPaymentId: 'mp-batch-12',
+        mercadoPagoCollectorId: `col-${suffix}`,
+      });
+
+      const rows = await db.query.pagos.findMany({
+        where: (p, { eq }) => eq(p.mercadoPagoPaymentId, 'mp-batch-12'),
+      });
+      const ticketRows = await db.query.tickets.findMany({
+        where: (ticket, { inArray }) => inArray(ticket.pagoId, rows.map(row => row.id)),
+      });
+      const outboxRows = await db.query.notificaciones.findMany({
+        where: (notification, { eq }) => eq(
+          notification.dedupeKey,
+          `pago_confirmado:mp:mp-batch-12:${FX.perfilId}`,
+        ),
+      });
+
+      expect(rows).toHaveLength(12);
+      expect(ticketRows).toHaveLength(12);
+      expect(outboxRows).toHaveLength(1);
+      expect(result.monto).toBe(calcularDesglosePago(1_200).total);
     });
   });
 

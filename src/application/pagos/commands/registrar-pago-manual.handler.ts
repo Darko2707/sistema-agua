@@ -8,8 +8,6 @@ import type { PagoRepository } from '../../ports/pago.repository';
 import type { CircuitoRepository } from '../../ports/circuito.repository';
 import { logger } from '@/lib/logger';
 import type { RegistrarPagoManualCommand } from './registrar-pago-manual.command';
-import { eventBus } from '@/src/domain/shared/event-bus';
-import { PagoRegistradoEvent } from '@/src/domain/residente/events/pago-registrado.event';
 
 type Deps = {
   residenteRepo: ResidenteRepository;
@@ -48,7 +46,7 @@ export class RegistrarPagoManualHandler {
     const desglose = calcularDesglosePagoManual(montoBase);
     const folio = FolioVO.generate().toString();
 
-    await pagoRepo.createWithLock(perfil.id, {
+    const pago = await pagoRepo.createWithLock(perfil.id, {
       perfilId:               perfil.id,
       circuitoId:             miCircuito.id,
       representanteId:        cmd.representanteId,
@@ -67,18 +65,33 @@ export class RegistrarPagoManualHandler {
       folio,
       esReconexion,
       fechaPago:              new Date(),
+    }, {
+      userId: perfil.userId,
+      perfilId: perfil.id,
+      tipo: 'pago_confirmado',
+      mensaje: 'Tu pago fue confirmado. Abre la app para consultar el folio y los detalles.',
+      dedupeKey: `pago_confirmado:folio:${folio}`,
     });
 
-    await eventBus.publish([new PagoRegistradoEvent(perfil.id, folio)]);
+    if (!pago.folio) {
+      throw new TRPCError({
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'El pago fue registrado sin un folio valido',
+      });
+    }
 
     logger.info('pago.manual.completado', {
-      folio,
+      folio: pago.folio,
       perfilId: perfil.id,
       representanteId: cmd.representanteId,
       mes: periodo.mes,
       anio: periodo.anio,
     });
 
-    return { folio, monto: desglose.total, metodo: cmd.metodo };
+    return {
+      folio: pago.folio,
+      monto: pago.monto,
+      metodo: pago.metodo ?? cmd.metodo,
+    };
   }
 }

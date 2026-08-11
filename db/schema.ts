@@ -1,5 +1,5 @@
 // db/schema.ts
-import { pgTable, uuid, text, integer, decimal, timestamp, boolean, pgEnum, uniqueIndex, index, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, integer, decimal, timestamp, boolean, pgEnum, uniqueIndex, index, jsonb, check } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 
 export const rolEnum = pgEnum('rol', [
@@ -89,6 +89,24 @@ export const verification = pgTable('verification', {
 // ─────────────────────────────────────────────
 // Estructura del fraccionamiento
 // ─────────────────────────────────────────────
+// Codigos temporales que un representante entrega en persona para recuperar
+// una cuenta sin depender de correo/SMS. Se guarda solo el hash del codigo.
+export const passwordResetCodes = pgTable('password_reset_codes', {
+  id:              uuid('id').defaultRandom().primaryKey(),
+  userId:          text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  perfilId:        uuid('perfil_id').notNull().references(() => perfilesResidente.id, { onDelete: 'cascade' }),
+  representanteId: text('representante_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  codeHash:        text('code_hash').notNull(),
+  attempts:        integer('attempts').notNull().default(0),
+  expiresAt:       timestamp('expires_at').notNull(),
+  usedAt:          timestamp('used_at'),
+  createdAt:       timestamp('created_at').notNull().defaultNow(),
+}, (t) => [
+  index('idx_password_reset_codes_user_active')
+    .on(t.userId, t.expiresAt)
+    .where(sql`${t.usedAt} IS NULL`),
+  index('idx_password_reset_codes_representante').on(t.representanteId, t.createdAt),
+]);
 export const circuitos = pgTable('circuitos', {
   id:                     uuid('id').defaultRandom().primaryKey(),
   nombre:                 text('nombre').notNull(),
@@ -118,6 +136,11 @@ export const perfilesResidente = pgTable('perfiles_residente', {
   creadoEn:     timestamp('creado_en').defaultNow(),
 }, (t) => [
   // Dashboard: listar residentes por circuito; filtrar pendientes de corte/reconexión
+  // Defensa final ante altas simultaneas de la misma vivienda.
+  uniqueIndex('uq_perfiles_residente_ubicacion')
+    .on(t.circuitoId, t.edificio, t.departamento),
+  check('chk_perfiles_edificio_canonico', sql`${t.edificio} ~ '^[1-9][0-9]{0,5}$'`),
+  check('chk_perfiles_departamento_canonico', sql`${t.departamento} ~ '^[1-9][0-9]{0,5}[A-Z]?$'`),
   index('idx_perfiles_circuito_estado').on(t.circuitoId, t.estadoAgua),
 ]);
 
@@ -163,6 +186,10 @@ export const pagos = pgTable('pagos', {
   // Ordenamiento cronológico en listados admin.
   index('idx_pagos_creado_en').on(t.creadoEn),
 
+  // Idempotencia y conciliacion de lotes de Mercado Pago (un paymentId puede
+  // cubrir varios meses del mismo residente).
+  index('idx_pagos_mp_payment_id').on(t.mercadoPagoPaymentId),
+
   // Cron limpiar-pendientes: WHERE estado='pendiente' AND creado_en < X
   // El índice parcial evita full-scan de toda la tabla cada madrugada.
   index('idx_pagos_pendiente_creado')
@@ -185,7 +212,9 @@ export const cortes = pgTable('cortes', {
   reconectadoPor:  text('reconectado_por').references(() => user.id),
   updatedAt:       timestamp('updated_at').notNull().defaultNow(),
 }, (t) => [
-  index('idx_cortes_perfil_activo').on(t.perfilId, t.activo),
+  uniqueIndex('uq_cortes_perfil_activo')
+    .on(t.perfilId)
+    .where(sql`${t.activo} = true`),
 ]);
 
 export const tickets = pgTable('tickets', {
@@ -255,17 +284,62 @@ export const notificaciones = pgTable('notificaciones', {
   id:        uuid('id').defaultRandom().primaryKey(),
   userId:    text('user_id').references(() => user.id, { onDelete: 'set null' }),
   perfilId:  uuid('perfil_id').references(() => perfilesResidente.id, { onDelete: 'cascade' }),
+  dedupeKey: text('dedupe_key'),
   canal:     text('canal').notNull(),
   tipo:      text('tipo').notNull(),
   destino:   text('destino').notNull(),
   mensaje:   text('mensaje').notNull(),
   estado:    estadoNotificacionEnum('estado').notNull().default('pendiente'),
   error:     text('error'),
+  expiresAt: timestamp('expires_at'),
   enviadoEn: timestamp('enviado_en'),
   creadoEn:  timestamp('creado_en').notNull().defaultNow(),
 }, (t) => [
+  uniqueIndex('uq_notificaciones_dedupe_key').on(t.dedupeKey),
   index('idx_notificaciones_estado').on(t.estado),
   index('idx_notificaciones_user').on(t.userId),
+  index('idx_notificaciones_push_ready')
+    .on(t.creadoEn)
+    .where(sql`${t.estado} = 'pendiente' AND ${t.canal} = 'push'`),
+]);
+
+// Una suscripcion pertenece a un navegador/dispositivo, no a una vivienda.
+// El endpoint es un secreto de capacidad: nunca se expone en reportes o bitacoras.
+export const pushSubscriptions = pgTable('push_subscriptions', {
+  id:             uuid('id').defaultRandom().primaryKey(),
+  userId:         text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  endpointHash:   text('endpoint_hash').notNull(),
+  endpoint:       text('endpoint').notNull(),
+  p256dh:         text('p256dh').notNull(),
+  auth:           text('auth').notNull(),
+  expirationTime: timestamp('expiration_time'),
+  userAgent:      text('user_agent'),
+  createdAt:      timestamp('created_at').notNull().defaultNow(),
+  updatedAt:      timestamp('updated_at').notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('uq_push_subscriptions_endpoint_hash').on(t.endpointHash),
+  index('idx_push_subscriptions_user').on(t.userId),
+]);
+
+// Estado independiente por dispositivo: si uno falla, los que ya recibieron el
+// aviso no vuelven a recibirlo durante el reintento.
+export const pushDeliveries = pgTable('push_deliveries', {
+  id:             uuid('id').defaultRandom().primaryKey(),
+  notificationId: uuid('notification_id').notNull().references(() => notificaciones.id, { onDelete: 'cascade' }),
+  subscriptionId: uuid('subscription_id').references(() => pushSubscriptions.id, { onDelete: 'set null' }),
+  estado:         estadoNotificacionEnum('estado').notNull().default('pendiente'),
+  attempts:       integer('attempts').notNull().default(0),
+  nextAttemptAt:  timestamp('next_attempt_at').notNull().defaultNow(),
+  lockedAt:       timestamp('locked_at'),
+  lastError:      text('last_error'),
+  sentAt:         timestamp('sent_at'),
+  createdAt:      timestamp('created_at').notNull().defaultNow(),
+  updatedAt:      timestamp('updated_at').notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('uq_push_deliveries_notification_subscription').on(t.notificationId, t.subscriptionId),
+  index('idx_push_deliveries_ready').on(t.estado, t.nextAttemptAt),
+  index('idx_push_deliveries_notification').on(t.notificationId),
+  index('idx_push_deliveries_subscription').on(t.subscriptionId),
 ]);
 
 export const ingresosAdicionales = pgTable('ingresos_adicionales', {
@@ -305,6 +379,7 @@ export const userRelations = relations(user, ({ one, many }) => ({
     fields: [user.id], references: [perfilesResidente.userId],
   }),
   circuitoRepresentado: many(circuitos),
+  pushSubscriptions: many(pushSubscriptions),
 }));
 
 export const ingresosAdicionalesRelations = relations(ingresosAdicionales, ({ one }) => ({
@@ -382,5 +457,36 @@ export const ticketsRelations = relations(tickets, ({ one }) => ({
   pago: one(pagos, {
     fields: [tickets.pagoId],
     references: [pagos.id],
+  }),
+}));
+
+export const notificacionesRelations = relations(notificaciones, ({ one, many }) => ({
+  usuario: one(user, {
+    fields: [notificaciones.userId],
+    references: [user.id],
+  }),
+  perfil: one(perfilesResidente, {
+    fields: [notificaciones.perfilId],
+    references: [perfilesResidente.id],
+  }),
+  entregasPush: many(pushDeliveries),
+}));
+
+export const pushSubscriptionsRelations = relations(pushSubscriptions, ({ one, many }) => ({
+  usuario: one(user, {
+    fields: [pushSubscriptions.userId],
+    references: [user.id],
+  }),
+  entregas: many(pushDeliveries),
+}));
+
+export const pushDeliveriesRelations = relations(pushDeliveries, ({ one }) => ({
+  notificacion: one(notificaciones, {
+    fields: [pushDeliveries.notificationId],
+    references: [notificaciones.id],
+  }),
+  suscripcion: one(pushSubscriptions, {
+    fields: [pushDeliveries.subscriptionId],
+    references: [pushSubscriptions.id],
   }),
 }));

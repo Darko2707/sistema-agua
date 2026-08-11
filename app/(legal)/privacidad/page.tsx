@@ -1,4 +1,8 @@
+import type { Metadata } from 'next';
+
 import { LegalPage, legalStyles as s } from '../legal-styles';
+
+export const metadata: Metadata = { title: 'Política de privacidad' };
 
 export default function PrivacidadPage() {
   return (
@@ -24,6 +28,11 @@ export default function PrivacidadPage() {
         Conservamos la informacion necesaria para comprobacion administrativa y cumplimiento legal. Aplicamos
         controles de acceso por rol, sesiones seguras, cifrado de tokens sensibles y limitacion de intentos en
         endpoints criticos.
+      </p>
+      <h2 style={s.h2}>Notificaciones push</h2>
+      <p style={s.p}>
+        Si activas los avisos, guardamos la suscripción técnica de ese navegador o dispositivo para enviarte
+        confirmaciones de pago y avisos del servicio. Puedes desactivarla desde el panel de residente.
       </p>
       <h2 style={s.h2}>Derechos</h2>
       <p style={s.p}>

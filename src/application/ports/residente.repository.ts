@@ -20,10 +20,13 @@ export type CircuitoRef = {
   nombre: string;
   montoMensual: string;
   montoReconexion: string;
-  mercadoPagoAccessToken: string | null;
-  mercadoPagoCollectorId: string | null;
   representanteId: string | null;
   activo: boolean;
+};
+
+export type CircuitoPaymentConfigRef = CircuitoRef & {
+  mercadoPagoAccessToken: string | null;
+  mercadoPagoCollectorId: string | null;
 };
 
 export type UsuarioRef = {

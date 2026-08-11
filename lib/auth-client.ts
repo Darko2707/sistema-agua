@@ -20,12 +20,18 @@ export function useSession() {
 
   useEffect(() => {
     let active = true;
-    authClient.getSession().then((res) => {
-      if (active) {
-        setData((res?.data as SessionData) ?? null);
-        setIsPending(false);
-      }
-    });
+
+    void authClient.getSession()
+      .then((res) => {
+        if (active) setData((res?.data as SessionData) ?? null);
+      })
+      .catch(() => {
+        if (active) setData(null);
+      })
+      .finally(() => {
+        if (active) setIsPending(false);
+      });
+
     return () => { active = false; };
   }, []);
 
@@ -34,7 +40,6 @@ export function useSession() {
 
 export const signIn = authClient.signIn;
 export const signOut = authClient.signOut;
-export const resetPassword = authClient.resetPassword;
 
 export { authClient };
 export default authClient;

@@ -123,12 +123,21 @@ export function RepresentanteDashboard() {
   const [guardandoPersonal, setGuardandoPersonal] = useState(false);
   const [errorPersonal,     setErrorPersonal]     = useState('');
   const [quitando,          setQuitando]          = useState<string | null>(null);
+  const [generandoCodigo,   setGenerandoCodigo]   = useState<string | null>(null);
+  const [codigoRecuperacion, setCodigoRecuperacion] = useState<{
+    code: string;
+    expiresAt: string | Date;
+    nombre: string;
+    email: string;
+    vivienda: string;
+  } | null>(null);
 
   const circuitoQuery   = useCircuitoActual();
   const resumenQuery    = trpcReact.pagos.resumenMes.useQuery();
   const residentesQuery = trpcReact.usuarios.listarResidentes.useQuery();
   const personalQuery   = trpcReact.usuarios.listarPersonal.useQuery();
   const cambiarRolMut   = trpcReact.usuarios.cambiarRolEnCircuito.useMutation();
+  const generarCodigoMut = trpcReact.usuarios.generarCodigoRecuperacion.useMutation();
 
   const circuito   = circuitoQuery.data;
   const resumen    = resumenQuery.data;
@@ -176,6 +185,25 @@ export function RepresentanteDashboard() {
       mostrar(e instanceof Error ? e.message : 'No se pudo remover el rol', 'error');
     } finally {
       setQuitando(null);
+    }
+  }
+
+  async function generarCodigoRecuperacion(perfilId: string) {
+    setGenerandoCodigo(perfilId);
+    try {
+      const result = await generarCodigoMut.mutateAsync({ perfilId });
+      setCodigoRecuperacion({
+        code:      result.code,
+        expiresAt: result.expiresAt,
+        nombre:    result.residente.nombre,
+        email:     result.residente.email,
+        vivienda:  `Edif. ${result.residente.edificio} · Depto ${result.residente.departamento}`,
+      });
+      mostrar('Código de recuperación generado');
+    } catch (e: unknown) {
+      mostrar(e instanceof Error ? e.message : 'No se pudo generar el código', 'error');
+    } finally {
+      setGenerandoCodigo(null);
     }
   }
 
@@ -460,6 +488,18 @@ export function RepresentanteDashboard() {
                         Moroso
                       </span>
                     )}
+                    {r.usuario?.role === 'residente' && (
+                      <Btn
+                        onClick={() => generarCodigoRecuperacion(r.id)}
+                        disabled={generandoCodigo === r.id}
+                        outline
+                      >
+                        {generandoCodigo === r.id ? <Spin color={C.bgHeader} /> : (
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                        )}
+                        Código
+                      </Btn>
+                    )}
                   </div>
                 </div>
               ))
@@ -467,6 +507,35 @@ export function RepresentanteDashboard() {
           </div>
         )}
       </div>
+
+      {codigoRecuperacion && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 55, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,.45)', padding: 16 }}
+          onClick={() => setCodigoRecuperacion(null)}>
+          <div role="dialog" aria-modal="true" aria-labelledby="codigo-recuperacion-title" style={{ background: '#fff', borderRadius: 20, padding: 28, width: '100%', maxWidth: 440, boxShadow: '0 24px 64px rgba(0,0,0,.2)' }}
+            onClick={e => e.stopPropagation()}>
+            <div id="codigo-recuperacion-title" style={{ fontFamily: FS, fontSize: 17, fontWeight: 800, color: C.textMain }}>Código de recuperación</div>
+            <p style={{ fontSize: 12.5, color: C.textMuted, marginTop: 6, lineHeight: 1.5 }}>
+              Entrégalo solo al residente correcto. Caduca en 10 minutos y se invalida al primer uso.
+            </p>
+            <div style={{ marginTop: 16, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16, padding: '16px 18px' }}>
+              <div style={{ fontSize: 12, color: C.textMuted, fontWeight: 700 }}>{codigoRecuperacion.nombre}</div>
+              <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2 }}>{codigoRecuperacion.email} · {codigoRecuperacion.vivienda}</div>
+              <div style={{ fontFamily: FS, fontSize: 34, letterSpacing: '.18em', fontWeight: 900, color: C.bgHeader, marginTop: 12, textAlign: 'center' }}>
+                {codigoRecuperacion.code.slice(0, 3)} {codigoRecuperacion.code.slice(3)}
+              </div>
+              <div style={{ fontSize: 12, color: C.danger, marginTop: 10, textAlign: 'center', fontWeight: 700 }}>
+                Vence a las {new Date(codigoRecuperacion.expiresAt).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}
+              </div>
+            </div>
+            <p style={{ fontSize: 12, color: C.textMuted, marginTop: 12, lineHeight: 1.45 }}>
+              El residente entra a “¿Olvidaste tu contraseña?” en el inicio de sesión y captura este código con su correo.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+              <Btn onClick={() => setCodigoRecuperacion(null)}>Entendido</Btn>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Modal: Añadir personal ── */}
       {modalPersonal && (

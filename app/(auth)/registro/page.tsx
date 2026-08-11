@@ -1,34 +1,47 @@
-﻿'use client';
+'use client';
 
-import { useState } from 'react';
-import { useForm } from 'react-hook-form';
+import { useEffect, useState } from 'react';
+import { useForm, useWatch } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { authClient } from '@/lib/auth-client';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { trpc } from '@/lib/trpc-client';
+import { homePathForRole } from '@/lib/role-home';
 import { useCircuitos } from '@/hooks/useCircuito';
+import {
+  esNombrePersonaValido,
+  normalizarNombrePersona,
+  NOMBRE_PERSONA_ERROR,
+} from '@/src/domain/usuarios/nombre-persona';
 import { AuthCard, C, inputBase, selectBase, labelBase, buttonGold, linkButton, FM } from '../auth-styles';
 
 const cuentaSchema = z.object({
-  nombre: z.string().min(2, 'Ingresa tu nombre completo'),
-  email: z.string().email('Correo electrónico inválido'),
+  nombre: z.string().trim()
+    .min(2, 'Ingresa tu nombre completo')
+    .max(120, 'El nombre es demasiado largo')
+    .refine(esNombrePersonaValido, NOMBRE_PERSONA_ERROR),
+  email: z.string().trim().email('Correo electrónico inválido'),
   password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres'),
   aceptaLegales: z.literal(true, { error: 'Debes aceptar los terminos y condiciones para continuar' }),
 });
 type CuentaForm = z.infer<typeof cuentaSchema>;
 
 const perfilSchema = z.object({
-  telefono: z.string().min(10, 'Mínimo 10 dígitos').regex(/^\d+$/, 'Solo números'),
+  telefono: z.string().trim().min(10, 'Mínimo 10 dígitos').max(15, 'Máximo 15 dígitos').regex(/^\d+$/, 'Solo números'),
   sexo: z.enum(['masculino', 'femenino', 'otro']),
   tenencia: z.enum(['propietario', 'inquilino']),
-  circuitoId: z.string().min(1, 'Selecciona tu circuito'),
-  edificio: z.string().min(1, 'Ingresa el número de edificio'),
-  deptoNumero: z.string().min(1, 'Ingresa el número de departamento').regex(/^\d+$/, 'Solo dígitos'),
-  deptoLetra: z.string().regex(/^[a-zA-Z]?$/, 'Solo una letra (opcional)').optional(),
-  nombrePropietario: z.string().optional(),
-  telefonoPropietario: z.string().optional(),
+  circuitoId: z.string().trim().min(1, 'Selecciona tu circuito'),
+  edificio: z.string().trim()
+    .regex(/^\d{1,6}$/, 'Usa un número de hasta 6 dígitos')
+    .refine(value => /[1-9]/.test(value), 'Debe ser mayor que cero'),
+  deptoNumero: z.string().trim()
+    .regex(/^\d{1,6}$/, 'Usa un número de hasta 6 dígitos')
+    .refine(value => /[1-9]/.test(value), 'Debe ser mayor que cero'),
+  deptoLetra: z.string().trim().regex(/^[a-zA-Z]?$/, 'Solo una letra (opcional)').optional(),
+  nombrePropietario: z.string().trim().max(120, 'Máximo 120 caracteres').optional(),
+  telefonoPropietario: z.string().trim().max(15, 'Máximo 15 dígitos').regex(/^\d*$/, 'Solo números').optional(),
 }).superRefine((data, ctx) => {
   if (data.tenencia === 'inquilino') {
     if (!data.nombrePropietario || data.nombrePropietario.trim().length < 2) {
@@ -37,9 +50,18 @@ const perfilSchema = z.object({
     if (!data.telefonoPropietario || data.telefonoPropietario.trim().length < 10) {
       ctx.addIssue({ code: 'custom', message: 'Teléfono del propietario (mínimo 10 dígitos)', path: ['telefonoPropietario'] });
     }
+    if (data.nombrePropietario && !esNombrePersonaValido(data.nombrePropietario)) {
+      ctx.addIssue({ code: 'custom', message: NOMBRE_PERSONA_ERROR, path: ['nombrePropietario'] });
+    }
   }
 });
 type PerfilForm = z.infer<typeof perfilSchema>;
+
+const LEGAL_VERSION = '2026-08-05';
+
+function normalizarNumero(value: string): string {
+  return value.trim().replace(/^0+(?=\d)/, '');
+}
 
 function FieldError({ id, message }: { id: string; message?: string }) {
   if (!message) return null;
@@ -52,11 +74,10 @@ function FieldError({ id, message }: { id: string; message?: string }) {
 
 export default function RegistroPage() {
   const router = useRouter();
-  const [paso, setPaso] = useState<1 | 2 | 3>(1);
+  const [paso, setPaso] = useState<1 | 2>(1);
   const [serverError, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [codigoWhatsApp, setCodigoWhatsApp] = useState('');
-  const [devCode, setDevCode] = useState('');
+  const [checkingSession, setCheckingSession] = useState(true);
 
   const circuitosQuery = useCircuitos();
   const circuitos = circuitosQuery.data ?? [];
@@ -68,56 +89,128 @@ export default function RegistroPage() {
     defaultValues: { sexo: 'masculino', tenencia: 'propietario', deptoLetra: '' },
   });
 
-  const tenencia = perfil.watch('tenencia');
+  const tenencia = useWatch({ control: perfil.control, name: 'tenencia' });
   const esInquilino = tenencia === 'inquilino';
-  const deptoNumero = perfil.watch('deptoNumero') ?? '';
-  const deptoLetra = perfil.watch('deptoLetra') ?? '';
+  const deptoNumero = useWatch({ control: perfil.control, name: 'deptoNumero' }) ?? '';
+  const deptoLetra = useWatch({ control: perfil.control, name: 'deptoLetra' }) ?? '';
+
+  useEffect(() => {
+    let active = true;
+
+    async function restaurarRegistro() {
+      try {
+        const sessionResult = await authClient.getSession();
+        if (!active || !sessionResult.data?.user) return;
+
+        const role = (sessionResult.data.user as { role?: string }).role ?? 'residente';
+        if (role !== 'residente') {
+          router.replace(homePathForRole(role));
+          return;
+        }
+
+        // La cuenta ya existe: nunca se vuelve a intentar el alta del correo.
+        setPaso(2);
+        const perfilExistente = await trpc.usuarios.miPerfil.query();
+        if (!active) return;
+        if (perfilExistente) router.replace('/residente');
+      } catch (err: unknown) {
+        if (active) {
+          setError(err instanceof Error
+            ? err.message
+            : 'No pudimos recuperar tu registro. Intenta nuevamente.');
+        }
+      } finally {
+        if (active) setCheckingSession(false);
+      }
+    }
+
+    void restaurarRegistro();
+    return () => { active = false; };
+  }, [router]);
+
+  async function aceptarLegales() {
+    await trpc.operacion.aceptarLegales.mutate({
+      privacidadVersion: LEGAL_VERSION,
+      cookiesVersion: LEGAL_VERSION,
+      terminosVersion: LEGAL_VERSION,
+    });
+  }
 
   async function handleCrearCuenta(data: CuentaForm) {
     setError('');
-    void data;
-    setPaso(2);
+    setSubmitting(true);
+    try {
+      // También cubre el caso excepcional en que otra pestaña inició sesión
+      // después de la comprobación inicial.
+      const currentSession = await authClient.getSession();
+      if (currentSession.data?.user) {
+        const role = (currentSession.data.user as { role?: string }).role ?? 'residente';
+        if (role !== 'residente') {
+          router.replace(homePathForRole(role));
+          return;
+        }
+        const perfilExistente = await trpc.usuarios.miPerfil.query();
+        if (perfilExistente) {
+          router.replace('/residente');
+          return;
+        }
+        await aceptarLegales();
+        setPaso(2);
+        return;
+      }
+
+      const email = data.email.trim().toLowerCase();
+      const password = data.password;
+      const { error: signUpError } = await authClient.signUp.email({
+        email,
+        password,
+        name: normalizarNombrePersona(data.nombre),
+      });
+      if (signUpError) {
+        throw new Error(signUpError.message ?? 'No se pudo crear la cuenta. El correo podría estar registrado.');
+      }
+
+      let sessionResult = await authClient.getSession();
+      if (!sessionResult.data?.user) {
+        const { error: signInError } = await authClient.signIn.email({ email, password });
+        if (signInError) {
+          throw new Error('La cuenta fue creada, pero no se pudo iniciar sesión automáticamente. Inicia sesión para continuar.');
+        }
+        sessionResult = await authClient.getSession();
+      }
+      if (!sessionResult.data?.user) {
+        throw new Error('La cuenta fue creada, pero no pudimos confirmar la sesión. Inicia sesión para continuar.');
+      }
+
+      await aceptarLegales();
+      setPaso(2);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Error desconocido');
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   async function handleCompletarPerfil(data: PerfilForm) {
     setError('');
     setSubmitting(true);
-    const cuentaData = cuenta.getValues();
-    const departamento = `${data.deptoNumero.trim()}${(data.deptoLetra ?? '').trim()}`;
+    const departamento = `${normalizarNumero(data.deptoNumero)}${(data.deptoLetra ?? '').trim().toUpperCase()}`;
     try {
-      const { error: signUpError } = await authClient.signUp.email({
-        email: cuentaData.email,
-        password: cuentaData.password,
-        name: cuentaData.nombre,
-      });
-      if (signUpError) {
-        setPaso(1);
-        throw new Error(signUpError.message ?? 'No se pudo crear la cuenta. El correo podría estar registrado.');
-      }
-      const { error: signInError } = await authClient.signIn.email({
-        email: cuentaData.email,
-        password: cuentaData.password,
-      });
-      if (signInError) throw new Error('Cuenta creada, pero no se pudo iniciar sesión automáticamente.');
-      await trpc.operacion.aceptarLegales.mutate({
-        privacidadVersion: '2026-08-05',
-        cookiesVersion: '2026-08-05',
-        terminosVersion: '2026-08-05',
-      });
       await trpc.usuarios.crearPerfil.mutate({
-        telefono: data.telefono,
+        telefono: data.telefono.trim(),
         sexo: data.sexo,
         tenencia: data.tenencia,
-        circuitoId: data.circuitoId,
-        edificio: data.edificio,
+        circuitoId: data.circuitoId.trim(),
+        edificio: normalizarNumero(data.edificio),
         departamento,
-        ...(esInquilino && {
-          nombrePropietario: data.nombrePropietario?.trim(),
+        ...(data.tenencia === 'inquilino' && {
+          nombrePropietario: data.nombrePropietario
+            ? normalizarNombrePersona(data.nombrePropietario)
+            : undefined,
           telefonoPropietario: data.telefonoPropietario?.trim(),
         }),
       });
-      await enviarCodigoWhatsApp(data.telefono);
-      setPaso(3);
+      router.replace('/residente');
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Error desconocido');
     } finally {
@@ -125,79 +218,86 @@ export default function RegistroPage() {
     }
   }
 
-  async function enviarCodigoWhatsApp(telefono: string) {
-    const res = await fetch('/api/auth/whatsapp/send', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ telefono }),
-    });
-    const json = await res.json().catch(() => ({})) as { error?: string; devCode?: string };
-    if (!res.ok) throw new Error(json.error ?? 'No se pudo enviar el codigo por WhatsApp');
-    setDevCode(json.devCode ?? '');
-  }
-
-  async function handleVerificarWhatsApp(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleUsarOtraCuenta() {
     setError('');
     setSubmitting(true);
-    const data = perfil.getValues();
     try {
-      const res = await fetch('/api/auth/whatsapp/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ telefono: data.telefono, code: codigoWhatsApp }),
-      });
-      const json = await res.json().catch(() => ({})) as { error?: string };
-      if (!res.ok) throw new Error(json.error ?? 'Codigo incorrecto');
-
-      router.push('/residente');
+      const { error: signOutError } = await authClient.signOut();
+      if (signOutError) throw new Error(signOutError.message ?? 'No se pudo cerrar la sesión.');
+      cuenta.reset();
+      perfil.reset({ sexo: 'masculino', tenencia: 'propietario', deptoLetra: '' });
+      setPaso(1);
+      router.refresh();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error desconocido');
+      setError(err instanceof Error ? err.message : 'No se pudo cerrar la sesión.');
     } finally {
       setSubmitting(false);
     }
   }
 
-  async function handleReenviarCodigo() {
-    setError('');
-    setSubmitting(true);
-    try {
-      await enviarCodigoWhatsApp(perfil.getValues().telefono);
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'No se pudo reenviar el codigo');
-    } finally {
-      setSubmitting(false);
-    }
+  if (checkingSession) {
+    return (
+      <AuthCard title="Preparando tu registro" subtitle="Estamos comprobando si ya comenzaste el proceso">
+        <div role="status" aria-live="polite" style={{ padding: '24px 0', textAlign: 'center', color: C.textWarm, fontWeight: 700 }}>
+          Comprobando sesión...
+        </div>
+      </AuthCard>
+    );
   }
 
   return (
     <AuthCard
-      title={paso === 1 ? 'Crear cuenta' : paso === 2 ? 'Completa tu perfil' : 'Verifica tu WhatsApp'}
-      subtitle={`Paso ${paso} de 3`}
-      maxWidth={paso === 1 || paso === 3 ? 420 : 620}
-      footer={(
+      title={paso === 1 ? 'Crear cuenta' : 'Completa tu perfil'}
+      subtitle={`Paso ${paso} de 2`}
+      maxWidth={paso === 1 ? 420 : 620}
+      footer={paso === 1 ? (
         <>
           ¿Ya tienes cuenta?{' '}
-          <button type="button" className="auth-link" style={linkButton} onClick={() => router.push('/login')}>
+          <Link className="auth-link" style={linkButton} href="/login">
             Inicia sesión
-          </button>
+          </Link>
         </>
-      )}
+      ) : undefined}
     >
       <div style={{ height: 5, background: '#EFE6D2', borderRadius: 999, overflow: 'hidden', margin: '0 0 20px' }}>
-        <div style={{ height: '100%', width: paso === 1 ? '33.33%' : paso === 2 ? '66.66%' : '100%', background: C.greenDk, borderRadius: 999, transition: 'width .35s ease' }} />
+        <div style={{ height: '100%', width: paso === 1 ? '50%' : '100%', background: C.greenDk, borderRadius: 999, transition: 'width .35s ease' }} />
       </div>
 
       {paso === 1 ? (
         <form onSubmit={cuenta.handleSubmit(handleCrearCuenta)} style={{ display: 'flex', flexDirection: 'column', gap: 16 }} noValidate aria-label="Formulario de creación de cuenta">
           <div>
             <label htmlFor="nombre" style={labelBase}>Nombre completo</label>
-            <input id="nombre" type="text" className="auth-inp" placeholder="Juan Pérez" autoComplete="name" aria-required="true" aria-describedby={cuenta.formState.errors.nombre ? 'nombre-err' : undefined} aria-invalid={!!cuenta.formState.errors.nombre} style={inputBase} {...cuenta.register('nombre')} />
+            <input
+              id="nombre"
+              type="text"
+              maxLength={120}
+              className="auth-inp"
+              placeholder="Juan Pérez"
+              autoComplete="name"
+              autoCapitalize="words"
+              aria-required="true"
+              aria-describedby={cuenta.formState.errors.nombre ? 'nombre-hint nombre-err' : 'nombre-hint'}
+              aria-invalid={!!cuenta.formState.errors.nombre}
+              style={{ ...inputBase, textTransform: 'capitalize' }}
+              {...cuenta.register('nombre', {
+                onBlur: (event) => {
+                  const value = String(event.target.value);
+                  if (esNombrePersonaValido(value)) {
+                    cuenta.setValue('nombre', normalizarNombrePersona(value), {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    });
+                  }
+                },
+              })}
+            />
+            <p id="nombre-hint" style={{ fontSize: 12, color: C.textWarm, marginTop: 4 }}>Sólo letras y espacios. Cada nombre o apellido se guardará con inicial mayúscula.</p>
             <FieldError id="nombre-err" message={cuenta.formState.errors.nombre?.message} />
           </div>
           <div>
             <label htmlFor="reg-email" style={labelBase}>Correo electrónico</label>
-            <input id="reg-email" type="email" className="auth-inp" placeholder="tu@correo.com" autoComplete="email" aria-required="true" aria-describedby={cuenta.formState.errors.email ? 'email-err' : undefined} aria-invalid={!!cuenta.formState.errors.email} style={inputBase} {...cuenta.register('email')} />
+            <input id="reg-email" type="email" className="auth-inp" placeholder="tu@correo.com" autoComplete="email" aria-required="true" aria-describedby={cuenta.formState.errors.email ? 'email-hint email-err' : 'email-hint'} aria-invalid={!!cuenta.formState.errors.email} style={inputBase} {...cuenta.register('email')} />
+            <p id="email-hint" style={{ fontSize: 12, color: C.textWarm, marginTop: 4 }}>Se usa para iniciar sesión; no enviaremos un código de confirmación.</p>
             <FieldError id="email-err" message={cuenta.formState.errors.email?.message} />
           </div>
           <div>
@@ -206,30 +306,34 @@ export default function RegistroPage() {
             <p id="pwd-hint" style={{ fontSize: 12, color: C.textWarm, marginTop: 4 }}>Mínimo 8 caracteres.</p>
             <FieldError id="pwd-err" message={cuenta.formState.errors.password?.message} />
           </div>
-          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 12.5, color: C.textWarm, lineHeight: 1.45, fontWeight: 700 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 12.5, color: C.textWarm, lineHeight: 1.45, fontWeight: 700 }}>
             <input
               id="acepta-legales"
               type="checkbox"
               aria-required="true"
               aria-invalid={!!cuenta.formState.errors.aceptaLegales}
-              aria-describedby={cuenta.formState.errors.aceptaLegales ? 'legales-err' : undefined}
+              aria-describedby={cuenta.formState.errors.aceptaLegales ? 'legales-text legales-err' : 'legales-text'}
               style={{ marginTop: 2, accentColor: C.greenDk }}
               {...cuenta.register('aceptaLegales')}
             />
-            <span>
-              Acepto los <Link className="auth-link" style={{ ...linkButton, fontSize: 12.5 }} href="/terminos">terminos y condiciones</Link>, la <Link className="auth-link" style={{ ...linkButton, fontSize: 12.5 }} href="/privacidad">privacidad</Link> y el uso de <Link className="auth-link" style={{ ...linkButton, fontSize: 12.5 }} href="/cookies">cookies</Link>.
+            <span id="legales-text">
+              <label htmlFor="acepta-legales">He leído y acepto </label>
+              los <Link className="auth-link" style={{ ...linkButton, fontSize: 12.5 }} href="/terminos">términos y condiciones</Link>, la <Link className="auth-link" style={{ ...linkButton, fontSize: 12.5 }} href="/privacidad">política de privacidad</Link> y la <Link className="auth-link" style={{ ...linkButton, fontSize: 12.5 }} href="/cookies">política de cookies</Link>.
             </span>
-          </label>
+          </div>
           <FieldError id="legales-err" message={cuenta.formState.errors.aceptaLegales?.message} />
           {serverError && <div role="alert" aria-live="assertive" style={{ background: C.dangerBg, border: '1px solid #F3BFBF', borderRadius: 14, padding: '10px 14px', fontSize: 13, color: C.danger, fontWeight: 700 }}>{serverError}</div>}
-          <button className="auth-primary" type="submit" style={{ ...buttonGold, marginTop: 2 }}>Continuar</button>
+          <button className="auth-primary" type="submit" disabled={submitting} aria-busy={submitting} style={{ ...buttonGold, opacity: submitting ? 0.75 : 1, marginTop: 2 }}>
+            {submitting ? 'Creando cuenta...' : 'Continuar'}
+          </button>
         </form>
-      ) : paso === 2 ? (
+      ) : (
         <form onSubmit={perfil.handleSubmit(handleCompletarPerfil)} style={{ display: 'flex', flexDirection: 'column', gap: 16 }} noValidate aria-label="Formulario de perfil de residente">
           <div className="auth-grid-2">
             <div>
               <label htmlFor="telefono" style={labelBase}>Teléfono</label>
-              <input id="telefono" type="tel" className="auth-inp" placeholder="2281234567" autoComplete="tel" aria-required="true" aria-describedby={perfil.formState.errors.telefono ? 'tel-err' : undefined} aria-invalid={!!perfil.formState.errors.telefono} style={inputBase} {...perfil.register('telefono')} />
+              <input id="telefono" type="tel" inputMode="numeric" maxLength={15} className="auth-inp" placeholder="2281234567" autoComplete="tel" aria-required="true" aria-describedby={perfil.formState.errors.telefono ? 'tel-hint tel-err' : 'tel-hint'} aria-invalid={!!perfil.formState.errors.telefono} style={inputBase} {...perfil.register('telefono')} />
+              <p id="tel-hint" style={{ fontSize: 12, color: C.textWarm, marginTop: 4 }}>Es un dato de contacto administrativo. No enviaremos códigos ni notificaciones automáticas a este número.</p>
               <FieldError id="tel-err" message={perfil.formState.errors.telefono?.message} />
             </div>
             <div>
@@ -251,10 +355,17 @@ export default function RegistroPage() {
             </div>
             <div>
               <label htmlFor="circuitoId" style={labelBase}>Circuito</label>
-              <select id="circuitoId" className="auth-sel" aria-required="true" aria-describedby={perfil.formState.errors.circuitoId ? 'circ-err' : undefined} aria-invalid={!!perfil.formState.errors.circuitoId} style={selectBase} {...perfil.register('circuitoId')}>
-                <option value="">Selecciona tu circuito</option>
+              <select id="circuitoId" className="auth-sel" disabled={circuitosQuery.isLoading || circuitosQuery.isError} aria-required="true" aria-describedby={perfil.formState.errors.circuitoId ? 'circ-status circ-err' : 'circ-status'} aria-invalid={!!perfil.formState.errors.circuitoId || circuitosQuery.isError} style={{ ...selectBase, opacity: circuitosQuery.isLoading || circuitosQuery.isError ? 0.7 : 1 }} {...perfil.register('circuitoId')}>
+                <option value="">{circuitosQuery.isLoading ? 'Cargando circuitos...' : 'Selecciona tu circuito'}</option>
                 {circuitos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
               </select>
+              <p id="circ-status" role={circuitosQuery.isError ? 'alert' : 'status'} style={{ fontSize: 12, color: circuitosQuery.isError ? C.danger : C.textWarm, marginTop: 4 }}>
+                {circuitosQuery.isError
+                  ? 'No pudimos cargar los circuitos. Recarga la página para intentar nuevamente.'
+                  : !circuitosQuery.isLoading && circuitos.length === 0
+                    ? 'No hay circuitos disponibles para registro.'
+                    : ''}
+              </p>
               <FieldError id="circ-err" message={perfil.formState.errors.circuitoId?.message} />
             </div>
           </div>
@@ -264,12 +375,12 @@ export default function RegistroPage() {
               <div className="auth-grid-2">
                 <div>
                   <label htmlFor="nombrePropietario" style={labelBase}>Nombre del propietario</label>
-                  <input id="nombrePropietario" type="text" className="auth-inp" placeholder="Nombre completo del dueño" aria-required="true" aria-describedby={perfil.formState.errors.nombrePropietario ? 'nprop-err' : undefined} aria-invalid={!!perfil.formState.errors.nombrePropietario} style={inputBase} {...perfil.register('nombrePropietario')} />
+                  <input id="nombrePropietario" type="text" maxLength={120} autoComplete="name" autoCapitalize="words" className="auth-inp" placeholder="Nombre completo del dueño" aria-required="true" aria-describedby={perfil.formState.errors.nombrePropietario ? 'nprop-err' : undefined} aria-invalid={!!perfil.formState.errors.nombrePropietario} style={{ ...inputBase, textTransform: 'capitalize' }} {...perfil.register('nombrePropietario', { onBlur: (event) => { const value = String(event.target.value); if (esNombrePersonaValido(value)) perfil.setValue('nombrePropietario', normalizarNombrePersona(value), { shouldDirty: true, shouldValidate: true }); } })} />
                   <FieldError id="nprop-err" message={perfil.formState.errors.nombrePropietario?.message} />
                 </div>
                 <div>
                   <label htmlFor="telefonoPropietario" style={labelBase}>Teléfono del propietario</label>
-                  <input id="telefonoPropietario" type="tel" className="auth-inp" placeholder="2281234567" aria-required="true" aria-describedby={perfil.formState.errors.telefonoPropietario ? 'tprop-err' : undefined} aria-invalid={!!perfil.formState.errors.telefonoPropietario} style={inputBase} {...perfil.register('telefonoPropietario')} />
+                  <input id="telefonoPropietario" type="tel" inputMode="numeric" maxLength={15} className="auth-inp" placeholder="2281234567" aria-required="true" aria-describedby={perfil.formState.errors.telefonoPropietario ? 'tprop-err' : undefined} aria-invalid={!!perfil.formState.errors.telefonoPropietario} style={inputBase} {...perfil.register('telefonoPropietario')} />
                   <FieldError id="tprop-err" message={perfil.formState.errors.telefonoPropietario?.message} />
                 </div>
               </div>
@@ -278,14 +389,14 @@ export default function RegistroPage() {
           <div className="auth-grid-2">
             <div>
               <label htmlFor="edificio" style={labelBase}>Edificio</label>
-              <input id="edificio" type="number" min="1" className="auth-inp" placeholder="8" aria-required="true" aria-describedby={perfil.formState.errors.edificio ? 'edif-err' : undefined} aria-invalid={!!perfil.formState.errors.edificio} style={inputBase} {...perfil.register('edificio')} />
+              <input id="edificio" type="text" inputMode="numeric" maxLength={6} className="auth-inp" placeholder="1" aria-required="true" aria-describedby={perfil.formState.errors.edificio ? 'edif-err' : undefined} aria-invalid={!!perfil.formState.errors.edificio} style={inputBase} {...perfil.register('edificio')} />
               <FieldError id="edif-err" message={perfil.formState.errors.edificio?.message} />
             </div>
             <div>
               <label htmlFor="deptoNumero" style={labelBase}>Departamento</label>
               <div style={{ display: 'flex', gap: 8 }}>
                 <div style={{ flex: 1 }}>
-                  <input id="deptoNumero" type="text" inputMode="numeric" className="auth-inp" placeholder="314" aria-required="true" aria-describedby="depto-preview depto-num-err" aria-invalid={!!perfil.formState.errors.deptoNumero} style={inputBase} {...perfil.register('deptoNumero')} />
+                  <input id="deptoNumero" type="text" inputMode="numeric" maxLength={6} className="auth-inp" placeholder="31" aria-required="true" aria-describedby="depto-preview depto-num-err" aria-invalid={!!perfil.formState.errors.deptoNumero} style={inputBase} {...perfil.register('deptoNumero')} />
                   <FieldError id="depto-num-err" message={perfil.formState.errors.deptoNumero?.message} />
                 </div>
                 <div style={{ width: 60 }}>
@@ -296,49 +407,14 @@ export default function RegistroPage() {
               <p id="depto-preview" style={{ fontSize: 12, color: C.textWarm, marginTop: 4 }}>Número + letra: <strong aria-live="polite">{deptoNumero || '___'}{deptoLetra}</strong></p>
             </div>
           </div>
+          <div role="note" style={{ borderRadius: 14, border: `1px solid ${C.amberBdr}`, background: C.amberBg, padding: '10px 14px', fontSize: 12.5, lineHeight: 1.45, color: C.amber, fontWeight: 700 }}>
+            Solo puede existir un registro por circuito, edificio y departamento. Verifica estos datos antes de finalizar.
+          </div>
           {serverError && <div role="alert" aria-live="assertive" style={{ background: C.dangerBg, border: '1px solid #F3BFBF', borderRadius: 14, padding: '10px 14px', fontSize: 13, color: C.danger, fontWeight: 700 }}>{serverError}</div>}
-          <button className="auth-primary" type="submit" disabled={submitting} aria-busy={submitting} style={{ ...buttonGold, opacity: submitting ? 0.75 : 1, marginTop: 2 }}>{submitting ? 'Guardando...' : 'Finalizar registro'}</button>
+          <button className="auth-primary" type="submit" disabled={submitting || circuitosQuery.isLoading || circuitosQuery.isError || circuitos.length === 0} aria-busy={submitting} style={{ ...buttonGold, opacity: submitting || circuitosQuery.isLoading || circuitosQuery.isError || circuitos.length === 0 ? 0.65 : 1, marginTop: 2 }}>{submitting ? 'Guardando...' : 'Finalizar registro'}</button>
           <div style={{ textAlign: 'center' }}>
-            <button type="button" className="auth-link" style={{ ...linkButton, color: '#C98A0E' }} onClick={() => setPaso(1)}>
-              ‹ Volver al paso anterior
-            </button>
-          </div>
-        </form>
-      ) : (
-        <form onSubmit={handleVerificarWhatsApp} style={{ display: 'flex', flexDirection: 'column', gap: 16 }} noValidate aria-label="Formulario de verificacion por WhatsApp">
-          <p style={{ margin: 0, fontSize: 13.5, color: C.textWarm, lineHeight: 1.45, fontWeight: 700 }}>
-            Enviamos un codigo de 6 digitos por WhatsApp al numero {perfil.getValues().telefono}.
-          </p>
-          <div>
-            <label htmlFor="codigo-whatsapp" style={labelBase}>Codigo de WhatsApp</label>
-            <input
-              id="codigo-whatsapp"
-              type="text"
-              inputMode="numeric"
-              maxLength={6}
-              className="auth-inp"
-              placeholder="123456"
-              autoComplete="one-time-code"
-              value={codigoWhatsApp}
-              onChange={e => setCodigoWhatsApp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              style={{ ...inputBase, textAlign: 'center', letterSpacing: 4, fontSize: 18 }}
-            />
-          </div>
-          {devCode && (
-            <div role="status" style={{ background: C.amberBg, border: `1px solid ${C.amberBdr}`, borderRadius: 14, padding: '10px 14px', fontSize: 13, color: C.amber, fontWeight: 800 }}>
-              Codigo de desarrollo: {devCode}
-            </div>
-          )}
-          {serverError && <div role="alert" aria-live="assertive" style={{ background: C.dangerBg, border: '1px solid #F3BFBF', borderRadius: 14, padding: '10px 14px', fontSize: 13, color: C.danger, fontWeight: 700 }}>{serverError}</div>}
-          <button className="auth-primary" type="submit" disabled={submitting || codigoWhatsApp.length !== 6} aria-busy={submitting} style={{ ...buttonGold, opacity: submitting || codigoWhatsApp.length !== 6 ? 0.75 : 1, marginTop: 2 }}>
-            {submitting ? 'Verificando...' : 'Verificar y finalizar'}
-          </button>
-          <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: '8px 14px' }}>
-            <button type="button" className="auth-link" style={{ ...linkButton, color: '#C98A0E' }} onClick={() => setPaso(2)}>
-              Volver al perfil
-            </button>
-            <button type="button" className="auth-link" style={linkButton} disabled={submitting} onClick={handleReenviarCodigo}>
-              Reenviar codigo
+            <button type="button" className="auth-link" disabled={submitting} style={{ ...linkButton, color: '#C98A0E', opacity: submitting ? 0.65 : 1 }} onClick={handleUsarOtraCuenta}>
+              Cerrar sesión y usar otra cuenta
             </button>
           </div>
         </form>
@@ -346,5 +422,3 @@ export default function RegistroPage() {
     </AuthCard>
   );
 }
-
-

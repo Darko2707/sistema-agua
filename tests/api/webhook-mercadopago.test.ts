@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // Variables with "mock" prefix can be referenced inside vi.mock factories.
 
 const mockExecute = vi.fn().mockResolvedValue({ folio: 'AGU-001', yaRegistrado: false });
+const mockSchedulePushDispatch = vi.fn();
 
 vi.mock('@/src/application/pagos/commands/procesar-pago-mp.handler', () => ({
   // Arrow-function field defers access to mockExecute until call time (avoids TDZ).
@@ -23,6 +24,10 @@ vi.mock('@sentry/nextjs', () => ({
 
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
+}));
+
+vi.mock('@/lib/push-dispatcher', () => ({
+  schedulePushDispatch: () => mockSchedulePushDispatch(),
 }));
 
 vi.mock('@/lib/crypto', () => ({
@@ -71,6 +76,8 @@ import { InvalidWebhookSignatureError, WebhookSignatureValidator, SignatureFailu
 import { db } from '@/db';
 import { createMercadoPagoClients } from '@/lib/mercadopago';
 import { decryptTokenSafe } from '@/lib/crypto';
+import { MercadoPagoPeriodConflictError } from '@/src/application/pagos/errors/mercado-pago-period-conflict.error';
+import * as Sentry from '@sentry/nextjs';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 const REF_PARAM = encodeURIComponent('agua|perf-001|6|2025|0|100.00');
@@ -230,11 +237,29 @@ describe('POST /api/mercadopago/webhook', () => {
       expect(mockExecute).toHaveBeenCalledWith(
         expect.objectContaining({
           perfilId: 'perf-001',
-          mes:      6,
-          anio:     2025,
+          periodos: [{ mes: 6, anio: 2025, monto: '100.00', esReconexion: false }],
           mercadoPagoPaymentId: '12345',
         }),
       );
+    });
+
+    it('procesa una referencia de doce meses en una sola llamada batch', async () => {
+      const reference = 'agua2|perf-001|7|2025|12|0|100.00|0.00';
+      mockPaymentGet.mockResolvedValue({
+        ...MOCK_PAYMENT,
+        external_reference: reference,
+      });
+      const url = `https://example.com/api/mp/webhook?data.id=12345&ref=${encodeURIComponent(reference)}`;
+
+      const res = await POST(makeRequest({ url }));
+
+      expect(res.status).toBe(200);
+      expect(mockExecute).toHaveBeenCalledOnce();
+      const command = mockExecute.mock.calls[0][0];
+      expect(command.periodos).toHaveLength(12);
+      expect(command.periodos[0]).toEqual({ mes: 7, anio: 2025, monto: '100.00', esReconexion: false });
+      expect(command.periodos[11]).toEqual({ mes: 6, anio: 2026, monto: '100.00', esReconexion: false });
+      expect(mockSchedulePushDispatch).toHaveBeenCalledOnce();
     });
 
     it('pasa el collector_id del pago a execute', async () => {
@@ -264,6 +289,7 @@ describe('POST /api/mercadopago/webhook', () => {
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.received).toBe(true);
+      expect(mockSchedulePushDispatch).not.toHaveBeenCalled();
     });
 
     it('usa external_reference del pago si no hay ref en URL', async () => {
@@ -275,6 +301,25 @@ describe('POST /api/mercadopago/webhook', () => {
   });
 
   describe('manejo de errores', () => {
+    it('no acredita y alerta cuando un periodo pertenece a otro paymentId', async () => {
+      mockExecute.mockRejectedValue(new MercadoPagoPeriodConflictError('12345', [{
+        mes: 6,
+        anio: 2025,
+        existingPaymentId: 'payment-anterior',
+      }]));
+
+      const res = await POST(makeRequest());
+      const body = await res.json();
+
+      expect(res.status).toBe(200);
+      expect(body).toMatchObject({ received: true, credited: false, conflict: true });
+      expect(Sentry.captureException).toHaveBeenCalledWith(
+        expect.any(MercadoPagoPeriodConflictError),
+        expect.objectContaining({ tags: expect.objectContaining({ error_type: 'payment_period_conflict' }) }),
+      );
+      expect(mockSchedulePushDispatch).not.toHaveBeenCalled();
+    });
+
     it('devuelve 500 ante un error inesperado', async () => {
       mockPaymentGet.mockRejectedValue(new Error('network error'));
       const res = await POST(makeRequest());

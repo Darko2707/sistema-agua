@@ -19,27 +19,20 @@ type Deps = {
 export class ResolverCircuitoTesoreraService {
   constructor(private readonly deps: Deps) {}
 
-  /**
-   * Finds the circuit assigned to a tesorera.
-   *
-   * Some tesoreras were assigned via the residente profile before the `tesoreraId`
-   * column existed on `circuitos`. As a fallback, look up the circuit via the
-   * residente profile and auto-assign it on `circuitos.tesorera_id`.
-   */
   async execute(tesoreraId: string): Promise<CircuitoResuelto | null> {
     const { circuitoRepo, residenteRepo } = this.deps;
 
     let circuito = await circuitoRepo.findByTesorera(tesoreraId);
     if (circuito) return circuito as CircuitoResuelto;
 
-    // Legacy fallback: locate circuit via residente profile
+    // Fallback de datos historicos: permite leer el circuito asociado al perfil,
+    // pero nunca reasigna tesoreras desde una consulta de lectura.
     const perfil = await residenteRepo.findByUserId(tesoreraId);
     if (!perfil?.circuito) return null;
 
     const circuitoId = perfil.circuito.id;
-    await circuitoRepo.updateTesorera(circuitoId, tesoreraId);
-
     circuito = await circuitoRepo.findById(circuitoId);
-    return (circuito as CircuitoResuelto) ?? null;
+    if (!circuito || (circuito.tesoreraId && circuito.tesoreraId !== tesoreraId)) return null;
+    return circuito as CircuitoResuelto;
   }
 }

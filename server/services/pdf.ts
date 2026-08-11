@@ -83,6 +83,8 @@ export async function generarTicketPDF(data: {
   // ════════════════════════════════════════════════════════
   let y = H - HEADER_H - 36;
 
+  // El recibo no incluye QR por decision operativa; el folio se muestra como
+  // texto para consulta manual y evita depender de codigos escaneables.
   page.drawText('Folio', { x: 28, y, size: 8, font, color: GRAY });
   page.drawText('Circuito', { x: 220, y, size: 8, font, color: GRAY });
   y -= 18;

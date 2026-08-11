@@ -1,9 +1,10 @@
 ﻿'use client';
 
 import { signIn, authClient } from '@/lib/auth-client';
+import { homePathForRole } from '@/lib/role-home';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AuthCard, C, inputBase, labelBase, buttonGold, linkButton, FM } from '../auth-styles';
 
 export default function LoginPage() {
@@ -13,18 +14,33 @@ export default function LoginPage() {
   const [showPwd, setShowPwd] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [resetEmail, setResetEmail] = useState('');
-  const [showReset, setShowReset] = useState(false);
-  const [resetSent, setResetSent] = useState(false);
-  const [resetLoading, setResetLoading] = useState(false);
-  const [resetError, setResetError] = useState('');
+  const [checkingSession, setCheckingSession] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+
+    void authClient.getSession()
+      .then((result) => {
+        if (!active || !result.data?.user) return;
+        router.replace(homePathForRole((result.data.user as { role?: string }).role));
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (active) setCheckingSession(false);
+      });
+
+    return () => { active = false; };
+  }, [router]);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError('');
     try {
-      const { error: signInError } = await signIn.email({ email, password });
+      const { error: signInError } = await signIn.email({
+        email: email.trim().toLowerCase(),
+        password,
+      });
       if (signInError) {
         setError(signInError.message ?? 'Correo o contraseña incorrectos');
         setLoading(false);
@@ -32,56 +48,34 @@ export default function LoginPage() {
       }
       const session = await authClient.getSession();
       const rol = (session?.data?.user as { role?: string })?.role ?? 'residente';
-      localStorage.setItem('userRole', rol);
-      if (rol === 'admin') router.push('/admin');
-      else if (rol === 'representante') router.push('/representante');
-      else if (rol === 'cuadrilla_cortes') router.push('/trabajador');
-      else router.push('/residente');
+      router.replace(homePathForRole(rol));
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Error inesperado');
       setLoading(false);
     }
   }
 
-  async function handleReset(e: React.FormEvent) {
-    e.preventDefault();
-    setResetLoading(true);
-    setResetError('');
-    setResetSent(false);
-    try {
-      const res = await fetch('/api/auth/request-password-reset', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: resetEmail, redirectTo: '/reset-password' }),
-      });
-      if (res.ok) {
-        setResetSent(true);
-        setResetEmail('');
-        setTimeout(() => {
-          setShowReset(false);
-          setResetSent(false);
-        }, 5000);
-      } else {
-        const data = await res.json() as { error?: string };
-        setResetError(data.error ?? 'Error al enviar el correo de recuperación');
-      }
-    } catch (err: unknown) {
-      setResetError(err instanceof Error ? err.message : 'Error al enviar el correo');
-    }
-    setResetLoading(false);
+  if (checkingSession) {
+    return (
+      <AuthCard title="Iniciar sesión" subtitle="Comprobando tu sesión">
+        <p role="status" aria-live="polite" style={{ padding: '24px 0', textAlign: 'center', color: C.textWarm, fontWeight: 700 }}>
+          Preparando el acceso...
+        </p>
+      </AuthCard>
+    );
   }
 
   return (
     <AuthCard
-      title={showReset ? 'Recuperar contraseña' : 'Iniciar sesión'}
-      subtitle={showReset ? 'Te enviaremos un enlace de recuperación' : 'Ingresa tus credenciales para acceder al sistema'}
+      title="Iniciar sesión"
+      subtitle="Ingresa tus credenciales para acceder al sistema"
       footer={(
         <>
           <div>
             ¿No tienes cuenta?{' '}
-            <button type="button" className="auth-link" style={linkButton} onClick={() => router.push('/registro')}>
+            <Link className="auth-link" style={linkButton} href="/registro">
               Regístrate
-            </button>
+            </Link>
           </div>
           <div style={{ display: 'flex', justifyContent: 'center', flexWrap: 'wrap', gap: '8px 12px', marginTop: 10 }}>
             <Link className="auth-link" href="/privacidad" style={{ ...linkButton, fontSize: 12, color: C.textWarm }}>
@@ -97,8 +91,7 @@ export default function LoginPage() {
         </>
       )}
     >
-      {!showReset ? (
-        <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 16 }} noValidate>
+      <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div>
             <label htmlFor="login-email" style={labelBase}>Correo electrónico</label>
             <input
@@ -148,67 +141,19 @@ export default function LoginPage() {
             </div>
           )}
 
-          <button className="auth-primary" type="submit" disabled={loading} style={{ ...buttonGold, opacity: loading ? 0.75 : 1, marginTop: 2 }}>
+          <button className="auth-primary" type="submit" disabled={loading} aria-busy={loading} style={{ ...buttonGold, opacity: loading ? 0.75 : 1, marginTop: 2 }}>
             {loading ? 'Ingresando...' : 'Iniciar sesión'}
           </button>
 
           <div style={{ textAlign: 'center' }}>
-            <button type="button" className="auth-link" style={{ ...linkButton, color: '#C98A0E' }} onClick={() => setShowReset(true)}>
+            <Link className="auth-link" style={{ ...linkButton, color: '#C98A0E' }} href="/reset-password">
               ¿Olvidaste tu contraseña?
-            </button>
-          </div>
-        </form>
-      ) : (
-        <form onSubmit={handleReset} style={{ display: 'flex', flexDirection: 'column', gap: 16 }} noValidate>
-          <div>
-            <label htmlFor="reset-email" style={labelBase}>Correo electrónico</label>
-            <input
-              id="reset-email"
-              type="email"
-              className="auth-inp"
-              placeholder="tu@correo.com"
-              autoComplete="email"
-              required
-              value={resetEmail}
-              onChange={e => setResetEmail(e.target.value)}
-              style={inputBase}
-            />
-            <p style={{ fontSize: 12, color: C.textWarm, marginTop: 5, lineHeight: 1.4 }}>
-              Te enviaremos un enlace para restablecer tu contraseña.
+            </Link>
+            <p style={{ margin: '8px 0 0', fontSize: 12, color: C.textWarm, lineHeight: 1.45 }}>
+              Pide a tu representante un código de recuperación. Caduca en 10 minutos.
             </p>
           </div>
-
-          {resetError && (
-            <div role="alert" style={{ background: C.dangerBg, border: '1px solid #F3BFBF', borderRadius: 14, padding: '10px 14px', fontSize: 13, color: C.danger, fontWeight: 700 }}>
-              {resetError}
-            </div>
-          )}
-          {resetSent && (
-            <div role="alert" style={{ background: C.okBg, border: '1px solid #B0DFC0', borderRadius: 14, padding: '10px 14px', fontSize: 13, color: C.ok, fontWeight: 700 }}>
-              ✓ Correo enviado. Revisa tu bandeja de entrada.
-            </div>
-          )}
-
-          <button className="auth-primary" type="submit" disabled={resetLoading} style={{ ...buttonGold, opacity: resetLoading ? 0.75 : 1 }}>
-            {resetLoading ? 'Enviando...' : 'Enviar enlace de recuperación'}
-          </button>
-
-          <div style={{ textAlign: 'center' }}>
-            <button
-              type="button"
-              className="auth-link"
-              style={{ ...linkButton, color: '#C98A0E' }}
-              onClick={() => {
-                setShowReset(false);
-                setResetError('');
-                setResetSent(false);
-              }}
-            >
-              ‹ Volver al inicio de sesión
-            </button>
-          </div>
         </form>
-      )}
     </AuthCard>
   );
 }
