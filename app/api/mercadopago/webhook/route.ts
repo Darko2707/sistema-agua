@@ -1,32 +1,33 @@
 import { InvalidWebhookSignatureError, WebhookSignatureValidator } from 'mercadopago';
 import * as Sentry from '@sentry/nextjs';
+import { z } from 'zod';
 
-import { createMercadoPagoClients } from '@/lib/mercadopago';
-import { decryptTokenSafe } from '@/lib/crypto';
-import { db } from '@/db';
-import { expandExternalReference, parseExternalReference, type ExternalReference } from '@/src/infrastructure/mercadopago/parser';
 import { residenteRepo, pagoRepo, circuitoRepo } from '@/src/infrastructure/db/repositories';
 import { ProcesarPagoMpHandler } from '@/src/application/pagos/commands/procesar-pago-mp.handler';
+import { MercadoPagoPaymentIntentConflictError } from '@/src/application/pagos/errors/mercado-pago-payment-intent-conflict.error';
 import { MercadoPagoPeriodConflictError } from '@/src/application/pagos/errors/mercado-pago-period-conflict.error';
+import {
+  fetchVerifiedMercadoPagoPayment,
+  MercadoPagoPaymentValidationError,
+} from '@/src/infrastructure/mercadopago/payment-verification';
 import { logger } from '@/lib/logger';
 import { schedulePushDispatch } from '@/lib/push-dispatcher';
 
 const procesarPagoMpHandler = new ProcesarPagoMpHandler({ residenteRepo, pagoRepo, circuitoRepo });
 
+const paymentIdSchema = z.union([
+  z.string(),
+  z.number().int().nonnegative(),
+]).transform(String).pipe(z.string().regex(/^\d{1,32}$/));
+
+const webhookPayloadSchema = z.object({
+  data: z.object({ id: paymentIdSchema.optional() }).passthrough().optional(),
+  id: paymentIdSchema.optional(),
+}).passthrough();
+
 export function OPTIONS() {
   // webhook is server-to-server only (MercadoPago → our server); browser access not supported
   return new Response(null, { status: 405 });
-}
-
-async function getPaymentClientForReference(reference: ExternalReference | null) {
-  if (!reference) return null;
-  const perfil = await db.query.perfilesResidente.findFirst({
-    where: (p, { eq }) => eq(p.id, reference.perfilId),
-    with: { circuito: true },
-  });
-  // Descifrar el token antes de usarlo
-  const accessToken = decryptTokenSafe(perfil?.circuito?.mercadoPagoAccessToken);
-  return accessToken ? createMercadoPagoClients(accessToken).paymentClient : null;
 }
 
 export async function POST(request: Request) {
@@ -47,54 +48,54 @@ export async function POST(request: Request) {
       return new Response('Service Unavailable', { status: 503 });
     }
 
+    const paymentIdResult = paymentIdSchema.safeParse(url.searchParams.get('data.id'));
+    if (!paymentIdResult.success) {
+      return Response.json({ error: 'Falta data.id valido' }, { status: 400 });
+    }
+    const paymentId = paymentIdResult.data;
+
     WebhookSignatureValidator.validate({
       xSignature:       request.headers.get('x-signature'),
       xRequestId:       request.headers.get('x-request-id'),
-      dataId:           url.searchParams.get('data.id'),
+      dataId:           paymentId,
       secret:           webhookSecret,
       toleranceSeconds: 300,
     });
 
-    const payload = await request.json().catch(() => ({}));
-    const paymentId =
-      payload?.data?.id ??
-      payload?.id ??
-      url.searchParams.get('data.id') ??
-      url.searchParams.get('id');
+    const rawPayload: unknown = await request.json().catch(() => null);
+    if (rawPayload !== null) {
+      const payload = webhookPayloadSchema.safeParse(rawPayload);
+      if (!payload.success) {
+        return Response.json({ error: 'Payload invalido' }, { status: 400 });
+      }
+      const bodyIds = [payload.data.data?.id, payload.data.id]
+        .filter((id): id is string => id !== undefined);
+      if (bodyIds.some(id => id !== paymentId)) {
+        return Response.json({ error: 'Payment ID inconsistente' }, { status: 400 });
+      }
+    }
 
-    if (!paymentId) return Response.json({ received: true });
+    const verified = await fetchVerifiedMercadoPagoPayment({
+      externalReference: url.searchParams.get('ref'),
+      paymentId,
+    });
 
-    const referenceFromUrl = parseExternalReference(url.searchParams.get('ref') ?? undefined);
-    const paymentClient = await getPaymentClientForReference(referenceFromUrl);
-    if (!paymentClient) return Response.json({ received: true });
-
-    const payment = await paymentClient.get({ id: paymentId });
-    // La referencia de la URL solo sirve para elegir las credenciales del
-    // vendedor. La acreditacion siempre usa la referencia inmutable del pago.
-    const reference = parseExternalReference(payment.external_reference);
-
-    if (payment.status === 'approved' && reference) {
-      const references = expandExternalReference(reference);
+    if (verified.status === 'approved') {
       logger.info('mp.webhook.pago_aprobado', {
-        paymentId: String(payment.id),
-        perfilId:  reference.perfilId,
-        mes:       reference.mes,
-        anio:      reference.anio,
-        monto:     reference.monto,
-        esReconexion: reference.esReconexion,
-        mesesAdelantados: references.length,
+        paymentId: verified.paymentId,
+        perfilId: verified.perfilId,
+        monto: verified.expectedTotal,
+        esReconexion: verified.periodos.some(periodo => periodo.esReconexion),
+        mesesAdelantados: verified.periodos.length,
       });
       const result = await procesarPagoMpHandler.execute({
-        perfilId: reference.perfilId,
-        periodos: references.map(({ mes, anio, monto, esReconexion }) => ({
-          mes,
-          anio,
-          monto,
-          esReconexion,
-        })),
+        perfilId: verified.perfilId,
+        circuitoId: verified.circuitoId,
+        paymentIntentReference: verified.paymentIntentReference,
+        periodos: verified.periodos,
         metodo: 'mercado_pago',
-        mercadoPagoPaymentId: String(payment.id ?? paymentId),
-        mercadoPagoCollectorId: payment.collector_id ? String(payment.collector_id) : undefined,
+        mercadoPagoPaymentId: verified.paymentId,
+        mercadoPagoCollectorId: verified.collectorId,
       });
       if (!result.yaRegistrado) schedulePushDispatch();
     }
@@ -108,6 +109,15 @@ export async function POST(request: Request) {
       });
       logger.warn('mp.webhook.firma_invalida', { reason: error.reason });
       return Response.json({ error: 'Firma invalida' }, { status: 401 });
+    }
+    if (error instanceof MercadoPagoPaymentValidationError) {
+      Sentry.captureException(error, {
+        tags: { component: 'webhook', error_type: 'payment_validation_failed' },
+        level: 'warning',
+        extra: { reason: error.reason },
+      });
+      logger.warn('mp.webhook.pago_invalido', { reason: error.reason });
+      return Response.json({ received: true, credited: false });
     }
     if (error instanceof MercadoPagoPeriodConflictError) {
       Sentry.captureException(error, {
@@ -124,6 +134,23 @@ export async function POST(request: Request) {
       });
       // Se reconoce el webhook para evitar reintentos infinitos, pero ningun
       // periodo se acredita: la transaccion completa ya fue revertida.
+      return Response.json({ received: true, credited: false, conflict: true });
+    }
+    if (error instanceof MercadoPagoPaymentIntentConflictError) {
+      Sentry.captureException(error, {
+        tags: { component: 'webhook', error_type: 'payment_intent_conflict' },
+        level: 'error',
+        extra: {
+          reason: error.reason,
+          paymentIntentReference: error.paymentIntentReference,
+          requestedPaymentId: error.requestedPaymentId,
+        },
+      });
+      logger.error('mp.webhook.conflicto_intencion', error, {
+        reason: error.reason,
+        paymentIntentReference: error.paymentIntentReference,
+        paymentId: error.requestedPaymentId,
+      });
       return Response.json({ received: true, credited: false, conflict: true });
     }
     Sentry.captureException(error, {

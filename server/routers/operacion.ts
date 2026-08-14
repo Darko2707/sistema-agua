@@ -14,20 +14,19 @@ import {
   notificaciones,
   pagos,
   perfilesResidente,
-  reversosPago,
-  tickets,
 } from '@/db/schema';
 import { circuitoRepo, residenteRepo } from '@/src/infrastructure/db/repositories';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
-import { DIA_CORTE } from '@/src/domain/pagos/constants';
-import { fechaNegocio } from '@/src/domain/shared/fecha-negocio';
 import { schedulePushDispatch } from '@/lib/push-dispatcher';
+import { clientIpFromHeaders } from '@/lib/request-security';
+import { reversarPagoAtomico } from '@/src/infrastructure/db/services/drizzle-pago-reversal.service';
 
 const LEGAL_VERSION = '2026-08-05';
 
 function getRequestMeta(headers?: Headers) {
+  const clientIp = headers ? clientIpFromHeaders(headers) : 'anonymous';
   return {
-    ip: headers?.get('x-forwarded-for')?.split(',')[0]?.trim() ?? headers?.get('x-real-ip') ?? null,
+    ip: clientIp === 'anonymous' ? null : clientIp,
     userAgent: headers?.get('user-agent') ?? null,
   };
 }
@@ -235,55 +234,11 @@ export const operacionRouter = router({
       motivo: z.string().min(10, 'Explica el motivo del reverso'),
     }))
     .mutation(async ({ ctx, input }) => {
-      const pago = await db.query.pagos.findFirst({ where: eq(pagos.id, input.pagoId), with: { perfil: true } });
-      if (!pago) throw new TRPCError({ code: 'NOT_FOUND', message: 'Pago no encontrado' });
-      await assertPerfilVisible(ctx.user.id, ctx.user.role, pago.perfilId);
-      if (pago.estado !== 'pagado') throw new TRPCError({ code: 'BAD_REQUEST', message: 'Solo se pueden reversar pagos pagados' });
-
-      let notificarReverso = false;
-      await db.transaction(async (tx) => {
-        await tx.update(pagos).set({ estado: 'vencido' }).where(eq(pagos.id, pago.id));
-        await tx.insert(reversosPago).values({
-          pagoId: pago.id,
-          actorId: ctx.user.id,
-          motivo: input.motivo,
-          estadoAnterior: pago.estado ?? 'pagado',
-        });
-        await tx.delete(tickets).where(eq(tickets.pagoId, pago.id));
-
-        const periodo = PeriodoVO.vigente();
-        const esMesActual = pago.mes === periodo.mes && pago.anio === periodo.anio;
-        const diaNegocio = fechaNegocio().dia;
-        const nuevoEstado = pago.esReconexion && pago.perfil?.estadoAgua === 'pendiente_reconexion'
-          ? 'cortado'
-          : esMesActual && pago.perfil?.estadoAgua === 'activo' && diaNegocio > DIA_CORTE
-            ? 'pendiente_corte'
-            : null;
-
-        if (nuevoEstado) {
-          await tx.update(perfilesResidente)
-            .set({ estadoAgua: nuevoEstado })
-            .where(eq(perfilesResidente.id, pago.perfilId));
-          if (pago.perfil?.userId) {
-            notificarReverso = true;
-            await tx.insert(notificaciones).values({
-              userId: pago.perfil.userId,
-              perfilId: pago.perfilId,
-              canal: 'push',
-              tipo: 'pago_reversado',
-              destino: 'push',
-              mensaje: 'Un pago fue reversado. Abre la app para consultar tu estado actualizado.',
-              dedupeKey: `pago_reversado:${pago.id}`,
-            }).onConflictDoNothing();
-          }
-        }
-      });
-      await registrarAuditoria({
+      const { notificarReverso } = await reversarPagoAtomico({
+        pagoId: input.pagoId,
+        motivo: input.motivo,
         actorId: ctx.user.id,
-        accion: 'pago.reversado',
-        entidad: 'pago',
-        entidadId: pago.id,
-        detalle: { folio: pago.folio, motivo: input.motivo, mes: pago.mes, anio: pago.anio },
+        actorRole: ctx.user.role,
       });
       if (notificarReverso) schedulePushDispatch();
       return { ok: true };
@@ -382,6 +337,9 @@ export const operacionRouter = router({
   dashboardEjecutivo: roleProcedure('admin', 'representante').query(async ({ ctx }) => {
     const periodo = PeriodoVO.vigente();
     const circuito = ctx.user.role === 'representante' ? await circuitoRepo.findByRepresentante(ctx.user.id) : null;
+    if (ctx.user.role === 'representante' && !circuito) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes un circuito asignado' });
+    }
     const circuitoFilter = circuito ? eq(perfilesResidente.circuitoId, circuito.id) : undefined;
     const pagoCircuitoFilter = circuito ? eq(pagos.circuitoId, circuito.id) : undefined;
 

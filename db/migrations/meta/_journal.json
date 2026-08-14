@@ -148,6 +148,27 @@
       "when": 1786240001000,
       "tag": "0020_representative_password_reset",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1786240002000,
+      "tag": "0021_payment_integrity_guards",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1786240003000,
+      "tag": "0022_mercado_pago_payment_intents",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1786670000000,
+      "tag": "0023_password_reset_requests",
+      "breakpoints": true
     }
   ]
 }

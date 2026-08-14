@@ -7,6 +7,7 @@ import {
   normalizarNombrePersona,
   NOMBRE_PERSONA_ERROR,
 } from '@/src/domain/usuarios/nombre-persona';
+import { hashAccountPassword, verifyAccountPassword } from '@/lib/password';
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL;
 const authUrl = process.env.BETTER_AUTH_URL;
@@ -25,6 +26,10 @@ export const auth = betterAuth({
   database: drizzleAdapter(db, { provider: 'pg', schema }),
   emailAndPassword: {
     enabled: true,
+    password: {
+      hash:   hashAccountPassword,
+      verify: verifyAccountPassword,
+    },
   },
   databaseHooks: {
     user: {

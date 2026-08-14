@@ -71,13 +71,18 @@ export class ProcesarPagoMpHandler {
 
     const perfil = await residenteRepo.findById(cmd.perfilId);
     if (!perfil) throw new Error('Perfil no encontrado');
+    if (perfil.circuitoId !== cmd.circuitoId) {
+      throw new Error('El perfil cambio de circuito durante la confirmacion del pago');
+    }
 
-    const circuito = await circuitoRepo.findById(perfil.circuitoId);
+    const circuito = await circuitoRepo.findById(cmd.circuitoId);
     if (!circuito) throw new Error('Circuito no encontrado');
 
-    // Los importes vienen congelados en external_reference. La comision fija de
-    // MP pertenece al cobro completo, no a cada mes; se calcula una sola vez y
-    // se reparte proporcionalmente, dejando el ajuste de centavos al ultimo mes.
+    // En referencias nuevas los importes vienen congelados en la intencion
+    // persistida; en referencias legacy fueron reconstruidos desde la
+    // configuracion actual del circuito. La comision fija de MP pertenece al
+    // cobro completo, no a cada mes; se calcula una sola vez y se reparte
+    // proporcionalmente, dejando el ajuste de centavos al ultimo mes.
     const fechaPago = new Date();
     const bases = cmd.periodos.map(periodo => toCents(periodo.monto));
     const desgloseTotal = calcularDesglosePago(
@@ -115,6 +120,8 @@ export class ProcesarPagoMpHandler {
 
     const result = await pagoRepo.createMercadoPagoBatchWithLock({
       perfilId: cmd.perfilId,
+      circuitoId: cmd.circuitoId,
+      paymentIntentReference: cmd.paymentIntentReference,
       mercadoPagoPaymentId: cmd.mercadoPagoPaymentId,
       pagos,
       pushNotification: {

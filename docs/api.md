@@ -73,11 +73,20 @@ El representante registra un pago para un residente de su circuito.
 
 ### `pagos.registrarManualTesorera` — Mutation
 **Roles:** `tesorera`  
-La tesorera registra un pago para un residente de su circuito.
+La tesorera registra de 1 a 12 periodos para un residente de su circuito. Los
+periodos pagados se rechazan y la operación respeta el orden: atrasados, mes
+actual y, una vez cubierto el actual, adelantos.
 
-**Input:** `{ perfilId: string, metodo: 'efectivo' | 'transferencia' }`
+**Input:**
+```ts
+{
+  perfilId: string;
+  metodo: 'efectivo' | 'transferencia';
+  meses: Array<{ mes: number; anio: number }>; // 1..12
+}
+```
 
-**Returns:** `{ folio: string, monto: string, metodo: string }`
+**Returns:** `{ folio: string | null, folios: string[], registrados: number, omitidos: string[], monto: string, metodo: string, periodos: string[] }`
 
 ---
 
@@ -215,6 +224,36 @@ Devuelve el perfil de residente del usuario autenticado.
 ### `usuarios.listarCircuitos` — Query
 **Roles:** público  
 Devuelve todos los circuitos activos (usado en el formulario de registro).
+
+### `usuarios.solicitarCodigoRecuperacion` — Mutation
+**Roles:** público
+
+Registra una solicitud pendiente para que el representante pueda generar un
+código. La respuesta siempre es genérica y no confirma si el correo existe.
+
+**Input:** `{ email: string }`
+
+### `usuarios.listarSolicitudesRecuperacion` — Query
+**Roles:** `representante`
+
+Devuelve únicamente los identificadores de perfil con una solicitud pendiente
+en su circuito. No expone correos, códigos ni metadatos del reto.
+
+### `usuarios.generarCodigoRecuperacion` — Mutation
+**Roles:** `representante`
+
+Consume una solicitud pendiente y genera un único código de seis dígitos. El
+botón deja de estar disponible hasta que el residente cree otra solicitud.
+
+**Input:** `{ perfilId: string (UUID) }`
+
+### `usuarios.restablecerConCodigoRepresentante` — Mutation
+**Roles:** público
+
+Canjea el código exacto de seis dígitos y revoca las sesiones anteriores. No se
+aceptan espacios, guiones, letras ni otros separadores.
+
+**Input:** `{ email: string; code: string; newPassword: string }`
 
 ### `usuarios.listarResidentes` — Query
 **Roles:** `admin`, `representante`  

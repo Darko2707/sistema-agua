@@ -5,6 +5,7 @@ import { db } from '@/db';
 import { tickets } from '@/db/schema';
 import { auth } from '@/lib/auth';
 import { logger } from '@/lib/logger';
+import { guardTicketPdf } from '@/lib/ticket-pdf-guard';
 import { generarTicketPDF } from '@/server/services/pdf';
 import { VercelBlobAdapter } from '@/src/infrastructure/storage/vercel-blob.adapter';
 
@@ -35,6 +36,11 @@ export async function GET(
   if (!session) {
     return Response.json({ error: 'No autorizado' }, { status: 401 });
   }
+
+  const ticketGuard = await guardTicketPdf(session.user.id);
+  if (!ticketGuard.allowed) return ticketGuard.response;
+
+  try {
 
   const { folio: rawFolio } = await ctx.params;
   if (!/^[A-Z0-9-]{4,64}$/i.test(rawFolio)) {
@@ -120,4 +126,7 @@ export async function GET(
   }
 
   return pdfResponse(pdf, folio);
+  } finally {
+    await ticketGuard.release();
+  }
 }

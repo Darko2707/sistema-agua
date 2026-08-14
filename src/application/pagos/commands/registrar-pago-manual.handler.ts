@@ -71,6 +71,10 @@ export class RegistrarPagoManualHandler {
       tipo: 'pago_confirmado',
       mensaje: 'Tu pago fue confirmado. Abre la app para consultar el folio y los detalles.',
       dedupeKey: `pago_confirmado:folio:${folio}`,
+    }, {
+      actorId: cmd.representanteId,
+      accion: 'pago.manual.representante',
+      metodo: cmd.metodo,
     });
 
     if (!pago.folio) {

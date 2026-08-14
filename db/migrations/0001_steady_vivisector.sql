@@ -68,13 +68,13 @@ ALTER TABLE "usuarios" DISABLE ROW LEVEL SECURITY;--> statement-breakpoint
 DROP TABLE "departamentos" CASCADE;--> statement-breakpoint
 DROP TABLE "edificios" CASCADE;--> statement-breakpoint
 DROP TABLE "usuarios" CASCADE;--> statement-breakpoint
-ALTER TABLE "circuitos" DROP CONSTRAINT "circuitos_representante_id_usuarios_id_fk";
+ALTER TABLE "circuitos" DROP CONSTRAINT IF EXISTS "circuitos_representante_id_usuarios_id_fk";
 --> statement-breakpoint
-ALTER TABLE "cortes" DROP CONSTRAINT "cortes_departamento_id_departamentos_id_fk";
+ALTER TABLE "cortes" DROP CONSTRAINT IF EXISTS "cortes_departamento_id_departamentos_id_fk";
 --> statement-breakpoint
-ALTER TABLE "cortes" DROP CONSTRAINT "cortes_trabajador_id_usuarios_id_fk";
+ALTER TABLE "cortes" DROP CONSTRAINT IF EXISTS "cortes_trabajador_id_usuarios_id_fk";
 --> statement-breakpoint
-ALTER TABLE "pagos" DROP CONSTRAINT "pagos_departamento_id_departamentos_id_fk";
+ALTER TABLE "pagos" DROP CONSTRAINT IF EXISTS "pagos_departamento_id_departamentos_id_fk";
 --> statement-breakpoint
 ALTER TABLE "user" ALTER COLUMN "role" SET DATA TYPE text;--> statement-breakpoint
 ALTER TABLE "user" ALTER COLUMN "role" SET DEFAULT 'residente'::text;--> statement-breakpoint

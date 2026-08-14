@@ -11,9 +11,14 @@ import { MetricasAdminHandler } from '@/src/application/pagos/queries/metricas-a
 import { ResolverCircuitoTesoreraService } from '@/src/application/circuitos/queries/resolver-circuito-tesorera.service';
 // eslint-disable-next-line no-restricted-imports -- inline MP webhook queries not yet in a repo
 import { db } from '@/db';
-// eslint-disable-next-line no-restricted-imports -- legacy audit write in registrarManual
-import { auditoria } from '@/db/schema';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
+import {
+  compararPeriodos,
+  construirEstadoPagosTesorera,
+  MAX_MESES_POR_PAGO_TESORERA,
+  periodoDesdeFecha,
+  periodoKey,
+} from '@/src/domain/pagos/periodos-tesoreria';
 import { calcularDesglosePagoManual, calcularMontoBase } from '@/src/domain/pagos/calculator';
 import { FolioVO } from '@/src/domain/pagos/folio.vo';
 import { logger } from '@/lib/logger';
@@ -28,30 +33,22 @@ const metricasAdminHandler = new MetricasAdminHandler({ pagoRepo });
 
 const MESES_CORTO = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 
-function addMonths(mes: number, anio: number, offset: number) {
-  const total = mes - 1 + offset;
-  return {
-    mes:  (total % 12) + 1,
-    anio: anio + Math.floor(total / 12),
-  };
-}
-
-async function nextUnpaidPeriods(perfilId: string, count: number) {
-  const periodo = PeriodoVO.vigente();
-  const result: Array<{ mes: number; anio: number }> = [];
-  const pagados = await db.query.pagos.findMany({
-    where: (p, { eq, and }) => and(eq(p.perfilId, perfilId), eq(p.estado, 'pagado')),
-    columns: { mes: true, anio: true },
-  });
-  const paidKeys = new Set(pagados.map(pago => `${pago.anio}-${pago.mes}`));
-
-  for (let offset = 0; result.length < count && offset < 36; offset++) {
-    const candidate = addMonths(periodo.mes, periodo.anio, offset);
-    if (!paidKeys.has(`${candidate.anio}-${candidate.mes}`)) result.push(candidate);
+const mesesTesoreraSchema = z.array(z.object({
+  mes:  z.number().int().min(1).max(12),
+  anio: z.number().int().min(2020).max(2100),
+}).strict()).min(1).max(MAX_MESES_POR_PAGO_TESORERA).superRefine((periodos, ctx) => {
+  const vistos = new Set<string>();
+  for (const periodo of periodos) {
+    const key = periodoKey(periodo);
+    if (vistos.has(key)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `El periodo ${key} esta repetido`,
+      });
+    }
+    vistos.add(key);
   }
-
-  return result;
-}
+});
 
 export const pagosRouter = router({
   miHistorial: protectedProcedure.query(async ({ ctx }) => {
@@ -77,21 +74,13 @@ export const pagosRouter = router({
       metodo:   z.enum(['efectivo', 'transferencia']),
     }))
     .mutation(async ({ ctx, input }) => {
-      return registrarPagoManualHandler.execute({
+      const result = await registrarPagoManualHandler.execute({
         perfilId:        input.perfilId,
         metodo:          input.metodo,
         representanteId: ctx.user.id,
-      }).then(async (result) => {
-        await db.insert(auditoria).values({
-          actorId: ctx.user.id,
-          accion: 'pago.manual.representante',
-          entidad: 'pago',
-          entidadId: result.folio,
-          detalle: { perfilId: input.perfilId, metodo: input.metodo, folio: result.folio },
-        });
-        schedulePushDispatch();
-        return result;
       });
+      schedulePushDispatch();
+      return result;
     }),
 
   listarFolios: protectedProcedure.query(async ({ ctx }) => {
@@ -177,17 +166,18 @@ export const pagosRouter = router({
 
   // ── Tesorera: listar residentes del circuito para registrar pagos ──────────
   listarResidentesParaPago: roleProcedure('tesorera').query(async ({ ctx }) => {
+    const periodo = PeriodoVO.vigente();
+    const periodoActual = { mes: periodo.mes, anio: periodo.anio };
     const circuito = await resolverCircuitoTesoreraService.execute(ctx.user.id);
-    if (!circuito) return { circuito: null, residentes: [] };
+    if (!circuito) return { circuito: null, periodoActual, residentes: [] };
 
-    const periodo  = PeriodoVO.vigente();
     const perfiles = await db.query.perfilesResidente.findMany({
       where:  (p, { eq }) => eq(p.circuitoId, circuito.id),
       with: {
         usuario: true,
         pagos: {
-          where: (pg, { eq, and }) =>
-            and(eq(pg.mes, periodo.mes), eq(pg.anio, periodo.anio), eq(pg.estado, 'pagado')),
+          where: (pg, { eq }) => eq(pg.estado, 'pagado'),
+          columns: { mes: true, anio: true },
         },
       },
     });
@@ -199,28 +189,38 @@ export const pagosRouter = router({
         montoMensual:     circuito.montoMensual,
         montoReconexion:  circuito.montoReconexion,
       },
-      residentes: perfiles.map(p => ({
-        id:           p.id,
-        edificio:     p.edificio,
-        departamento: p.departamento,
-        estadoAgua:   p.estadoAgua,
-        usuario:      { id: p.usuario?.id, name: p.usuario?.name, email: p.usuario?.email },
-        pagoEsteMes:  p.pagos.length > 0,
-      })),
+      periodoActual,
+      residentes: perfiles.map((p) => {
+        const estadoPago = construirEstadoPagosTesorera({
+          periodoActual,
+          periodoInicio: periodoDesdeFecha(p.creadoEn, periodoActual),
+          periodosPagados: p.pagos,
+        });
+        const pagos = new Set(p.pagos.map(periodoKey));
+
+        return {
+          id:                  p.id,
+          edificio:            p.edificio,
+          departamento:        p.departamento,
+          estadoAgua:          p.estadoAgua,
+          usuario:             { id: p.usuario?.id, name: p.usuario?.name, email: p.usuario?.email },
+          pagoEsteMes:         pagos.has(periodoKey(periodoActual)),
+          tieneAtrasados:      estadoPago.atrasadosPendientes > 0,
+          atrasadosPendientes: estadoPago.atrasadosPendientes,
+          accionDisponible:    estadoPago.accionDisponible,
+          periodos:            estadoPago.periodos,
+        };
+      }),
     };
   }),
 
   // ── Tesorera: registrar pago en efectivo / transferencia ────────────────────
   registrarManualTesorera: roleProcedure('tesorera')
     .input(z.object({
-      perfilId:          z.uuid(),
-      metodo:            z.enum(['efectivo', 'transferencia']),
-      mesesAdelantados:  z.number().int().min(1).max(12).optional(),
-      meses:             z.array(z.object({
-        mes:  z.number().int().min(1).max(12),
-        anio: z.number().int().min(2020).max(2100),
-      })).min(1).max(36).optional(),
-    }))
+      perfilId: z.uuid(),
+      metodo:   z.enum(['efectivo', 'transferencia']),
+      meses:    mesesTesoreraSchema,
+    }).strict())
     .mutation(async ({ ctx, input }) => {
       const circuito = await resolverCircuitoTesoreraService.execute(ctx.user.id);
       if (!circuito)        throw new TRPCError({ code: 'FORBIDDEN',   message: 'No tienes circuito asignado' });
@@ -231,10 +231,7 @@ export const pagosRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Residente no encontrado en tu circuito' });
       }
 
-      const periodos = input.meses ?? await nextUnpaidPeriods(perfil.id, input.mesesAdelantados ?? 1);
-      if (periodos.length === 0) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'No hay periodos disponibles para registrar' });
-      }
+      const periodos = [...input.meses].sort(compararPeriodos);
 
       const esReconexion = perfil.estadoAgua === 'cortado';
       const loteId = randomUUID();
@@ -281,6 +278,7 @@ export const pagosRouter = router({
           accion: 'pago.manual.tesorera',
           metodo: input.metodo,
         },
+        politica: { tipo: 'tesorera_escalonada' },
       });
       const folios = batchResult.pagos
         .map(pago => pago.folio)
@@ -288,6 +286,13 @@ export const pagosRouter = router({
       const omitidos = batchResult.omitidos
         .map(periodo => `${MESES_CORTO[periodo.mes - 1]} ${periodo.anio}`);
       const total = batchResult.pagos.reduce((sum, pago) => sum + Number(pago.monto), 0);
+
+      if (folios.length === 0) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: 'Los periodos seleccionados ya fueron pagados; actualiza la lista e intenta de nuevo',
+        });
+      }
 
       logger.info('pago.tesorera.manual', {
         folios, perfilId: perfil.id, tesoreraId: ctx.user.id, registrados: folios.length, omitidos: omitidos.length,
@@ -364,6 +369,7 @@ export const pagosRouter = router({
           accion: 'pago.retroactivo.admin',
           metodo: input.metodo,
         },
+        politica: { tipo: 'admin_retroactivo' },
       });
       const registrados = batchResult.pagos.length;
       const omitidos = batchResult.omitidos

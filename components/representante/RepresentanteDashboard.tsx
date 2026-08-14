@@ -101,6 +101,7 @@ function Spin({ color = '#fff' }: { color?: string }) {
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 export function RepresentanteDashboard() {
   const router = useRouter();
+  const utils = trpcReact.useUtils();
   const { data: session, isPending: sessionPending } = useSession();
   const [tab, setTab]         = useState<TabId>('residentes');
   const [busqueda, setBusqueda] = useState('');
@@ -136,6 +137,9 @@ export function RepresentanteDashboard() {
   const resumenQuery    = trpcReact.pagos.resumenMes.useQuery();
   const residentesQuery = trpcReact.usuarios.listarResidentes.useQuery();
   const personalQuery   = trpcReact.usuarios.listarPersonal.useQuery();
+  const solicitudesQuery = trpcReact.usuarios.listarSolicitudesRecuperacion.useQuery(undefined, {
+    refetchInterval: 30_000,
+  });
   const cambiarRolMut   = trpcReact.usuarios.cambiarRolEnCircuito.useMutation();
   const generarCodigoMut = trpcReact.usuarios.generarCodigoRecuperacion.useMutation();
 
@@ -143,8 +147,12 @@ export function RepresentanteDashboard() {
   const resumen    = resumenQuery.data;
   const residentes = residentesQuery.data?.items ?? [];
   const personal   = personalQuery.data ?? [];
-  const cargando   = sessionPending || circuitoQuery.isLoading || resumenQuery.isLoading || residentesQuery.isLoading;
-  const queryError = circuitoQuery.error?.message ?? resumenQuery.error?.message ?? residentesQuery.error?.message ?? null;
+  const cargando   = sessionPending || circuitoQuery.isLoading || resumenQuery.isLoading || residentesQuery.isLoading || solicitudesQuery.isLoading;
+  const queryError = circuitoQuery.error?.message ?? resumenQuery.error?.message ?? residentesQuery.error?.message ?? solicitudesQuery.error?.message ?? null;
+  const solicitudesPendientes = useMemo(
+    () => new Set((solicitudesQuery.data ?? []).filter(s => s.pendiente).map(s => s.perfilId)),
+    [solicitudesQuery.data],
+  );
 
   const candidatos = useMemo(
     () => residentes.filter(r => r.usuario?.role === 'residente' && r.usuario?.id),
@@ -192,6 +200,11 @@ export function RepresentanteDashboard() {
     setGenerandoCodigo(perfilId);
     try {
       const result = await generarCodigoMut.mutateAsync({ perfilId });
+      utils.usuarios.listarSolicitudesRecuperacion.setData(
+        undefined,
+        actuales => actuales?.filter(solicitud => solicitud.perfilId !== perfilId),
+      );
+      void utils.usuarios.listarSolicitudesRecuperacion.invalidate();
       setCodigoRecuperacion({
         code:      result.code,
         expiresAt: result.expiresAt,
@@ -488,7 +501,11 @@ export function RepresentanteDashboard() {
                         Moroso
                       </span>
                     )}
-                    {r.usuario?.role === 'residente' && (
+                    {r.usuario?.role === 'residente' && solicitudesPendientes.has(r.id) && (
+                      <>
+                      <span style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 12px', borderRadius: 20, background: '#FFF5D8', color: '#805A00' }}>
+                        Solicitó recuperación
+                      </span>
                       <Btn
                         onClick={() => generarCodigoRecuperacion(r.id)}
                         disabled={generandoCodigo === r.id}
@@ -497,8 +514,9 @@ export function RepresentanteDashboard() {
                         {generandoCodigo === r.id ? <Spin color={C.bgHeader} /> : (
                           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
                         )}
-                        Código
+                        Generar código
                       </Btn>
+                      </>
                     )}
                   </div>
                 </div>
@@ -516,12 +534,13 @@ export function RepresentanteDashboard() {
             <div id="codigo-recuperacion-title" style={{ fontFamily: FS, fontSize: 17, fontWeight: 800, color: C.textMain }}>Código de recuperación</div>
             <p style={{ fontSize: 12.5, color: C.textMuted, marginTop: 6, lineHeight: 1.5 }}>
               Entrégalo solo al residente correcto. Caduca en 10 minutos y se invalida al primer uso.
+              {' '}Este valor se muestra una sola vez; si lo pierden, el residente deberá solicitar otro.
             </p>
             <div style={{ marginTop: 16, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 16, padding: '16px 18px' }}>
               <div style={{ fontSize: 12, color: C.textMuted, fontWeight: 700 }}>{codigoRecuperacion.nombre}</div>
               <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2 }}>{codigoRecuperacion.email} · {codigoRecuperacion.vivienda}</div>
               <div style={{ fontFamily: FS, fontSize: 34, letterSpacing: '.18em', fontWeight: 900, color: C.bgHeader, marginTop: 12, textAlign: 'center' }}>
-                {codigoRecuperacion.code.slice(0, 3)} {codigoRecuperacion.code.slice(3)}
+                {codigoRecuperacion.code}
               </div>
               <div style={{ fontSize: 12, color: C.danger, marginTop: 10, textAlign: 'center', fontWeight: 700 }}>
                 Vence a las {new Date(codigoRecuperacion.expiresAt).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' })}

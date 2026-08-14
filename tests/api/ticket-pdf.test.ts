@@ -6,6 +6,8 @@ const {
   mockFindUser,
   mockGeneratePdf,
   mockGetSession,
+  mockGuardTicketPdf,
+  mockGuardRelease,
   mockIsCurrentReference,
   mockRemoveLegacy,
   mockSet,
@@ -21,6 +23,8 @@ const {
     mockFindUser: vi.fn(),
     mockGeneratePdf: vi.fn(),
     mockGetSession: vi.fn(),
+    mockGuardTicketPdf: vi.fn(),
+    mockGuardRelease: vi.fn(),
     mockIsCurrentReference: vi.fn(),
     mockRemoveLegacy: vi.fn(),
     mockSet: set,
@@ -36,6 +40,10 @@ vi.mock('next/headers', () => ({
 
 vi.mock('@/lib/auth', () => ({
   auth: { api: { getSession: mockGetSession } },
+}));
+
+vi.mock('@/lib/ticket-pdf-guard', () => ({
+  guardTicketPdf: mockGuardTicketPdf,
 }));
 
 vi.mock('@/db', () => ({
@@ -104,6 +112,7 @@ function callGet(folio = FOLIO) {
 beforeEach(() => {
   vi.clearAllMocks();
   mockGetSession.mockResolvedValue({ user: { id: 'residente-1' } });
+  mockGuardTicketPdf.mockResolvedValue({ allowed: true, release: mockGuardRelease });
   mockFindTicket.mockResolvedValue(BASE_TICKET);
   mockFindUser.mockResolvedValue({ role: 'residente' });
   mockGeneratePdf.mockResolvedValue(PDF);
@@ -114,6 +123,19 @@ beforeEach(() => {
 });
 
 describe('GET /api/tickets/[folio]/pdf', () => {
+  it('respeta el limite por cuenta antes de consultar o generar el ticket', async () => {
+    mockGuardTicketPdf.mockResolvedValueOnce({
+      allowed: false,
+      response: new Response('Too Many Requests', { status: 429 }),
+    });
+
+    const response = await callGet();
+
+    expect(response.status).toBe(429);
+    expect(mockFindTicket).not.toHaveBeenCalled();
+    expect(mockGeneratePdf).not.toHaveBeenCalled();
+  });
+
   it('rechaza la descarga sin sesión antes de consultar el ticket', async () => {
     mockGetSession.mockResolvedValue(null);
 
@@ -155,6 +177,7 @@ describe('GET /api/tickets/[folio]/pdf', () => {
     expect(mockDownload).not.toHaveBeenCalled();
     expect(mockGeneratePdf).toHaveBeenCalled();
     expect(mockUpload).toHaveBeenCalledWith(FOLIO, PDF);
+    expect(mockGuardRelease).toHaveBeenCalledTimes(1);
   });
 
   it('reemplaza una copia pública histórica por almacenamiento privado', async () => {

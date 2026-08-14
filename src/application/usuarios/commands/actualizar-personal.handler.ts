@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
-import bcrypt from 'bcryptjs';
 import { encryptToken } from '@/lib/crypto';
 import { logger } from '@/lib/logger';
+import { hashAccountPassword } from '@/lib/password';
 import type { UserRepository, UserRole } from '@/src/application/ports/user.repository';
 import type { CircuitoRepository } from '@/src/application/ports/circuito.repository';
 
@@ -36,7 +36,7 @@ export class ActualizarPersonalHandler {
     await userRepo.update(cmd.id, { nombre: cmd.nombre, email: cmd.email });
 
     if (cmd.password) {
-      const hashed = await bcrypt.hash(cmd.password, 10);
+      const hashed = await hashAccountPassword(cmd.password);
       await userRepo.updatePassword(cmd.id, hashed);
     }
 

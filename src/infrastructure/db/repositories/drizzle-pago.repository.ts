@@ -1,10 +1,19 @@
 import { and, eq, gte, lt, sql } from 'drizzle-orm';
 import { db } from '@/db';
-import { auditoria, pagos, cortes, tickets, perfilesResidente, notificaciones } from '@/db/schema';
+import {
+  auditoria,
+  pagos,
+  cortes,
+  tickets,
+  perfilesResidente,
+  notificaciones,
+  mercadoPagoPaymentIntents,
+} from '@/db/schema';
 import type {
   PagoRepository,
   PagoData,
   CrearPagoInput,
+  CrearPagoAuditInput,
   CrearPagosManualBatchInput,
   CrearPagosManualBatchResult,
   CrearPagosMercadoPagoBatchInput,
@@ -13,8 +22,18 @@ import type {
   MetricasAdmin,
 } from '@/src/application/ports/pago.repository';
 import type { PushNotificationInput } from '@/src/application/ports/push-notification';
+import {
+  MercadoPagoPaymentIntentConflictError,
+  type MercadoPagoPaymentIntentConflictReason,
+} from '@/src/application/pagos/errors/mercado-pago-payment-intent-conflict.error';
 import { MercadoPagoPeriodConflictError } from '@/src/application/pagos/errors/mercado-pago-period-conflict.error';
 import { pushNotificationValues } from '@/src/infrastructure/db/push-notification-outbox';
+import {
+  construirEstadoPagosTesorera,
+  MAX_MESES_POR_PAGO_TESORERA,
+  periodoDesdeFecha,
+} from '@/src/domain/pagos/periodos-tesoreria';
+import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
 import { TRPCError } from '@trpc/server';
 
 function esViolacionUnicidad(err: unknown): boolean {
@@ -29,6 +48,101 @@ function esViolacionUnicidad(err: unknown): boolean {
 
 function periodoKey(periodo: { mes: number; anio: number }): string {
   return `${periodo.anio}-${String(periodo.mes).padStart(2, '0')}`;
+}
+
+function moneyToCents(value: string): number | null {
+  const match = /^(\d{1,8})\.(\d{2})$/.exec(value);
+  if (!match) return null;
+
+  const cents = Number(match[1]) * 100 + Number(match[2]);
+  return Number.isSafeInteger(cents) ? cents : null;
+}
+
+function storedPeriodSignature(value: unknown): string | null {
+  if (!value || typeof value !== 'object') return null;
+  const period = value as Record<string, unknown>;
+  if (
+    typeof period.mes !== 'number' ||
+    !Number.isInteger(period.mes) || period.mes < 1 || period.mes > 12 ||
+    typeof period.anio !== 'number' ||
+    !Number.isInteger(period.anio) || period.anio < 2020 || period.anio > 2100 ||
+    typeof period.monto !== 'string' ||
+    typeof period.esReconexion !== 'boolean'
+  ) {
+    return null;
+  }
+
+  const amount = moneyToCents(period.monto);
+  if (amount === null || amount <= 0) return null;
+  return `${period.anio}-${String(period.mes).padStart(2, '0')}:${amount}:${period.esReconexion ? 1 : 0}`;
+}
+
+function requestedPeriodSignature(
+  value: CrearPagosMercadoPagoBatchInput['pagos'][number],
+): string | null {
+  const amount = moneyToCents(value.montoBase);
+  if (amount === null || amount <= 0) return null;
+  return `${value.anio}-${String(value.mes).padStart(2, '0')}:${amount}:${value.esReconexion ? 1 : 0}`;
+}
+
+function assertPaymentIntentMatches(
+  intent: typeof mercadoPagoPaymentIntents.$inferSelect,
+  input: CrearPagosMercadoPagoBatchInput,
+) {
+  const conflict = (reason: MercadoPagoPaymentIntentConflictReason): never => {
+    throw new MercadoPagoPaymentIntentConflictError(
+      input.paymentIntentReference!,
+      input.mercadoPagoPaymentId,
+      reason,
+    );
+  };
+
+  if (intent.perfilId !== input.perfilId) conflict('profile_mismatch');
+  if (intent.circuitoId !== input.circuitoId) conflict('circuit_mismatch');
+  if (intent.currency !== 'MXN') conflict('currency_mismatch');
+  if (
+    intent.mercadoPagoPaymentId &&
+    intent.mercadoPagoPaymentId !== input.mercadoPagoPaymentId
+  ) {
+    conflict('already_consumed');
+  }
+  if (Boolean(intent.mercadoPagoPaymentId) !== Boolean(intent.consumedAt)) {
+    conflict('already_consumed');
+  }
+
+  if (!Array.isArray(intent.periodos) || intent.periodos.length !== input.pagos.length) {
+    conflict('periods_mismatch');
+  }
+  const storedPeriods = intent.periodos.map(storedPeriodSignature);
+  const requestedPeriods = input.pagos.map(requestedPeriodSignature);
+  if (
+    storedPeriods.some(period => period === null) ||
+    requestedPeriods.some(period => period === null) ||
+    [...storedPeriods].sort().join('|') !== [...requestedPeriods].sort().join('|')
+  ) {
+    conflict('periods_mismatch');
+  }
+
+  const expectedTotal = moneyToCents(intent.total);
+  const requestedAmounts = input.pagos.map(pago => moneyToCents(pago.monto));
+  const requestedTotal = requestedAmounts.reduce<number>(
+    (sum, amount) => sum + (amount ?? 0),
+    0,
+  );
+  if (
+    expectedTotal === null ||
+    requestedAmounts.some(amount => amount === null) ||
+    requestedTotal !== expectedTotal
+  ) {
+    conflict('total_mismatch');
+  }
+
+  if (
+    intent.collectorId &&
+    input.pagos.some(pago => pago.mercadoPagoCollectorId !== intent.collectorId)
+  ) {
+    conflict('collector_mismatch');
+  }
 }
 
 function corteDedupeKeys(perfilId: string, periodos: Array<{ mes: number; anio: number }>): string[] {
@@ -99,6 +213,7 @@ export class DrizzlePagoRepository implements PagoRepository {
     perfilId: string,
     input: CrearPagoInput,
     pushNotification?: PushNotificationInput,
+    audit?: CrearPagoAuditInput,
   ): Promise<PagoData> {
     try {
       const result = await db.transaction(async (tx) => {
@@ -147,6 +262,20 @@ export class DrizzlePagoRepository implements PagoRepository {
             .onConflictDoNothing();
         }
 
+        if (audit) {
+          await tx.insert(auditoria).values({
+            actorId: audit.actorId,
+            accion: audit.accion,
+            entidad: 'pago',
+            entidadId: pago.id,
+            detalle: {
+              perfilId,
+              metodo: audit.metodo,
+              folio: pago.folio,
+            },
+          });
+        }
+
         return pago;
       });
       return result as PagoData;
@@ -166,8 +295,14 @@ export class DrizzlePagoRepository implements PagoRepository {
   async createManualBatchWithLock(
     input: CrearPagosManualBatchInput,
   ): Promise<CrearPagosManualBatchResult> {
-    if (input.pagos.length < 1 || input.pagos.length > 36) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'El lote debe contener entre 1 y 36 periodos' });
+    const maximoPeriodos = input.politica.tipo === 'tesorera_escalonada'
+      ? MAX_MESES_POR_PAGO_TESORERA
+      : 36;
+    if (input.pagos.length < 1 || input.pagos.length > maximoPeriodos) {
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: `El lote debe contener entre 1 y ${maximoPeriodos} periodos`,
+      });
     }
 
     const requestedKeys = new Set<string>();
@@ -182,82 +317,133 @@ export class DrizzlePagoRepository implements PagoRepository {
       requestedKeys.add(key);
     }
 
-    return db.transaction(async (tx) => {
-      await tx.execute(sql`SELECT id FROM perfiles_residente WHERE id = ${input.perfilId} FOR UPDATE`);
+    try {
+      return await db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT id FROM perfiles_residente WHERE id = ${input.perfilId} FOR UPDATE`);
 
-      const perfil = await tx.query.perfilesResidente.findFirst({
-        where: (p, { eq }) => eq(p.id, input.perfilId),
-      });
-      if (!perfil) throw new TRPCError({ code: 'NOT_FOUND', message: 'Perfil no encontrado' });
+        const perfil = await tx.query.perfilesResidente.findFirst({
+          where: (p, { eq }) => eq(p.id, input.perfilId),
+        });
+        if (!perfil) throw new TRPCError({ code: 'NOT_FOUND', message: 'Perfil no encontrado' });
 
-      const existentes = await tx.query.pagos.findMany({
-        where: (p, { eq, and }) => and(eq(p.perfilId, input.perfilId), eq(p.estado, 'pagado')),
-      });
-      const existentesPorPeriodo = new Map(
-        existentes
-          .filter(pago => requestedKeys.has(periodoKey(pago)))
-          .map(pago => [periodoKey(pago), pago] as const),
-      );
-      const faltantes = input.pagos.filter(pago => !existentesPorPeriodo.has(periodoKey(pago)));
-      const omitidos = input.pagos
-        .filter(pago => existentesPorPeriodo.has(periodoKey(pago)))
-        .map(({ mes, anio }) => ({ mes, anio }));
+        const existentes = await tx.query.pagos.findMany({
+          where: (p, { eq, and }) => and(eq(p.perfilId, input.perfilId), eq(p.estado, 'pagado')),
+        });
+        const existentesPorPeriodo = new Map(
+          existentes
+            .filter(pago => requestedKeys.has(periodoKey(pago)))
+            .map(pago => [periodoKey(pago), pago] as const),
+        );
 
-      if (input.actualizarEstadoAgua && faltantes.length > 0) {
-        const incluyeReconexion = faltantes.some(pago => pago.esReconexion);
-        const requiereReconexion = perfil.estadoAgua === 'cortado';
-        if (incluyeReconexion !== requiereReconexion) {
-          throw new TRPCError({
-            code: 'CONFLICT',
-            message: 'El estado del servicio cambio; vuelve a calcular el lote antes de registrarlo',
+        if (input.politica.tipo === 'tesorera_escalonada') {
+          if (input.pagos.some(pago => pago.circuitoId !== perfil.circuitoId)) {
+            throw new TRPCError({
+              code: 'CONFLICT',
+              message: 'El residente cambio de circuito; actualiza la lista antes de registrar el pago',
+            });
+          }
+
+          if (existentesPorPeriodo.size > 0) {
+            throw new TRPCError({
+              code: 'CONFLICT',
+              message: 'Uno o mas periodos seleccionados ya fueron pagados; actualiza la lista e intenta de nuevo',
+            });
+          }
+
+          const vigente = PeriodoVO.vigente();
+          const periodoActual = { mes: vigente.mes, anio: vigente.anio };
+          const estadoPagos = construirEstadoPagosTesorera({
+            periodoActual,
+            periodoInicio: periodoDesdeFecha(perfil.creadoEn, periodoActual),
+            periodosPagados: existentes,
           });
-        }
-      }
+          const periodosDisponibles = new Set(
+            estadoPagos.periodos
+              .filter(periodo => periodo.estado === 'disponible')
+              .map(periodoKey),
+          );
+          const periodosInvalidos = input.pagos
+            .filter(pago => !periodosDisponibles.has(periodoKey(pago)))
+            .map(({ mes, anio }) => periodoKey({ mes, anio }));
 
-      let insertados: typeof existentes = [];
-      if (faltantes.length > 0) {
-        insertados = await tx.insert(pagos).values(faltantes).returning();
-        await tx.insert(tickets).values(insertados.map(pago => ({
-          pagoId: pago.id,
-          folio: pago.folio!,
-          pdfUrl: null,
-        })));
-
-        if (input.actualizarEstadoAgua) {
-          const incluyeReconexion = faltantes.some(pago => pago.esReconexion);
-          if (perfil.estadoAgua === 'pendiente_corte' && !incluyeReconexion) {
-            await tx.update(perfilesResidente)
-              .set({ estadoAgua: 'activo' })
-              .where(eq(perfilesResidente.id, input.perfilId));
-          } else if (perfil.estadoAgua === 'cortado' && incluyeReconexion) {
-            await tx.update(perfilesResidente)
-              .set({ estadoAgua: 'pendiente_reconexion' })
-              .where(eq(perfilesResidente.id, input.perfilId));
+          if (periodosInvalidos.length > 0) {
+            throw new TRPCError({
+              code: 'CONFLICT',
+              message: `Los periodos seleccionados no corresponden a la accion disponible: ${periodosInvalidos.join(', ')}`,
+            });
           }
         }
 
-        await tx.execute(cancelCutoffNotificationsQuery(input.perfilId, faltantes));
-        await tx.insert(notificaciones)
-          .values(pushNotificationValues(input.pushNotification))
-          .onConflictDoNothing();
-      }
+        const faltantes = input.pagos.filter(pago => !existentesPorPeriodo.has(periodoKey(pago)));
+        const omitidos = input.pagos
+          .filter(pago => existentesPorPeriodo.has(periodoKey(pago)))
+          .map(({ mes, anio }) => ({ mes, anio }));
 
-      await tx.insert(auditoria).values({
-        actorId: input.auditoria.actorId,
-        accion: input.auditoria.accion,
-        entidad: 'pago',
-        entidadId: insertados[0]?.id ?? input.perfilId,
-        detalle: {
-          perfilId: input.perfilId,
-          metodo: input.auditoria.metodo,
-          folios: insertados.map(pago => pago.folio),
-          omitidos,
-          periodos: input.pagos.map(({ mes, anio }) => ({ mes, anio })),
-        },
+        if (input.actualizarEstadoAgua && faltantes.length > 0) {
+          const incluyeReconexion = faltantes.some(pago => pago.esReconexion);
+          const requiereReconexion = perfil.estadoAgua === 'cortado';
+          if (incluyeReconexion !== requiereReconexion) {
+            throw new TRPCError({
+              code: 'CONFLICT',
+              message: 'El estado del servicio cambio; vuelve a calcular el lote antes de registrarlo',
+            });
+          }
+        }
+
+        let insertados: typeof existentes = [];
+        if (faltantes.length > 0) {
+          insertados = await tx.insert(pagos).values(faltantes).returning();
+          await tx.insert(tickets).values(insertados.map(pago => ({
+            pagoId: pago.id,
+            folio: pago.folio!,
+            pdfUrl: null,
+          })));
+
+          if (input.actualizarEstadoAgua) {
+            const incluyeReconexion = faltantes.some(pago => pago.esReconexion);
+            if (perfil.estadoAgua === 'pendiente_corte' && !incluyeReconexion) {
+              await tx.update(perfilesResidente)
+                .set({ estadoAgua: 'activo' })
+                .where(eq(perfilesResidente.id, input.perfilId));
+            } else if (perfil.estadoAgua === 'cortado' && incluyeReconexion) {
+              await tx.update(perfilesResidente)
+                .set({ estadoAgua: 'pendiente_reconexion' })
+                .where(eq(perfilesResidente.id, input.perfilId));
+            }
+          }
+
+          await tx.execute(cancelCutoffNotificationsQuery(input.perfilId, faltantes));
+          await tx.insert(notificaciones)
+            .values(pushNotificationValues(input.pushNotification))
+            .onConflictDoNothing();
+        }
+
+        await tx.insert(auditoria).values({
+          actorId: input.auditoria.actorId,
+          accion: input.auditoria.accion,
+          entidad: 'pago',
+          entidadId: insertados[0]?.id ?? input.perfilId,
+          detalle: {
+            perfilId: input.perfilId,
+            metodo: input.auditoria.metodo,
+            folios: insertados.map(pago => pago.folio),
+            omitidos,
+            periodos: input.pagos.map(({ mes, anio }) => ({ mes, anio })),
+          },
+        });
+
+        return { pagos: insertados as PagoData[], omitidos };
       });
-
-      return { pagos: insertados as PagoData[], omitidos };
-    });
+    } catch (txError) {
+      if (txError instanceof TRPCError) throw txError;
+      if (esViolacionUnicidad(txError)) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: 'Uno o mas periodos fueron registrados por otra solicitud; actualiza la lista e intenta de nuevo',
+        });
+      }
+      throw txError;
+    }
   }
 
   async createMercadoPagoBatchWithLock(
@@ -272,8 +458,12 @@ export class DrizzlePagoRepository implements PagoRepository {
 
     const requestedKeys = new Set<string>();
     for (const pago of input.pagos) {
-      if (pago.perfilId !== input.perfilId || pago.mercadoPagoPaymentId !== input.mercadoPagoPaymentId) {
-        throw new Error('Todos los periodos deben pertenecer al mismo perfil y paymentId');
+      if (
+        pago.perfilId !== input.perfilId ||
+        pago.circuitoId !== input.circuitoId ||
+        pago.mercadoPagoPaymentId !== input.mercadoPagoPaymentId
+      ) {
+        throw new Error('Todos los periodos deben pertenecer al mismo perfil, circuito y paymentId');
       }
       const key = periodoKey(pago);
       if (requestedKeys.has(key)) throw new Error(`Periodo duplicado en el lote: ${key}`);
@@ -286,18 +476,72 @@ export class DrizzlePagoRepository implements PagoRepository {
       await tx.execute(sql`
         SELECT pg_advisory_xact_lock(hashtextextended(${input.mercadoPagoPaymentId}, 0))
       `);
+
+      let paymentIntent: typeof mercadoPagoPaymentIntents.$inferSelect | null = null;
+      if (input.paymentIntentReference !== undefined) {
+        // La fila de la intencion serializa dos paymentIds distintos que
+        // intenten consumir la misma referencia al mismo tiempo.
+        await tx.execute(sql`
+          SELECT external_reference
+          FROM mercado_pago_payment_intents
+          WHERE external_reference = ${input.paymentIntentReference}
+          FOR UPDATE
+        `);
+        paymentIntent = await tx.query.mercadoPagoPaymentIntents.findFirst({
+          where: (intent, { eq }) =>
+            eq(intent.externalReference, input.paymentIntentReference!),
+        }) ?? null;
+        if (!paymentIntent) {
+          throw new MercadoPagoPaymentIntentConflictError(
+            input.paymentIntentReference,
+            input.mercadoPagoPaymentId,
+            'not_found',
+          );
+        }
+        assertPaymentIntentMatches(paymentIntent, input);
+
+        // El advisory lock del paymentId vuelve estable esta consulta. Evita
+        // depender de una violacion del indice unico para clasificar el caso.
+        const intentForSamePayment = await tx.query.mercadoPagoPaymentIntents.findFirst({
+          where: (intent, { eq }) =>
+            eq(intent.mercadoPagoPaymentId, input.mercadoPagoPaymentId),
+        });
+        if (
+          intentForSamePayment &&
+          intentForSamePayment.externalReference !== input.paymentIntentReference
+        ) {
+          throw new MercadoPagoPaymentIntentConflictError(
+            input.paymentIntentReference,
+            input.mercadoPagoPaymentId,
+            'already_consumed',
+          );
+        }
+      }
       await tx.execute(sql`SELECT id FROM perfiles_residente WHERE id = ${input.perfilId} FOR UPDATE`);
 
+      const perfil = await tx.query.perfilesResidente.findFirst({
+        where: (p, { eq }) => eq(p.id, input.perfilId),
+      });
+      if (!perfil) throw new TRPCError({ code: 'NOT_FOUND', message: 'Perfil no encontrado' });
+      if (perfil.circuitoId !== input.circuitoId) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: 'El perfil cambio de circuito durante la confirmacion del pago',
+        });
+      }
+
       const existentesRelevantes = await tx.query.pagos.findMany({
-        where: (p, { eq, and, or }) => and(
-          eq(p.estado, 'pagado'),
-          or(
-            eq(p.perfilId, input.perfilId),
-            eq(p.mercadoPagoPaymentId, input.mercadoPagoPaymentId),
-          ),
+        // La identidad externa es inmutable aunque el estado contable cambie.
+        // Un pago reversado no debe desaparecer de la deteccion de replay.
+        where: (p, { eq, and, or }) => or(
+          eq(p.mercadoPagoPaymentId, input.mercadoPagoPaymentId),
+          and(eq(p.perfilId, input.perfilId), eq(p.estado, 'pagado')),
         ),
       });
-      const existentesPerfil = existentesRelevantes.filter(pago => pago.perfilId === input.perfilId);
+      const existentesMismoPago = existentesRelevantes.filter(pago =>
+        pago.mercadoPagoPaymentId === input.mercadoPagoPaymentId);
+      const existentesPerfilPagados = existentesRelevantes.filter(pago =>
+        pago.perfilId === input.perfilId && pago.estado === 'pagado');
       const reutilizadoEnOtroPerfil = existentesRelevantes.filter(pago =>
         pago.mercadoPagoPaymentId === input.mercadoPagoPaymentId &&
         pago.perfilId !== input.perfilId);
@@ -315,11 +559,12 @@ export class DrizzlePagoRepository implements PagoRepository {
       }
 
       const existentesPorPeriodo = new Map(
-        existentesPerfil
+        [...existentesMismoPago, ...existentesPerfilPagados]
           .filter(pago => requestedKeys.has(periodoKey(pago)))
           .map(pago => [periodoKey(pago), pago] as const),
       );
-      const conflictos = [...existentesPorPeriodo.values()]
+      const conflictos = existentesPerfilPagados
+        .filter(pago => requestedKeys.has(periodoKey(pago)))
         .filter(pago => pago.mercadoPagoPaymentId !== input.mercadoPagoPaymentId)
         .map(pago => ({
           mes: pago.mes,
@@ -330,10 +575,8 @@ export class DrizzlePagoRepository implements PagoRepository {
       // Un paymentId no puede reaparecer con una referencia que describa otros
       // periodos. Se permite solamente completar lotes parciales creados por la
       // implementacion anterior (sus periodos son subconjunto del lote actual).
-      const periodosAjenosDelMismoPago = existentesPerfil
-        .filter(pago =>
-          pago.mercadoPagoPaymentId === input.mercadoPagoPaymentId &&
-          !requestedKeys.has(periodoKey(pago)))
+      const periodosAjenosDelMismoPago = existentesMismoPago
+        .filter(pago => !requestedKeys.has(periodoKey(pago)))
         .map(pago => ({
           mes: pago.mes,
           anio: pago.anio,
@@ -348,20 +591,16 @@ export class DrizzlePagoRepository implements PagoRepository {
       }
 
       const faltantes = input.pagos.filter(pago => !existentesPorPeriodo.has(periodoKey(pago)));
-      let insertados: typeof existentesPerfil = [];
+      let insertados: typeof existentesPerfilPagados = [];
       if (faltantes.length > 0) {
         insertados = await tx.insert(pagos).values(faltantes).returning();
-
-        const perfil = await tx.query.perfilesResidente.findFirst({
-          where: (p, { eq }) => eq(p.id, input.perfilId),
-        });
         const incluyeReconexion = input.pagos.some(pago => pago.esReconexion);
-        if (perfil?.estadoAgua === 'pendiente_corte' && !incluyeReconexion) {
+        if (perfil.estadoAgua === 'pendiente_corte' && !incluyeReconexion) {
           await tx
             .update(perfilesResidente)
             .set({ estadoAgua: 'activo' })
             .where(eq(perfilesResidente.id, input.perfilId));
-        } else if (perfil?.estadoAgua === 'cortado' && incluyeReconexion) {
+        } else if (perfil.estadoAgua === 'cortado' && incluyeReconexion) {
           await tx
             .update(perfilesResidente)
             .set({ estadoAgua: 'pendiente_reconexion' })
@@ -375,15 +614,30 @@ export class DrizzlePagoRepository implements PagoRepository {
         })));
       }
 
-      await tx.execute(cancelCutoffNotificationsQuery(input.perfilId, input.pagos));
-
       // Un cobro genera un solo mensaje, incluso si acredita doce periodos. El
       // insert queda al final para que nunca se publique antes del lote completo.
       if (faltantes.length > 0) {
+        await tx.execute(cancelCutoffNotificationsQuery(input.perfilId, faltantes));
         await tx
           .insert(notificaciones)
           .values(pushNotificationValues(input.pushNotification))
           .onConflictDoNothing();
+      }
+
+      if (paymentIntent) {
+        // Esta escritura comparte commit/rollback con pagos, tickets, estado de
+        // agua y outbox. Tambien repara de forma idempotente una intencion cuyo
+        // paymentId ya tenia pagos historicos pero aun no estaba marcada.
+        await tx
+          .update(mercadoPagoPaymentIntents)
+          .set({
+            mercadoPagoPaymentId: input.mercadoPagoPaymentId,
+            consumedAt: paymentIntent.consumedAt ?? new Date(),
+          })
+          .where(eq(
+            mercadoPagoPaymentIntents.externalReference,
+            input.paymentIntentReference!,
+          ));
       }
 
       const todosPorPeriodo = new Map(

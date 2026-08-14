@@ -48,8 +48,16 @@ export type CrearPagoInput = {
   fechaPago: Date;
 };
 
+export type CrearPagoAuditInput = {
+  actorId: string;
+  accion: 'pago.manual.representante';
+  metodo: 'efectivo' | 'transferencia';
+};
+
 export type CrearPagosMercadoPagoBatchInput = {
   perfilId: string;
+  circuitoId: string;
+  paymentIntentReference?: string;
   mercadoPagoPaymentId: string;
   pagos: CrearPagoInput[];
   pushNotification: PushNotificationInput;
@@ -63,6 +71,9 @@ export type CrearPagosMercadoPagoBatchResult = {
 export type CrearPagosManualBatchInput = {
   perfilId: string;
   pagos: CrearPagoInput[];
+  politica:
+    | { tipo: 'tesorera_escalonada' }
+    | { tipo: 'admin_retroactivo' };
   actualizarEstadoAgua: boolean;
   pushNotification: PushNotificationInput;
   auditoria: {
@@ -112,6 +123,7 @@ export interface PagoRepository {
     perfilId: string,
     input: CrearPagoInput,
     pushNotification?: PushNotificationInput,
+    audit?: CrearPagoAuditInput,
   ): Promise<PagoData>;
   createMercadoPagoBatchWithLock(
     input: CrearPagosMercadoPagoBatchInput,

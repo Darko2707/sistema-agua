@@ -76,7 +76,6 @@ function Skeleton() {
 // ─── Modal de gastos ─────────────────────────────────────────────────────────
 
 interface GastoModalProps {
-  open: boolean;
   onClose: () => void;
   titulo: string;
   inicial?: {
@@ -91,7 +90,7 @@ interface GastoModalProps {
   onGuardar: (d: { concepto: string; monto: number; categoria: CatGasto; fecha: string }) => Promise<void>;
 }
 
-function GastoModal({ open, onClose, titulo, inicial, mes, anio, onGuardar }: GastoModalProps) {
+function GastoModal({ onClose, titulo, inicial, mes, anio, onGuardar }: GastoModalProps) {
   const hoy = new Date().toISOString().split('T')[0];
   const [concepto,   setConcepto]   = useState(inicial?.concepto   ?? '');
   const [monto,      setMonto]      = useState(inicial?.monto      ?? 0);
@@ -99,8 +98,6 @@ function GastoModal({ open, onClose, titulo, inicial, mes, anio, onGuardar }: Ga
   const [fecha,      setFecha]      = useState(inicial?.fecha ?? hoy);
   const [guardando,  setGuardando]  = useState(false);
   const [errMsg,     setErrMsg]     = useState('');
-
-  if (!open) return null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -168,7 +165,6 @@ function GastoModal({ open, onClose, titulo, inicial, mes, anio, onGuardar }: Ga
 // ─── Modal de ingresos adicionales ───────────────────────────────────────────
 
 interface IngresoModalProps {
-  open: boolean;
   onClose: () => void;
   titulo: string;
   inicial?: { id?: string; concepto: string; monto: number; fecha: string };
@@ -177,15 +173,13 @@ interface IngresoModalProps {
   onGuardar: (d: { concepto: string; monto: number; fecha: string }) => Promise<void>;
 }
 
-function IngresoModal({ open, onClose, titulo, inicial, mes, anio, onGuardar }: IngresoModalProps) {
+function IngresoModal({ onClose, titulo, inicial, mes, anio, onGuardar }: IngresoModalProps) {
   const hoy = new Date().toISOString().split('T')[0];
   const [concepto,  setConcepto]  = useState(inicial?.concepto ?? '');
   const [monto,     setMonto]     = useState(inicial?.monto    ?? 0);
   const [fecha,     setFecha]     = useState(inicial?.fecha    ?? hoy);
   const [guardando, setGuardando] = useState(false);
   const [errMsg,    setErrMsg]    = useState('');
-
-  if (!open) return null;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -614,22 +608,24 @@ export function ReporteFinanciero() {
       ) : null}
 
       {/* Modales */}
-      <GastoModal
-        open={modalAbierto}
-        onClose={() => { setModalAbierto(false); setGastoEditando(null); }}
-        titulo={gastoEditando ? 'Editar gasto' : 'Agregar gasto'}
-        inicial={gastoEditando ?? undefined}
-        mes={mes} anio={anio}
-        onGuardar={gastoEditando ? handleEditarGasto : handleAgregarGasto}
-      />
-      <IngresoModal
-        open={ingresoModalAbierto}
-        onClose={() => { setIngresoModalAbierto(false); setIngresoEditando(null); }}
-        titulo={ingresoEditando ? 'Editar ingreso adicional' : 'Agregar ingreso adicional'}
-        inicial={ingresoEditando ?? undefined}
-        mes={mes} anio={anio}
-        onGuardar={ingresoEditando ? handleEditarIngreso : handleAgregarIngreso}
-      />
+      {modalAbierto && (
+        <GastoModal
+          onClose={() => { setModalAbierto(false); setGastoEditando(null); }}
+          titulo={gastoEditando ? 'Editar gasto' : 'Agregar gasto'}
+          inicial={gastoEditando ?? undefined}
+          mes={mes} anio={anio}
+          onGuardar={gastoEditando ? handleEditarGasto : handleAgregarGasto}
+        />
+      )}
+      {ingresoModalAbierto && (
+        <IngresoModal
+          onClose={() => { setIngresoModalAbierto(false); setIngresoEditando(null); }}
+          titulo={ingresoEditando ? 'Editar ingreso adicional' : 'Agregar ingreso adicional'}
+          inicial={ingresoEditando ?? undefined}
+          mes={mes} anio={anio}
+          onGuardar={ingresoEditando ? handleEditarIngreso : handleAgregarIngreso}
+        />
+      )}
     </div>
   );
 }

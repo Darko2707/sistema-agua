@@ -2,6 +2,7 @@
 import { db } from '@/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import { generarReporteResidentesExcel } from '@/server/services/excel-reportes';
+import { guardReportExport } from '@/lib/report-export-guard';
 
 function parsarDepto(depto: string) {
   const m = depto.match(/^(\d+)([a-zA-Z]?)$/);
@@ -47,6 +48,11 @@ export async function GET(req: Request) {
     where: (u) => and(eq(u.id, session.user.id), isNull(u.deletedAt)),
   });
   if (dbUser?.role !== 'tesorera') return new Response('Prohibido', { status: 403 });
+
+  const exportGuard = await guardReportExport(session.user.id);
+  if (!exportGuard.allowed) return exportGuard.response;
+
+  try {
 
   let circuito = await db.query.circuitos.findFirst({
     where: (c, { eq }) => eq(c.tesoreraId, session.user.id),
@@ -167,4 +173,7 @@ export async function GET(req: Request) {
       'X-Content-Type-Options': 'nosniff',
     },
   });
+  } finally {
+    await exportGuard.release();
+  }
 }

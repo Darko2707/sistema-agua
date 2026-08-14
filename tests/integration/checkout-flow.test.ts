@@ -4,7 +4,8 @@
  * Run with:
  *   npx vitest run --config vitest.integration.config.ts
  *
- * These tests use the DATABASE_URL from .env.local.
+ * These tests require an explicit TEST_DATABASE_URL that points to an isolated
+ * test branch/database. The integration config never loads .env.local.
  * All test data uses year 2090 for payments and unique nanoid-suffixed IDs
  * so they never conflict with production rows.
  */
@@ -109,6 +110,7 @@ function cmd(mes: number, overrides: Partial<{
 }> = {}) {
   return {
     perfilId:               FX.perfilId,
+    circuitoId:             FX.circId,
     periodos: [{
       mes,
       anio: ANIO,
@@ -205,6 +207,7 @@ describe('Checkout flow — integración con BD real', () => {
 
       const result = await handler.execute({
         perfilId: FX.perfilId,
+        circuitoId: FX.circId,
         periodos,
         metodo: 'mercado_pago',
         mercadoPagoPaymentId: 'mp-batch-12',
@@ -293,14 +296,15 @@ describe('Checkout flow — integración con BD real', () => {
     });
   });
 
-  describe('External reference round-trip', () => {
-    it('la referencia construida por checkout parsea de vuelta con los mismos campos', () => {
+  describe('Compatibilidad con external_reference legado', () => {
+    it('la referencia historica v1 parsea con los mismos campos', () => {
       const mes = 7;
       const anio = ANIO;
       const esReconexion = false;
       const montoBase = '100.00';
 
-      // This mirrors exactly what app/api/mercadopago/checkout/route.ts constructs
+      // Los checkouts nuevos usan intenciones opacas; este parser se conserva
+      // para callbacks de preferencias emitidas antes de la migracion 0022.
       const externalRef = ['agua', FX.perfilId, mes, anio, esReconexion ? '1' : '0', montoBase].join('|');
 
       const parsed = parseExternalReference(externalRef);

@@ -89,18 +89,22 @@ Implementa en el middleware (`middleware.ts`) para redirigir todo el tráfico a 
 
 ---
 
-## Archivos (Cloudflare R2)
+## Archivos (Vercel Blob)
 
-Los PDFs de tickets se almacenan en R2 con el bucket `tickets-agua`.
+Los PDFs de tickets se almacenan como blobs privados en Vercel Blob, bajo el
+prefijo `private-tickets/`. La aplicación guarda identificadores internos, no
+URLs públicas, y accede a ellos con `BLOB_READ_WRITE_TOKEN`.
 
-- **Retención:** R2 no tiene expiración automática — los archivos persisten indefinidamente.
-- **Respaldo:** R2 replica datos internamente en múltiples ubicaciones (99.999999999% durabilidad).
-- **Exportación manual:** Si se requiere un snapshot completo del bucket:
-
-```bash
-# Instala rclone y configura con las credenciales R2
-rclone sync r2:tickets-agua ./backup-r2-$(date +%Y%m%d)
-```
+- **Acceso:** los blobs son privados; comprobar un respaldo requiere descargar
+  una muestra usando una credencial de servidor autorizada.
+- **Respaldo independiente:** la replicación y disponibilidad del proveedor no
+  sustituyen un respaldo. Este repositorio todavía no automatiza una exportación
+  periódica de Vercel Blob a otro destino.
+- **Exportación:** antes de declarar cubiertos los PDFs, implementar y probar un
+  proceso que liste y descargue `private-tickets/` mediante la API/SDK de Vercel
+  Blob, almacene el snapshot fuera de la cuenta principal y documente su
+  restauración. No usar el procedimiento de R2: ese bucket no es el almacenamiento
+  activo de esta aplicación.
 
 ---
 
@@ -116,4 +120,4 @@ No requiere política de respaldo — ante pérdida total, el rate limiter simpl
 - [ ] Verificar que PITR esté activo en la consola de Neon
 - [ ] Comprobar el plan de Neon y la retención vigente
 - [ ] Ejecutar una restauración de prueba en rama temporal y borrarla
-- [ ] Confirmar que los PDFs de tickets recientes están accesibles en R2
+- [ ] Confirmar que los PDFs recientes están accesibles en Vercel Blob y verificar el último snapshot independiente

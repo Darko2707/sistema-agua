@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { trpcReact } from '@/lib/trpc-react';
 import { MESES_CORTO as MESES } from '@/lib/meses';
+import { MAX_MESES_POR_PAGO_TESORERA } from '@/src/domain/pagos/periodos-tesoreria';
 
 const C = {
   green:      '#15493A',
@@ -25,83 +26,148 @@ const FS = "var(--font-space-grotesk), 'Space Grotesk', sans-serif";
 
 type Filtro = 'todos' | 'pendientes';
 type MetodoPago = 'efectivo' | 'transferencia';
-type PeriodoPago = { mes: number; anio: number; tipo: 'atrasado' | 'actual' | 'adelantado'; label: string };
+type AccionDisponible = 'pagar_atrasados' | 'pagar_actual' | 'adelantar';
+type TipoPeriodo = 'atrasado' | 'actual' | 'adelantado';
+type EstadoPeriodo = 'pagado' | 'disponible' | 'bloqueado';
+type MesAnio = { mes: number; anio: number };
+type PeriodoPago = MesAnio & { tipo: TipoPeriodo; estado: EstadoPeriodo };
 type ResidentePago = {
   id: string;
   edificio: string;
   departamento: string;
   estadoAgua: string;
   pagoEsteMes: boolean;
+  accionDisponible: AccionDisponible;
+  atrasadosPendientes: number;
+  periodos: PeriodoPago[];
   usuario?: { id?: string; name?: string | null; email?: string | null };
 };
 
 const MESES_FULL = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
-function generarPeriodosPago(): PeriodoPago[] {
-  const now = new Date();
-  return Array.from({ length: 25 }, (_, index) => {
-    const offset = index - 12;
-    const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
-    const mes = d.getMonth() + 1;
-    const anio = d.getFullYear();
-    return {
-      mes,
-      anio,
-      tipo: offset < 0 ? 'atrasado' : offset === 0 ? 'actual' : 'adelantado',
-      label: `${MESES_FULL[mes - 1]} ${anio}`,
-    };
-  });
+const ACCION_LABEL: Record<AccionDisponible, string> = {
+  pagar_atrasados: 'Pagar atrasados',
+  pagar_actual:    'Pagar mes actual',
+  adelantar:       'Adelantar pago',
+};
+
+const TIPO_LABEL: Record<TipoPeriodo, string> = {
+  atrasado:   'Atrasados',
+  actual:     'Mes actual',
+  adelantado: 'Adelantados',
+};
+
+function compararPeriodos(a: MesAnio, b: MesAnio) {
+  return a.anio - b.anio || a.mes - b.mes;
 }
 
-const PERIODOS_PAGO = generarPeriodosPago();
+function periodoKey(periodo: MesAnio) {
+  return `${periodo.anio}-${periodo.mes}`;
+}
+
+function etiquetaPeriodo(periodo: MesAnio) {
+  return `${MESES_FULL[periodo.mes - 1]} ${periodo.anio}`;
+}
+
+function detalleEstadoPeriodo(periodo: PeriodoPago, accion: AccionDisponible) {
+  if (periodo.estado === 'pagado') return 'Pagado ✓';
+  if (periodo.estado === 'disponible') return 'Disponible';
+  return accion === 'pagar_atrasados'
+    ? 'Primero cubre atrasados'
+    : 'Primero paga el mes actual';
+}
 
 export function PagosTesorera() {
   const [filtro,      setFiltro]      = useState<Filtro>('pendientes');
   const [busqueda,    setBusqueda]    = useState('');
   const [registrando, setRegistrando] = useState<string | null>(null);
   const [toast,       setToast]       = useState<{ msg: string; tipo: 'ok' | 'error' } | null>(null);
-  const [modalPago, setModalPago] = useState<{ residente: ResidentePago; metodo: MetodoPago } | null>(null);
-  const [mesesSel, setMesesSel] = useState<Array<{ mes: number; anio: number }>>([]);
+  const [modalPago, setModalPago] = useState<{ residenteId: string } | null>(null);
+  const [metodoSel, setMetodoSel] = useState<MetodoPago>('efectivo');
+  const [mesesSel, setMesesSel] = useState<MesAnio[]>([]);
 
   const utils    = trpcReact.useUtils();
   const query    = trpcReact.pagos.listarResidentesParaPago.useQuery();
   const mutation = trpcReact.pagos.registrarManualTesorera.useMutation({
     onSuccess: () => {
-      void utils.pagos.listarResidentesParaPago.invalidate();
       void utils.reportes.reporteFinanciero.invalidate();
+    },
+    onSettled: () => {
+      void utils.pagos.listarResidentesParaPago.invalidate();
     },
   });
 
   const circuito   = query.data?.circuito;
   const residentes = useMemo(() => query.data?.residentes ?? [], [query.data?.residentes]);
   const cargando   = query.isLoading;
-  const ahora      = new Date();
+  const periodoActual = query.data?.periodoActual;
+  const residenteModal = modalPago
+    ? residentes.find(residente => residente.id === modalPago.residenteId) ?? null
+    : null;
+  const periodosModal = residenteModal
+    ? [...residenteModal.periodos].sort(compararPeriodos)
+    : [];
+  const periodosDisponiblesModal = new Set(
+    periodosModal
+      .filter(periodo => periodo.estado === 'disponible')
+      .map(periodoKey),
+  );
+  const mesesSeleccionados = mesesSel.filter(periodo => periodosDisponiblesModal.has(periodoKey(periodo)));
 
-  function abrirModal(residente: ResidentePago, metodo: MetodoPago) {
-    const actual = PERIODOS_PAGO.find(p => p.tipo === 'actual');
-    setModalPago({ residente, metodo });
-    setMesesSel(actual ? [{ mes: actual.mes, anio: actual.anio }] : []);
+  function abrirModal(residente: ResidentePago) {
+    const primeroDisponible = [...residente.periodos]
+      .filter(periodo => periodo.estado === 'disponible')
+      .sort(compararPeriodos)[0];
+    if (!primeroDisponible) {
+      mostrar('No hay periodos disponibles para registrar', 'error');
+      return;
+    }
+    setModalPago({ residenteId: residente.id });
+    setMetodoSel('efectivo');
+    setMesesSel(primeroDisponible
+      ? [{ mes: primeroDisponible.mes, anio: primeroDisponible.anio }]
+      : []);
   }
 
-  function toggleMes(mes: number, anio: number) {
-    setMesesSel(prev => prev.some(m => m.mes === mes && m.anio === anio)
-      ? prev.filter(m => !(m.mes === mes && m.anio === anio))
-      : [...prev, { mes, anio }]);
+  function toggleMes(periodo: PeriodoPago) {
+    if (periodo.estado !== 'disponible') return;
+    setMesesSel(prev => {
+      const vigentes = prev.filter(mes => periodosDisponiblesModal.has(periodoKey(mes)));
+      const existe = vigentes.some(mes => periodoKey(mes) === periodoKey(periodo));
+      if (existe) return vigentes.filter(mes => periodoKey(mes) !== periodoKey(periodo));
+      if (vigentes.length >= MAX_MESES_POR_PAGO_TESORERA) {
+        mostrar(`Puedes registrar como máximo ${MAX_MESES_POR_PAGO_TESORERA} meses a la vez`, 'error');
+        return vigentes;
+      }
+      return [...vigentes, { mes: periodo.mes, anio: periodo.anio }];
+    });
   }
 
   async function registrar() {
-    if (!modalPago || mesesSel.length === 0) return;
-    setRegistrando(`${modalPago.residente.id}:${modalPago.metodo}`);
+    if (!residenteModal || mesesSeleccionados.length === 0) return;
+    setRegistrando(residenteModal.id);
     try {
       const res = await mutation.mutateAsync({
-        perfilId: modalPago.residente.id,
-        metodo: modalPago.metodo,
-        meses: mesesSel,
+        perfilId: residenteModal.id,
+        metodo: metodoSel,
+        meses: [...mesesSeleccionados].sort(compararPeriodos),
       });
       setModalPago(null);
       setMesesSel([]);
-      mostrar(`Pago registrado — folio ${res.folio}`, 'ok');
+      const registrados = res.registrados;
+      const folios = res.folios.filter(Boolean);
+      const resumenFolios = folios.length > 0
+        ? ` · ${folios.length === 1 ? 'Folio' : 'Folios'}: ${folios.join(', ')}`
+        : '';
+      const resumenOmitidos = res.omitidos.length > 0
+        ? ` · Ya pagados: ${res.omitidos.join(', ')}`
+        : '';
+      mostrar(
+        `${registrados} ${registrados === 1 ? 'mes registrado' : 'meses registrados'}${resumenFolios}${resumenOmitidos}`,
+        'ok',
+      );
     } catch (e: unknown) {
+      await utils.pagos.listarResidentesParaPago.invalidate();
       mostrar(e instanceof Error ? e.message : 'No se pudo registrar el pago', 'error');
     } finally {
       setRegistrando(null);
@@ -120,7 +186,9 @@ export function PagosTesorera() {
           `${r.usuario?.name} ${r.usuario?.email} ${r.edificio} ${r.departamento}`.toLowerCase().includes(term),
         )
       : residentes;
-    return filtro === 'pendientes' ? base.filter(r => !r.pagoEsteMes) : base;
+    return filtro === 'pendientes'
+      ? base.filter(r => r.accionDisponible !== 'adelantar')
+      : base;
   }, [residentes, busqueda, filtro]);
 
   if (cargando) {
@@ -128,6 +196,22 @@ export function PagosTesorera() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '64px 0', fontFamily: FM }}>
         <div style={{ width: 28, height: 28, border: `3px solid ${C.greenLight}`, borderTopColor: C.green, borderRadius: '50%', animation: 'tes-spin 0.8s linear infinite' }} />
         <style>{`@keyframes tes-spin{to{transform:rotate(360deg)}}`}</style>
+      </div>
+    );
+  }
+
+  if (query.isError) {
+    return (
+      <div role="alert" style={{ background: C.dangerBg, border: '1px solid #F3BFBF', borderRadius: 16, padding: '20px 22px', color: C.danger, fontFamily: FM }}>
+        <div style={{ fontWeight: 800 }}>No se pudieron cargar los pagos.</div>
+        <div style={{ marginTop: 4, fontSize: 13 }}>Revisa tu conexión e inténtalo de nuevo.</div>
+        <button
+          type="button"
+          onClick={() => void query.refetch()}
+          style={{ marginTop: 12, border: `1px solid ${C.danger}`, background: '#fff', color: C.danger, borderRadius: 10, padding: '8px 13px', fontWeight: 800, cursor: 'pointer' }}
+        >
+          Reintentar
+        </button>
       </div>
     );
   }
@@ -140,8 +224,8 @@ export function PagosTesorera() {
     );
   }
 
-  const pagados   = residentes.filter(r => r.pagoEsteMes).length;
-  const pendientes = residentes.length - pagados;
+  const pagadosEsteMes = residentes.filter(r => r.pagoEsteMes).length;
+  const pendientes = residentes.filter(r => r.accionDisponible !== 'adelantar').length;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, fontFamily: FM }}>
@@ -169,19 +253,19 @@ export function PagosTesorera() {
               {circuito.nombre}
             </div>
             <div style={{ fontSize: 12.5, color: C.textMuted, marginTop: 3 }}>
-              {MESES[ahora.getMonth()]} {ahora.getFullYear()} · Cuota ${circuito.montoMensual} · Reconexión ${circuito.montoReconexion}
+              {periodoActual ? `${MESES[periodoActual.mes - 1]} ${periodoActual.anio}` : 'Mes actual'} · Cuota ${circuito.montoMensual} · Reconexión ${circuito.montoReconexion}
             </div>
           </div>
 
           <div style={{ display: 'flex', gap: 16 }}>
             <div style={{ textAlign: 'center' }}>
-              <div style={{ fontFamily: FS, fontSize: 26, fontWeight: 800, color: C.greenText }}>{pagados}</div>
-              <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 700 }}>Pagados</div>
+              <div style={{ fontFamily: FS, fontSize: 26, fontWeight: 800, color: C.greenText }}>{pagadosEsteMes}</div>
+              <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 700 }}>Mes actual pagado</div>
             </div>
             <div style={{ width: 1, background: C.border, alignSelf: 'stretch' }} />
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontFamily: FS, fontSize: 26, fontWeight: 800, color: '#D97706' }}>{pendientes}</div>
-              <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 700 }}>Pendientes</div>
+              <div style={{ fontSize: 11, color: C.textMuted, fontWeight: 700 }}>Requieren cobro</div>
             </div>
             <div style={{ width: 1, background: C.border, alignSelf: 'stretch' }} />
             <div style={{ textAlign: 'center' }}>
@@ -276,7 +360,13 @@ export function PagosTesorera() {
 
                   {r.pagoEsteMes && (
                     <span style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 12px', borderRadius: 20, background: C.greenLight, color: C.greenText }}>
-                      Pagado ✓
+                      Mes actual pagado ✓
+                    </span>
+                  )}
+
+                  {r.atrasadosPendientes > 0 && (
+                    <span style={{ fontSize: 11.5, fontWeight: 700, padding: '4px 12px', borderRadius: 20, background: C.goldBg, color: '#8A5A00' }}>
+                      {r.atrasadosPendientes} {r.atrasadosPendientes === 1 ? 'mes atrasado' : 'meses atrasados'}
                     </span>
                   )}
 
@@ -287,20 +377,17 @@ export function PagosTesorera() {
                           +${Number(circuito.montoReconexion).toFixed(0)} reconexión
                         </span>
                       )}
+                      {!r.periodos.some(periodo => periodo.estado === 'disponible') && (
+                        <span style={{ fontSize: 11, color: C.textMuted, fontWeight: 700 }}>
+                          Sin periodos disponibles
+                        </span>
+                      )}
                       <ActionBtn
-                        label={r.pagoEsteMes ? 'Adelantar efectivo' : 'Efectivo'}
-                        loading={registrando === `${r.id}:efectivo`}
-                        disabled={!!registrando}
+                        label={ACCION_LABEL[r.accionDisponible]}
+                        loading={registrando === r.id}
+                        disabled={!!registrando || !r.periodos.some(periodo => periodo.estado === 'disponible')}
                         danger={r.estadoAgua === 'cortado'}
-                        outline
-                        onClick={() => abrirModal(r, 'efectivo')}
-                      />
-                      <ActionBtn
-                        label={r.pagoEsteMes ? 'Adelantar transferencia' : 'Transferencia'}
-                        loading={registrando === `${r.id}:transferencia`}
-                        disabled={!!registrando}
-                        danger={r.estadoAgua === 'cortado'}
-                        onClick={() => abrirModal(r, 'transferencia')}
+                        onClick={() => abrirModal(r)}
                       />
                     </div>
                   )}
@@ -311,52 +398,113 @@ export function PagosTesorera() {
         )}
       </div>
 
-      {modalPago && (
+      {modalPago && residenteModal && (
         <div
           role="dialog"
           aria-modal="true"
+          aria-labelledby="titulo-pago-tesorera"
           style={{ position: 'fixed', inset: 0, zIndex: 80, background: 'rgba(0,0,0,.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18 }}
           onClick={e => { if (e.target === e.currentTarget && !registrando) setModalPago(null); }}
         >
           <div style={{ width: '100%', maxWidth: 560, maxHeight: '88vh', overflow: 'auto', background: '#fff', borderRadius: 18, padding: 20, boxShadow: '0 22px 70px rgba(0,0,0,.25)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16, alignItems: 'flex-start' }}>
               <div>
-                <h2 style={{ fontFamily: FS, fontSize: 18, color: C.green, fontWeight: 800 }}>Registrar pago</h2>
+                <h2 id="titulo-pago-tesorera" style={{ fontFamily: FS, fontSize: 18, color: C.green, fontWeight: 800 }}>
+                  {ACCION_LABEL[residenteModal.accionDisponible]}
+                </h2>
                 <p style={{ marginTop: 4, color: C.textMuted, fontSize: 13 }}>
-                  {modalPago.residente.usuario?.name ?? 'Sin nombre'} · {modalPago.metodo === 'efectivo' ? 'Efectivo' : 'Transferencia'}
+                  {residenteModal.usuario?.name ?? 'Sin nombre'} · Edif. {residenteModal.edificio} · Depto {residenteModal.departamento}
                 </p>
               </div>
-              <button type="button" onClick={() => setModalPago(null)} disabled={!!registrando} style={{ border: 'none', background: C.greenLight, color: C.green, borderRadius: 10, width: 34, height: 34, cursor: 'pointer', fontWeight: 800 }}>×</button>
+              <button type="button" aria-label="Cerrar" onClick={() => setModalPago(null)} disabled={!!registrando} style={{ border: 'none', background: C.greenLight, color: C.green, borderRadius: 10, width: 34, height: 34, cursor: registrando ? 'not-allowed' : 'pointer', fontWeight: 800 }}>×</button>
             </div>
 
-            <div style={{ marginTop: 16, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
-              {PERIODOS_PAGO.map(p => {
-                const selected = mesesSel.some(m => m.mes === p.mes && m.anio === p.anio);
-                const color = p.tipo === 'atrasado' ? '#B45309' : p.tipo === 'actual' ? C.green : '#2563EB';
+            <fieldset disabled={!!registrando} style={{ marginTop: 16, padding: 0, border: 0 }}>
+              <legend style={{ marginBottom: 7, color: C.textMain, fontSize: 12, fontWeight: 800 }}>
+                Método de pago
+              </legend>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                {(['efectivo', 'transferencia'] as const).map(metodo => {
+                  const activo = metodoSel === metodo;
+                  return (
+                    <label
+                      key={metodo}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                        border: activo ? `2px solid ${C.green}` : `1px solid ${C.border}`,
+                        background: activo ? C.greenLight : '#fff', color: activo ? C.green : C.textMain,
+                        borderRadius: 12, minHeight: 42, padding: '8px 12px', cursor: registrando ? 'not-allowed' : 'pointer',
+                        fontSize: 13, fontWeight: 800,
+                      }}
+                    >
+                      <input
+                        type="radio"
+                        name="metodo-pago-tesorera"
+                        value={metodo}
+                        checked={activo}
+                        onChange={() => setMetodoSel(metodo)}
+                        style={{ accentColor: C.green }}
+                      />
+                      {metodo === 'efectivo' ? 'Efectivo' : 'Transferencia'}
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
+
+            <div style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 15 }}>
+              {(['atrasado', 'actual', 'adelantado'] as const).map(tipo => {
+                const periodos = periodosModal.filter(periodo => periodo.tipo === tipo);
+                if (periodos.length === 0) return null;
                 return (
-                  <button
-                    key={`${p.anio}-${p.mes}`}
-                    type="button"
-                    onClick={() => toggleMes(p.mes, p.anio)}
-                    style={{
-                      minHeight: 48, borderRadius: 12, border: selected ? `2px solid ${color}` : `1px solid ${C.border}`,
-                      background: selected ? '#F8FAF7' : '#fff', color: C.textMain, cursor: 'pointer',
-                      display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center', padding: '8px 10px',
-                    }}
-                  >
-                    <span style={{ fontWeight: 800, fontSize: 13 }}>{p.label}</span>
-                    <span style={{ color, fontSize: 11, fontWeight: 800, textTransform: 'uppercase' }}>{p.tipo}</span>
-                  </button>
+                  <section key={tipo} aria-labelledby={`grupo-periodos-${tipo}`}>
+                    <h3 id={`grupo-periodos-${tipo}`} style={{ marginBottom: 7, color: C.textMuted, fontSize: 11, fontWeight: 800, letterSpacing: '.04em', textTransform: 'uppercase' }}>
+                      {TIPO_LABEL[tipo]}
+                    </h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 8 }}>
+                      {periodos.map(periodo => {
+                        const selected = mesesSeleccionados.some(mes => periodoKey(mes) === periodoKey(periodo));
+                        const disabled = periodo.estado !== 'disponible' || !!registrando;
+                        const color = tipo === 'atrasado' ? '#B45309' : tipo === 'actual' ? C.green : '#2563EB';
+                        const detalle = detalleEstadoPeriodo(periodo, residenteModal.accionDisponible);
+                        return (
+                          <button
+                            key={periodoKey(periodo)}
+                            type="button"
+                            disabled={disabled}
+                            aria-pressed={selected}
+                            aria-label={`${etiquetaPeriodo(periodo)}, ${detalle}`}
+                            onClick={() => toggleMes(periodo)}
+                            style={{
+                              minHeight: 58, borderRadius: 12,
+                              border: selected ? `2px solid ${color}` : `1px solid ${C.border}`,
+                              background: selected ? '#F8FAF7' : periodo.estado === 'disponible' ? '#fff' : '#F4F3EF',
+                              color: periodo.estado === 'disponible' ? C.textMain : C.textMuted,
+                              cursor: disabled ? 'not-allowed' : 'pointer', opacity: periodo.estado === 'disponible' ? 1 : .72,
+                              display: 'flex', flexDirection: 'column', alignItems: 'flex-start', justifyContent: 'center', padding: '8px 10px',
+                            }}
+                          >
+                            <span style={{ fontWeight: 800, fontSize: 13 }}>{etiquetaPeriodo(periodo)}</span>
+                            <span style={{ color: periodo.estado === 'disponible' ? color : C.textMuted, fontSize: 10.5, fontWeight: 800 }}>
+                              {detalle}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
                 );
               })}
             </div>
 
             <div style={{ marginTop: 16, display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-              <span style={{ color: C.textMuted, fontSize: 13, fontWeight: 700 }}>{mesesSel.length} meses seleccionados</span>
+              <span style={{ color: C.textMuted, fontSize: 13, fontWeight: 700 }}>
+                {mesesSeleccionados.length} {mesesSeleccionados.length === 1 ? 'mes seleccionado' : 'meses seleccionados'} · máximo {MAX_MESES_POR_PAGO_TESORERA}
+              </span>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button type="button" onClick={() => setModalPago(null)} disabled={!!registrando} style={{ border: `1px solid ${C.border}`, background: '#fff', color: C.textMain, borderRadius: 10, padding: '9px 14px', fontWeight: 800, cursor: 'pointer' }}>Cancelar</button>
-                <button type="button" onClick={registrar} disabled={!!registrando || mesesSel.length === 0} style={{ border: 'none', background: C.green, color: '#fff', borderRadius: 10, padding: '9px 14px', fontWeight: 800, cursor: registrando ? 'not-allowed' : 'pointer', opacity: registrando ? .65 : 1 }}>
-                  {registrando ? 'Registrando...' : 'Registrar pago'}
+                <button type="button" onClick={() => setModalPago(null)} disabled={!!registrando} style={{ border: `1px solid ${C.border}`, background: '#fff', color: C.textMain, borderRadius: 10, padding: '9px 14px', fontWeight: 800, cursor: registrando ? 'not-allowed' : 'pointer' }}>Cancelar</button>
+                <button type="button" onClick={registrar} disabled={!!registrando || mesesSeleccionados.length === 0} style={{ border: 'none', background: C.green, color: '#fff', borderRadius: 10, padding: '9px 14px', fontWeight: 800, cursor: registrando || mesesSeleccionados.length === 0 ? 'not-allowed' : 'pointer', opacity: registrando || mesesSeleccionados.length === 0 ? .65 : 1 }}>
+                  {registrando ? 'Registrando...' : `Registrar ${mesesSeleccionados.length || ''} ${mesesSeleccionados.length === 1 ? 'mes' : 'meses'}`.trim()}
                 </button>
               </div>
             </div>

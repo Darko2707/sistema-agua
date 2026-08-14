@@ -11,6 +11,7 @@ import type {
   IngresoRangoReporte,
   MesResumen,
 } from '@/server/services/excel-reportes';
+import { guardReportExport } from '@/lib/report-export-guard';
 
 export const dynamic = 'force-dynamic';
 const MAX_RANGO_MESES = 36;
@@ -75,6 +76,11 @@ export async function GET(req: Request) {
     where: (u) => and(eq(u.id, session.user.id), isNull(u.deletedAt)),
   });
   if (dbUser?.role !== 'tesorera') return new Response('Prohibido', { status: 403 });
+
+  const exportGuard = await guardReportExport(session.user.id);
+  if (!exportGuard.allowed) return exportGuard.response;
+
+  try {
 
   const circuito = await resolverCircuito(session.user.id);
   if (!circuito) return new Response('Sin circuito asignado', { status: 404 });
@@ -291,4 +297,7 @@ export async function GET(req: Request) {
       'X-Content-Type-Options': 'nosniff',
     },
   });
+  } finally {
+    await exportGuard.release();
+  }
 }

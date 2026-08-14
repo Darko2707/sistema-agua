@@ -79,13 +79,18 @@ describe('RegistrarPagoManualHandler', () => {
     expect(result.monto).toBe('50.00');
     expect(result.metodo).toBe('efectivo');
     expect(deps.pagoRepo.createWithLock).toHaveBeenCalledOnce();
-    const [, , push] = vi.mocked(deps.pagoRepo.createWithLock).mock.calls[0];
+    const [, , push, audit] = vi.mocked(deps.pagoRepo.createWithLock).mock.calls[0];
     expect(push).toMatchObject({
       userId: 'user-001',
       perfilId: 'perf-001',
       tipo: 'pago_confirmado',
     });
     expect(push?.dedupeKey).toMatch(/^pago_confirmado:folio:/);
+    expect(audit).toEqual({
+      actorId: 'rep-001',
+      accion: 'pago.manual.representante',
+      metodo: 'efectivo',
+    });
   });
 
   it('devuelve el folio persistido si otra solicitud concurrente gana', async () => {

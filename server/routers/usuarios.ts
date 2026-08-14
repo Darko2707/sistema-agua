@@ -1,13 +1,19 @@
 import { router, publicProcedure, authenticatedProcedure, roleProcedure } from '../trpc';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
-import { createHash } from 'node:crypto';
+import type { Ratelimit } from '@upstash/ratelimit';
 
 import { residenteRepo, circuitoRepo, userRepo } from '@/src/infrastructure/db/repositories';
 import {
-  representativeResetGenerateLimiter,
-  representativeResetRedeemLimiter,
+  representativeResetGenerateAccountLimiter,
+  representativeResetGenerateIpLimiter,
+  representativeResetRequestAccountLimiter,
+  representativeResetRequestIpLimiter,
+  representativeResetRedeemAccountLimiter,
+  representativeResetRedeemIpLimiter,
 } from '@/lib/ratelimit';
+import { consumeRateLimit } from '@/lib/rate-limit-guard';
+import { clientIpFromHeaders, opaqueRateLimitKey } from '@/lib/request-security';
 import { CrearPerfilHandler } from '@/src/application/residentes/commands/crear-perfil.handler';
 import { ListarResidentesHandler } from '@/src/application/residentes/queries/listar-residentes.handler';
 import { CrearPersonalHandler } from '@/src/application/usuarios/commands/crear-personal.handler';
@@ -17,6 +23,7 @@ import { CambiarRolHandler } from '@/src/application/usuarios/commands/cambiar-r
 import { CambiarRolEnCircuitoHandler } from '@/src/application/usuarios/commands/cambiar-rol-circuito.handler';
 import { ListarPersonalHandler } from '@/src/application/usuarios/queries/listar-personal.handler';
 import { representativePasswordResetService } from '@/src/infrastructure/db/services/representative-password-reset.service';
+import { isRepresentativeResetCodeValid } from '@/src/domain/usuarios/representative-reset-code';
 
 const crearPerfilHandler        = new CrearPerfilHandler({ residenteRepo, circuitoRepo });
 const listarResidentesHandler   = new ListarResidentesHandler({ residenteRepo, circuitoRepo });
@@ -27,32 +34,21 @@ const cambiarRolHandler         = new CambiarRolHandler({ userRepo });
 const cambiarRolCircuitoHandler = new CambiarRolEnCircuitoHandler({ userRepo });
 const listarPersonalHandler     = new ListarPersonalHandler({ userRepo, circuitoRepo });
 
-function ipFromHeaders(headers: Headers): string {
-  return headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-    ?? headers.get('x-real-ip')
-    ?? 'anonymous';
-}
-
 async function limitOrThrow(
-  limiter: typeof representativeResetRedeemLimiter,
+  limiter: Ratelimit | null,
   key: string,
+  scope: 'representative_reset_request' | 'representative_reset_generate' | 'representative_reset_redeem',
   message = 'Demasiados intentos. Intenta de nuevo mas tarde.',
 ) {
-  if (!limiter) return;
-  try {
-    const result = await limiter.limit(key);
-    if (!result.success) {
-      throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message });
-    }
-  } catch (error) {
-    if (error instanceof TRPCError) throw error;
-    // Redis caido no debe bloquear recuperaciones legitimas; registrar/alertar
-    // se maneja a nivel de infraestructura.
+  const result = await consumeRateLimit({
+    limiter,
+    key,
+    boundary: 'trpc_procedure',
+    scope,
+  });
+  if (result && !result.success) {
+    throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message });
   }
-}
-
-function shortHash(value: string): string {
-  return createHash('sha256').update(value).digest('hex').slice(0, 16);
 }
 
 export const usuariosRouter = router({
@@ -82,12 +78,46 @@ export const usuariosRouter = router({
     return circuitoRepo.findActivos();
   }),
 
+  solicitarCodigoRecuperacion: publicProcedure
+    .input(z.object({ email: z.string().trim().email().max(254) }))
+    .mutation(async ({ ctx, input }) => {
+      const email = input.email.trim().toLowerCase();
+      const ip = clientIpFromHeaders(ctx.headers);
+      await limitOrThrow(
+        representativeResetRequestIpLimiter,
+        opaqueRateLimitKey('ip', ip),
+        'representative_reset_request',
+      );
+      await limitOrThrow(
+        representativeResetRequestAccountLimiter,
+        opaqueRateLimitKey('account', email),
+        'representative_reset_request',
+      );
+      await representativePasswordResetService.requestForResident({ email });
+
+      // No revelar si el correo existe, esta eliminado o pertenece a otro rol.
+      return { ok: true };
+    }),
+
+  listarSolicitudesRecuperacion: roleProcedure('representante')
+    .query(async ({ ctx }) => {
+      return representativePasswordResetService.listPendingForRepresentative(ctx.user.id);
+    }),
+
   generarCodigoRecuperacion: roleProcedure('representante')
     .input(z.object({ perfilId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
+      const ip = clientIpFromHeaders(ctx.headers);
       await limitOrThrow(
-        representativeResetGenerateLimiter,
-        `pwd-reset:generate:${ctx.user.id}:${ipFromHeaders(ctx.headers)}`,
+        representativeResetGenerateIpLimiter,
+        opaqueRateLimitKey('ip', ip),
+        'representative_reset_generate',
+        'Generaste muchos codigos. Espera unos minutos.',
+      );
+      await limitOrThrow(
+        representativeResetGenerateAccountLimiter,
+        opaqueRateLimitKey('account', ctx.user.id),
+        'representative_reset_generate',
         'Generaste muchos codigos. Espera unos minutos.',
       );
       return representativePasswordResetService.generateForResident({
@@ -99,14 +129,23 @@ export const usuariosRouter = router({
   restablecerConCodigoRepresentante: publicProcedure
     .input(z.object({
       email:       z.string().trim().email(),
-      code:        z.string().trim().min(6).max(20),
+      code:        z.string().refine(isRepresentativeResetCodeValid, {
+        message: 'El codigo debe contener exactamente 6 digitos',
+      }),
       newPassword: z.string().min(8).max(128),
     }))
     .mutation(async ({ ctx, input }) => {
       const email = input.email.trim().toLowerCase();
+      const ip = clientIpFromHeaders(ctx.headers);
       await limitOrThrow(
-        representativeResetRedeemLimiter,
-        `pwd-reset:redeem:${shortHash(email)}:${ipFromHeaders(ctx.headers)}`,
+        representativeResetRedeemIpLimiter,
+        opaqueRateLimitKey('ip', ip),
+        'representative_reset_redeem',
+      );
+      await limitOrThrow(
+        representativeResetRedeemAccountLimiter,
+        opaqueRateLimitKey('account', email),
+        'representative_reset_redeem',
       );
       await representativePasswordResetService.redeem(input);
       return { ok: true };

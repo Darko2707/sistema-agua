@@ -5,6 +5,10 @@ import { homePathForRole } from '@/lib/role-home';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import {
+  readRememberedLoginEmail,
+  writeRememberedLoginEmail,
+} from '@/lib/remembered-login';
 import { AuthCard, C, inputBase, labelBase, buttonGold, linkButton, FM } from '../auth-styles';
 
 export default function LoginPage() {
@@ -12,6 +16,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPwd, setShowPwd] = useState(false);
+  const [rememberUser, setRememberUser] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
@@ -26,7 +31,13 @@ export default function LoginPage() {
       })
       .catch(() => undefined)
       .finally(() => {
-        if (active) setCheckingSession(false);
+        if (!active) return;
+        const rememberedEmail = readRememberedLoginEmail();
+        if (rememberedEmail) {
+          setEmail(rememberedEmail);
+          setRememberUser(true);
+        }
+        setCheckingSession(false);
       });
 
     return () => { active = false; };
@@ -37,8 +48,9 @@ export default function LoginPage() {
     setLoading(true);
     setError('');
     try {
+      const normalizedEmail = email.trim().toLowerCase();
       const { error: signInError } = await signIn.email({
-        email: email.trim().toLowerCase(),
+        email: normalizedEmail,
         password,
       });
       if (signInError) {
@@ -46,6 +58,7 @@ export default function LoginPage() {
         setLoading(false);
         return;
       }
+      writeRememberedLoginEmail(normalizedEmail, rememberUser);
       const session = await authClient.getSession();
       const rol = (session?.data?.user as { role?: string })?.role ?? 'residente';
       router.replace(homePathForRole(rol));
@@ -99,7 +112,7 @@ export default function LoginPage() {
               type="email"
               className="auth-inp"
               placeholder="tu@correo.com"
-              autoComplete="email"
+              autoComplete="username"
               required
               value={email}
               onChange={e => setEmail(e.target.value)}
@@ -133,6 +146,40 @@ export default function LoginPage() {
                 }
               </button>
             </div>
+          </div>
+
+          <div>
+            <label
+              htmlFor="remember-user"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 9,
+                minHeight: 44,
+                color: C.textMain,
+                cursor: 'pointer',
+                fontFamily: FM,
+                fontSize: 14,
+                fontWeight: 700,
+              }}
+            >
+              <input
+                id="remember-user"
+                type="checkbox"
+                checked={rememberUser}
+                aria-describedby="remember-user-hint"
+                onChange={(event) => {
+                  const checked = event.target.checked;
+                  setRememberUser(checked);
+                  if (!checked) writeRememberedLoginEmail(email, false);
+                }}
+                style={{ width: 18, height: 18, margin: 0, accentColor: C.greenDk, cursor: 'pointer' }}
+              />
+              Recordar usuario
+            </label>
+            <p id="remember-user-hint" style={{ margin: '1px 0 0 27px', color: C.textMain, fontFamily: FM, fontSize: 12, lineHeight: 1.4 }}>
+              Guarda únicamente tu correo en este dispositivo. Nunca guardamos tu contraseña.
+            </p>
           </div>
 
           {error && (

@@ -257,8 +257,9 @@ export function ResidenteDashboard() {
   const periodoActual = `${MESES[mesActual - 1]} ${anioActual}`;
   const pagadosKeys = new Set(pagos.filter(p => p.estado === 'pagado').map(pagoKey));
   const periodosPendientesTarjeta: Array<{ mes: number; anio: number }> = [];
-  for (let offset = 0; periodosPendientesTarjeta.length < 12 && offset < 36; offset += 1) {
+  for (let offset = 0; periodosPendientesTarjeta.length < 12; offset += 1) {
     const periodo = addMonths(mesActual, anioActual, offset);
+    if (periodo.anio > 2100) break;
     if (!pagadosKeys.has(pagoKey(periodo))) periodosPendientesTarjeta.push(periodo);
   }
   const primerPeriodoTarjeta = periodosPendientesTarjeta[0] ?? { mes: mesActual, anio: anioActual };

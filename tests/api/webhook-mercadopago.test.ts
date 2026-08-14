@@ -5,6 +5,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mockExecute = vi.fn().mockResolvedValue({ folio: 'AGU-001', yaRegistrado: false });
 const mockSchedulePushDispatch = vi.fn();
+const mockFindPaymentIntent = vi.fn();
 
 vi.mock('@/src/application/pagos/commands/procesar-pago-mp.handler', () => ({
   // Arrow-function field defers access to mockExecute until call time (avoids TDZ).
@@ -36,6 +37,11 @@ vi.mock('@/lib/crypto', () => ({
 
 vi.mock('@/lib/mercadopago', () => ({
   createMercadoPagoClients: vi.fn(),
+}));
+
+vi.mock('@/src/infrastructure/mercadopago/payment-intent', () => ({
+  isMercadoPagoPaymentIntentReference: (value: string) => /^agua_[a-f0-9]{48}$/.test(value),
+  findMercadoPagoPaymentIntent: (...args: unknown[]) => mockFindPaymentIntent(...args),
 }));
 
 vi.mock('@/db', () => ({
@@ -105,6 +111,8 @@ const MOCK_PAYMENT = {
   status: 'approved',
   external_reference: 'agua|perf-001|6|2025|0|100.00',
   collector_id: 98765,
+  currency_id: 'MXN',
+  transaction_amount: 120.91,
 };
 
 const mockPaymentGet = vi.fn();
@@ -112,12 +120,20 @@ const mockPaymentGet = vi.fn();
 // ── Setup ──────────────────────────────────────────────────────────────────────
 beforeEach(() => {
   process.env.MP_WEBHOOK_SECRET = 'test-secret';
+  mockFindPaymentIntent.mockResolvedValue(null);
 
   vi.mocked(WebhookSignatureValidator.validate).mockReturnValue(undefined);
 
   vi.mocked(db.query.perfilesResidente.findFirst).mockResolvedValue({
     id: 'perf-001',
-    circuito: { mercadoPagoAccessToken: 'encrypted-token', activo: true },
+    circuitoId: 'circuito-001',
+    circuito: {
+      id: 'circuito-001',
+      mercadoPagoAccessToken: 'encrypted-token',
+      mercadoPagoCollectorId: '98765',
+      montoMensual: '100.00',
+      montoReconexion: '300.00',
+    },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any);
 
@@ -167,6 +183,7 @@ describe('POST /api/mercadopago/webhook', () => {
         expect.objectContaining({
           xSignature:  'ts=1234567890,v1=abc123',
           xRequestId:  'req-001',
+          dataId:      '12345',
           secret:      'test-secret',
         }),
       );
@@ -174,7 +191,7 @@ describe('POST /api/mercadopago/webhook', () => {
   });
 
   describe('parsing del paymentId', () => {
-    it('devuelve 200 sin procesar si no hay paymentId en cuerpo ni en URL', async () => {
+    it('devuelve 400 sin procesar si falta el data.id firmado de la URL', async () => {
       const url = 'https://example.com/api/mp/webhook';
       const req = new Request(url, {
         method: 'POST',
@@ -182,20 +199,29 @@ describe('POST /api/mercadopago/webhook', () => {
         body: JSON.stringify({}),
       });
       const res = await POST(req);
-      expect(res.status).toBe(200);
+      expect(res.status).toBe(400);
       expect(mockExecute).not.toHaveBeenCalled();
+      expect(mockPaymentGet).not.toHaveBeenCalled();
     });
 
-    it('acepta el paymentId desde el body (data.id)', async () => {
-      await POST(makeRequest({ body: { data: { id: '99999' } } }));
-      expect(mockPaymentGet).toHaveBeenCalledWith({ id: '99999' });
+    it('rechaza body data.id distinto del data.id firmado', async () => {
+      const res = await POST(makeRequest({ body: { data: { id: '99999' } } }));
+      expect(res.status).toBe(400);
+      expect(mockPaymentGet).not.toHaveBeenCalled();
     });
 
-    it('acepta el paymentId desde body.id (notificación de webhook v1)', async () => {
+    it('no acepta body.id como reemplazo del data.id firmado', async () => {
       const url = `https://example.com/api/mp/webhook?ref=${REF_PARAM}`;
       const req = makeRequest({ url, body: { id: '88888' } });
-      await POST(req);
-      expect(mockPaymentGet).toHaveBeenCalledWith({ id: '88888' });
+      const res = await POST(req);
+      expect(res.status).toBe(400);
+      expect(mockPaymentGet).not.toHaveBeenCalled();
+    });
+
+    it('acepta IDs del body solamente cuando coinciden con el firmado', async () => {
+      const res = await POST(makeRequest({ body: { data: { id: 12345 }, id: '12345' } }));
+      expect(res.status).toBe(200);
+      expect(mockPaymentGet).toHaveBeenCalledWith({ id: '12345' });
     });
 
     it('acepta el paymentId desde el query param data.id', async () => {
@@ -237,10 +263,44 @@ describe('POST /api/mercadopago/webhook', () => {
       expect(mockExecute).toHaveBeenCalledWith(
         expect.objectContaining({
           perfilId: 'perf-001',
+          circuitoId: 'circuito-001',
           periodos: [{ mes: 6, anio: 2025, monto: '100.00', esReconexion: false }],
           mercadoPagoPaymentId: '12345',
         }),
       );
+    });
+
+    it('recalcula los montos desde el circuito y no confia en el monto de la referencia', async () => {
+      const reference = 'agua|perf-001|6|2025|0|1.00';
+      mockPaymentGet.mockResolvedValue({
+        ...MOCK_PAYMENT,
+        external_reference: reference,
+      });
+      const url = `https://example.com/api/mp/webhook?data.id=12345&ref=${encodeURIComponent(reference)}`;
+
+      const res = await POST(makeRequest({ url }));
+
+      expect(res.status).toBe(200);
+      expect(mockExecute).toHaveBeenCalledWith(expect.objectContaining({
+        periodos: [{ mes: 6, anio: 2025, monto: '100.00', esReconexion: false }],
+      }));
+    });
+
+    it('incluye la reconexion configurada al validar y construir el primer periodo', async () => {
+      const reference = 'agua3|perf-001|202506|1|100.00|300.00';
+      mockPaymentGet.mockResolvedValue({
+        ...MOCK_PAYMENT,
+        external_reference: reference,
+        transaction_amount: 469.71,
+      });
+      const url = `https://example.com/api/mp/webhook?data.id=12345&ref=${encodeURIComponent(reference)}`;
+
+      const res = await POST(makeRequest({ url }));
+
+      expect(res.status).toBe(200);
+      expect(mockExecute).toHaveBeenCalledWith(expect.objectContaining({
+        periodos: [{ mes: 6, anio: 2025, monto: '400.00', esReconexion: true }],
+      }));
     });
 
     it('procesa una referencia de doce meses en una sola llamada batch', async () => {
@@ -248,6 +308,7 @@ describe('POST /api/mercadopago/webhook', () => {
       mockPaymentGet.mockResolvedValue({
         ...MOCK_PAYMENT,
         external_reference: reference,
+        transaction_amount: 1399.84,
       });
       const url = `https://example.com/api/mp/webhook?data.id=12345&ref=${encodeURIComponent(reference)}`;
 
@@ -262,11 +323,70 @@ describe('POST /api/mercadopago/webhook', () => {
       expect(mockSchedulePushDispatch).toHaveBeenCalledOnce();
     });
 
+    it('acredita doce meses desde una intencion opaca sin exceder el contrato de referencia', async () => {
+      const reference = `agua_${'a'.repeat(48)}`;
+      const periodos = Array.from({ length: 12 }, (_, index) => ({
+        mes: ((7 - 1 + index) % 12) + 1,
+        anio: 2026 + Math.floor((7 - 1 + index) / 12),
+        monto: '100.00',
+        esReconexion: false,
+      }));
+      mockFindPaymentIntent.mockResolvedValue({
+        externalReference: reference,
+        perfilId: 'perf-001',
+        circuitoId: 'circuito-001',
+        periodos,
+        total: '1399.84',
+        currency: 'MXN',
+        collectorId: '98765',
+        expiresAt: new Date('2026-08-09T18:20:00.000Z'),
+        mercadoPagoPaymentId: null,
+        consumedAt: null,
+        createdAt: new Date('2026-08-09T18:00:00.000Z'),
+      });
+      mockPaymentGet.mockResolvedValue({
+        ...MOCK_PAYMENT,
+        external_reference: reference,
+        transaction_amount: 1399.84,
+      });
+      const url = `https://example.com/api/mp/webhook?data.id=12345&ref=${reference}`;
+
+      const res = await POST(makeRequest({ url }));
+
+      expect(res.status).toBe(200);
+      expect(reference).toMatch(/^agua_[A-Za-z0-9_-]+$/);
+      expect(reference.length).toBeLessThanOrEqual(64);
+      expect(mockExecute).toHaveBeenCalledWith(expect.objectContaining({
+        perfilId: 'perf-001',
+        circuitoId: 'circuito-001',
+        periodos,
+        mercadoPagoPaymentId: '12345',
+        paymentIntentReference: reference,
+      }));
+    });
+
     it('pasa el collector_id del pago a execute', async () => {
       await POST(makeRequest());
       expect(mockExecute).toHaveBeenCalledWith(
         expect.objectContaining({ mercadoPagoCollectorId: '98765' }),
       );
+    });
+
+    it.each([
+      ['referencia distinta', { external_reference: 'agua|otro-perfil|6|2025|0|100.00' }],
+      ['importe distinto', { transaction_amount: 1 }],
+      ['moneda distinta', { currency_id: 'USD' }],
+      ['collector distinto', { collector_id: 11111 }],
+      ['paymentId distinto', { id: 99999 }],
+    ])('NO acredita cuando falla el binding de %s', async (_label, override) => {
+      mockPaymentGet.mockResolvedValue({ ...MOCK_PAYMENT, ...override });
+
+      const res = await POST(makeRequest());
+
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({ received: true, credited: false });
+      expect(mockExecute).not.toHaveBeenCalled();
+      expect(mockSchedulePushDispatch).not.toHaveBeenCalled();
     });
 
     it('NO llama a execute cuando el pago está pendiente', async () => {

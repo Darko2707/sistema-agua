@@ -5,29 +5,37 @@ const {
   mockPaymentGet,
   mockSchedulePushDispatch,
   mockDecryptTokenSafe,
+  mockFindPaymentIntent,
 } = vi.hoisted(() => ({
   mockExecute: vi.fn(),
   mockPaymentGet: vi.fn(),
   mockSchedulePushDispatch: vi.fn(),
   mockDecryptTokenSafe: vi.fn(),
+  mockFindPaymentIntent: vi.fn(),
 }));
 
+// These mocks prove the browser return route never reaches either write path.
 vi.mock('@/src/application/pagos/commands/procesar-pago-mp.handler', () => ({
   ProcesarPagoMpHandler: class {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    execute = (...args: any[]) => mockExecute(...args);
+    execute = (...args: unknown[]) => mockExecute(...args);
   },
 }));
-
-vi.mock('@/src/infrastructure/db/repositories', () => ({
-  residenteRepo: {}, pagoRepo: {}, circuitoRepo: {},
+vi.mock('@/lib/push-dispatcher', () => ({
+  schedulePushDispatch: mockSchedulePushDispatch,
 }));
 
 vi.mock('@/db', () => ({
   db: {
     query: { perfilesResidente: { findFirst: vi.fn(async () => ({
       id: 'perfil-001',
-      circuito: { mercadoPagoAccessToken: 'token-cifrado' },
+      circuitoId: 'circuito-001',
+      circuito: {
+        id: 'circuito-001',
+        montoMensual: '100.00',
+        montoReconexion: '300.00',
+        mercadoPagoAccessToken: 'token-cifrado',
+        mercadoPagoCollectorId: '98765',
+      },
     })) } },
   },
 }));
@@ -39,60 +47,118 @@ vi.mock('@/lib/mercadopago', () => ({
     preferenceClient: {},
   })),
 }));
+vi.mock('@/src/infrastructure/mercadopago/payment-intent', () => ({
+  isMercadoPagoPaymentIntentReference: (value: string) => /^agua_[a-f0-9]{48}$/.test(value),
+  findMercadoPagoPaymentIntent: (...args: unknown[]) => mockFindPaymentIntent(...args),
+}));
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
 }));
-vi.mock('@/lib/push-dispatcher', () => ({
-  schedulePushDispatch: mockSchedulePushDispatch,
-}));
-vi.mock('@sentry/nextjs', () => ({ captureException: vi.fn() }));
 
 import { GET } from '@/app/api/mercadopago/return/route';
-import { MercadoPagoPeriodConflictError } from '@/src/application/pagos/errors/mercado-pago-period-conflict.error';
-import * as Sentry from '@sentry/nextjs';
 
 const REFERENCE = 'agua2|perfil-001|7|2025|12|0|100.00|0.00';
 
-function request() {
+function request(reference = REFERENCE) {
   return new Request(
-    `https://sistema-agua.vercel.app/api/mercadopago/return?payment_id=12345&ref=${encodeURIComponent(REFERENCE)}`,
+    `https://sistema-agua.vercel.app/api/mercadopago/return?payment_id=12345&ref=${encodeURIComponent(reference)}`,
   );
 }
 
 beforeEach(() => {
+  mockFindPaymentIntent.mockResolvedValue(null);
   mockDecryptTokenSafe.mockReturnValue('token-plano');
   mockPaymentGet.mockResolvedValue({
     id: 12345,
     status: 'approved',
     external_reference: REFERENCE,
     collector_id: 98765,
+    currency_id: 'MXN',
+    transaction_amount: 1399.84,
   });
-  mockExecute.mockResolvedValue({ folio: 'AGU-001', folios: [], yaRegistrado: false });
 });
 
 afterEach(() => vi.clearAllMocks());
 
 describe('GET /api/mercadopago/return', () => {
-  it('procesa los doce meses en una sola operacion y despacha una vez', async () => {
+  it('solo verifica un pago aprobado y redirige a success sin acreditarlo', async () => {
     const response = await GET(request());
 
     expect(response.headers.get('location')).toBe('https://sistema-agua.vercel.app/residente?payment=success');
-    expect(mockExecute).toHaveBeenCalledOnce();
-    expect(mockExecute.mock.calls[0][0].periodos).toHaveLength(12);
-    expect(mockSchedulePushDispatch).toHaveBeenCalledOnce();
+    expect(mockPaymentGet).toHaveBeenCalledWith({ id: '12345' });
+    expect(mockExecute).not.toHaveBeenCalled();
+    expect(mockSchedulePushDispatch).not.toHaveBeenCalled();
   });
 
-  it('redirige a failure y alerta si los periodos pertenecen a otro paymentId', async () => {
-    mockExecute.mockRejectedValue(new MercadoPagoPeriodConflictError('12345', [{
-      mes: 7,
-      anio: 2025,
-      existingPaymentId: 'payment-anterior',
-    }]));
+  it('verifica una referencia opaca respaldada por su intencion sin escribir', async () => {
+    const reference = `agua_${'b'.repeat(48)}`;
+    mockFindPaymentIntent.mockResolvedValue({
+      externalReference: reference,
+      perfilId: 'perfil-001',
+      circuitoId: 'circuito-001',
+      periodos: [{ mes: 8, anio: 2026, monto: '100.00', esReconexion: false }],
+      total: '120.91',
+      currency: 'MXN',
+      collectorId: '98765',
+      expiresAt: new Date('2026-08-09T18:20:00.000Z'),
+      mercadoPagoPaymentId: null,
+      consumedAt: null,
+      createdAt: new Date('2026-08-09T18:00:00.000Z'),
+    });
+    mockPaymentGet.mockResolvedValue({
+      id: 12345,
+      status: 'approved',
+      external_reference: reference,
+      collector_id: 98765,
+      currency_id: 'MXN',
+      transaction_amount: 120.91,
+    });
+
+    const response = await GET(request(reference));
+
+    expect(response.headers.get('location')).toBe('https://sistema-agua.vercel.app/residente?payment=success');
+    expect(mockFindPaymentIntent).toHaveBeenCalledWith(reference);
+    expect(mockExecute).not.toHaveBeenCalled();
+    expect(mockSchedulePushDispatch).not.toHaveBeenCalled();
+  });
+
+  it('redirige a pending sin escribir cuando Mercado Pago sigue pendiente', async () => {
+    mockPaymentGet.mockResolvedValue({
+      id: 12345,
+      status: 'pending',
+      external_reference: REFERENCE,
+      collector_id: 98765,
+      currency_id: 'MXN',
+      transaction_amount: 1399.84,
+    });
+
+    const response = await GET(request());
+
+    expect(response.headers.get('location')).toBe('https://sistema-agua.vercel.app/residente?payment=pending');
+    expect(mockExecute).not.toHaveBeenCalled();
+    expect(mockSchedulePushDispatch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['referencia', { external_reference: 'agua|otro-perfil|7|2025|0|100.00' }],
+    ['importe', { transaction_amount: 1 }],
+    ['moneda', { currency_id: 'USD' }],
+    ['collector', { collector_id: 11111 }],
+  ])('redirige a failure si no coincide %s', async (_label, override) => {
+    mockPaymentGet.mockResolvedValue({
+      id: 12345,
+      status: 'approved',
+      external_reference: REFERENCE,
+      collector_id: 98765,
+      currency_id: 'MXN',
+      transaction_amount: 1399.84,
+      ...override,
+    });
 
     const response = await GET(request());
 
     expect(response.headers.get('location')).toBe('https://sistema-agua.vercel.app/residente?payment=failure');
-    expect(Sentry.captureException).toHaveBeenCalledOnce();
+    expect(mockExecute).not.toHaveBeenCalled();
     expect(mockSchedulePushDispatch).not.toHaveBeenCalled();
   });
 });

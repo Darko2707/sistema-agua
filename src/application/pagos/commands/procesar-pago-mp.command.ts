@@ -7,6 +7,8 @@ export type ProcesarPagoMpPeriodo = {
 
 export type ProcesarPagoMpCommand = {
   perfilId: string;
+  circuitoId: string;
+  paymentIntentReference?: string;
   periodos: ProcesarPagoMpPeriodo[];
   mercadoPagoPaymentId: string;
   mercadoPagoCollectorId?: string | null;

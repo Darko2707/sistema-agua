@@ -10,6 +10,7 @@
  */
 
 import { test, expect, type Page } from '@playwright/test';
+import { REMEMBERED_LOGIN_EMAIL_KEY } from '../../lib/remembered-login';
 
 const EMAIL    = process.env.E2E_RESIDENTE_EMAIL    ?? 'residente@test.local';
 const PASSWORD = process.env.E2E_RESIDENTE_PASSWORD ?? 'testpassword123';
@@ -28,6 +29,25 @@ async function login(page: Page) {
 // ── tests ─────────────────────────────────────────────────────────────────────
 
 test.describe('Login', () => {
+  test('precarga el usuario recordado y permite eliminarlo', async ({ page }) => {
+    await page.addInitScript(
+      ({ key, email }) => window.localStorage.setItem(key, email),
+      { key: REMEMBERED_LOGIN_EMAIL_KEY, email: 'recordado@ejemplo.com' },
+    );
+
+    await page.goto('/login');
+
+    await expect(page.getByLabel('Correo electrónico')).toHaveValue('recordado@ejemplo.com');
+    const rememberUser = page.getByRole('checkbox', { name: 'Recordar usuario' });
+    await expect(rememberUser).toBeChecked();
+
+    await rememberUser.uncheck();
+    await expect.poll(() => page.evaluate(
+      key => window.localStorage.getItem(key),
+      REMEMBERED_LOGIN_EMAIL_KEY,
+    )).toBeNull();
+  });
+
   test('muestra error con credenciales inválidas', async ({ page }) => {
     await page.goto('/login');
     await page.getByLabel('Correo electrónico').fill('noexiste@test.local');

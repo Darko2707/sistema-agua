@@ -1,9 +1,9 @@
 import { eq, asc, isNull, and } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
-import bcrypt from 'bcryptjs';
 import { TRPCError } from '@trpc/server';
 import { db } from '@/db';
 import { user, account, session, circuitos } from '@/db/schema';
+import { hashAccountPassword } from '@/lib/password';
 import type {
   UserRepository,
   UserData,
@@ -33,14 +33,16 @@ export class DrizzleUserRepository implements UserRepository {
 
   async create(input: CreatePersonalInput): Promise<string> {
     const userId = nanoid();
-    const hashed = await bcrypt.hash(input.password, 10);
-    await db.insert(user).values({
-      id: userId, name: input.nombre, email: input.email,
-      role: input.role,
-    });
-    await db.insert(account).values({
-      id: nanoid(), accountId: input.email, providerId: 'credential',
-      userId, password: hashed,
+    const hashed = await hashAccountPassword(input.password);
+    await db.transaction(async (tx) => {
+      await tx.insert(user).values({
+        id: userId, name: input.nombre, email: input.email,
+        role: input.role,
+      });
+      await tx.insert(account).values({
+        id: nanoid(), accountId: input.email, providerId: 'credential',
+        userId, password: hashed,
+      });
     });
     return userId;
   }

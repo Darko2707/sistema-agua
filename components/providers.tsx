@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { httpBatchLink } from '@trpc/client';
 import { trpcReact } from '../lib/trpc-react';
+import { TRPC_MAX_BATCH_SIZE } from '../lib/traffic-limits';
 
 type Props = { children: React.ReactNode };
 
@@ -24,6 +25,7 @@ export function Providers({ children }: Props) {
       links: [
         httpBatchLink({
           url: '/api/trpc',
+          maxItems: TRPC_MAX_BATCH_SIZE,
           fetch(url, options) {
             return fetch(url, { ...options, credentials: 'include' });
           },

@@ -89,6 +89,29 @@ export const verification = pgTable('verification', {
 // ─────────────────────────────────────────────
 // Estructura del fraccionamiento
 // ─────────────────────────────────────────────
+// Solicitudes iniciadas por el residente. Una solicitud pendiente se consume
+// atomicamente al generar el codigo; por eso el representante no puede emitir
+// dos codigos para la misma solicitud ni generar uno sin peticion previa.
+export const passwordResetRequests = pgTable('password_reset_requests', {
+  id:          uuid('id').defaultRandom().primaryKey(),
+  userId:      text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  perfilId:    uuid('perfil_id').notNull().references(() => perfilesResidente.id, { onDelete: 'cascade' }),
+  requestedAt: timestamp('requested_at').notNull().defaultNow(),
+  generatedAt: timestamp('generated_at'),
+  generatedBy: text('generated_by').references(() => user.id, { onDelete: 'set null' }),
+}, (t) => [
+  uniqueIndex('uq_password_reset_requests_user_pending')
+    .on(t.userId)
+    .where(sql`${t.generatedAt} IS NULL`),
+  index('idx_password_reset_requests_pending_profile')
+    .on(t.perfilId, t.requestedAt)
+    .where(sql`${t.generatedAt} IS NULL`),
+  check(
+    'chk_password_reset_requests_generated_by_state',
+    sql`${t.generatedAt} IS NOT NULL OR ${t.generatedBy} IS NULL`,
+  ),
+]);
+
 // Codigos temporales que un representante entrega en persona para recuperar
 // una cuenta sin depender de correo/SMS. Se guarda solo el hash del codigo.
 export const passwordResetCodes = pgTable('password_reset_codes', {
@@ -147,6 +170,48 @@ export const perfilesResidente = pgTable('perfiles_residente', {
 // ─────────────────────────────────────────────
 // Pagos, cortes y tickets
 // ─────────────────────────────────────────────
+export type MercadoPagoPaymentIntentPeriodo = {
+  mes: number;
+  anio: number;
+  monto: string;
+  esReconexion: boolean;
+};
+
+export const mercadoPagoPaymentIntents = pgTable('mercado_pago_payment_intents', {
+  externalReference:    text('external_reference').primaryKey(),
+  perfilId:             uuid('perfil_id').notNull().references(() => perfilesResidente.id),
+  circuitoId:           uuid('circuito_id').notNull().references(() => circuitos.id),
+  periodos:             jsonb('periodos').$type<MercadoPagoPaymentIntentPeriodo[]>().notNull(),
+  total:                decimal('total', { precision: 10, scale: 2 }).notNull(),
+  currency:             text('currency').notNull().default('MXN'),
+  collectorId:          text('collector_id'),
+  expiresAt:            timestamp('expires_at').notNull(),
+  mercadoPagoPaymentId: text('mercado_pago_payment_id'),
+  consumedAt:           timestamp('consumed_at'),
+  createdAt:            timestamp('created_at').notNull().defaultNow(),
+}, (t) => [
+  check(
+    'chk_mp_payment_intents_external_reference',
+    sql`${t.externalReference} ~ '^agua_[a-f0-9]{48}$'`,
+  ),
+  check('chk_mp_payment_intents_currency', sql`${t.currency} = 'MXN'`),
+  check('chk_mp_payment_intents_total_positive', sql`${t.total} > 0`),
+  check(
+    'chk_mp_payment_intents_periodos_count',
+    sql`jsonb_typeof(${t.periodos}) = 'array' AND jsonb_array_length(${t.periodos}) BETWEEN 1 AND 12`,
+  ),
+  check(
+    'chk_mp_payment_intents_consumption',
+    sql`(${t.mercadoPagoPaymentId} IS NULL AND ${t.consumedAt} IS NULL)
+      OR (${t.mercadoPagoPaymentId} IS NOT NULL AND ${t.consumedAt} IS NOT NULL)`,
+  ),
+  index('idx_mp_payment_intents_perfil_created').on(t.perfilId, t.createdAt),
+  index('idx_mp_payment_intents_expires_at').on(t.expiresAt),
+  uniqueIndex('uq_mp_payment_intents_payment_id')
+    .on(t.mercadoPagoPaymentId)
+    .where(sql`${t.mercadoPagoPaymentId} IS NOT NULL`),
+]);
+
 export const pagos = pgTable('pagos', {
   id:                     uuid('id').defaultRandom().primaryKey(),
   perfilId:               uuid('perfil_id').references(() => perfilesResidente.id).notNull(),
@@ -224,7 +289,9 @@ export const tickets = pgTable('tickets', {
   qrCode:    text('qr_code'),
   pdfUrl:    text('pdf_url'),
   emitidoEn: timestamp('emitido_en').defaultNow(),
-});
+}, (t) => [
+  uniqueIndex('uq_tickets_pago_id').on(t.pagoId),
+]);
 
 export const auditoria = pgTable('auditoria', {
   id:        uuid('id').defaultRandom().primaryKey(),
@@ -249,7 +316,7 @@ export const reversosPago = pgTable('reversos_pago', {
   estadoAnterior:text('estado_anterior').notNull(),
   creadoEn:      timestamp('creado_en').notNull().defaultNow(),
 }, (t) => [
-  index('idx_reversos_pago').on(t.pagoId),
+  uniqueIndex('uq_reversos_pago_pago_id').on(t.pagoId),
   index('idx_reversos_actor').on(t.actorId),
 ]);
 

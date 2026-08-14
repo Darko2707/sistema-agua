@@ -13,6 +13,7 @@ import type { ResidenteRepository } from '@/src/application/ports/residente.repo
 
 const CMD = {
   perfilId: 'perf-001',
+  circuitoId: 'circ-001',
   periodos: [{ mes: 6, anio: 2025, monto: '100.00', esReconexion: false }],
   metodo: 'mercado_pago' as const,
   mercadoPagoPaymentId: '12345',
@@ -29,6 +30,21 @@ const CIRCUITO = {
   montoMensual: '100.00', montoReconexion: '300.00',
   mercadoPagoAccessToken: null, mercadoPagoCollectorId: 'col-circuito', activo: true,
 };
+
+const CASOS_MESES_TOTAL = [
+  [1, '120.91'],
+  [2, '237.18'],
+  [3, '353.46'],
+  [4, '469.71'],
+  [5, '585.98'],
+  [6, '702.25'],
+  [7, '818.51'],
+  [8, '934.77'],
+  [9, '1051.04'],
+  [10, '1167.30'],
+  [11, '1283.58'],
+  [12, '1399.84'],
+] as const;
 
 function pagoDesdeInput(
   input: CrearPagosMercadoPagoBatchInput['pagos'][number],
@@ -97,9 +113,11 @@ function makeDeps() {
 }
 
 describe('ProcesarPagoMpHandler', () => {
-  it('procesa doce meses mediante una sola operacion batch y un solo outbox', async () => {
+  it.each(CASOS_MESES_TOTAL)(
+    'procesa %i mes(es) mediante una sola operacion batch sin perder centavos',
+    async (cantidad, totalEsperado) => {
     const deps = makeDeps();
-    const periodos = Array.from({ length: 12 }, (_, index) => ({
+    const periodos = Array.from({ length: cantidad }, (_, index) => ({
       mes: index + 1,
       anio: 2026,
       monto: '100.00',
@@ -110,18 +128,21 @@ describe('ProcesarPagoMpHandler', () => {
 
     expect(deps.createMercadoPagoBatchWithLock).toHaveBeenCalledOnce();
     const batch = deps.createMercadoPagoBatchWithLock.mock.calls[0][0];
-    expect(batch.pagos).toHaveLength(12);
+    expect(batch.pagos).toHaveLength(cantidad);
     expect(batch.pagos.reduce((total, pago) => total + Number(pago.monto), 0).toFixed(2))
-      .toBe(calcularDesglosePago(1_200).total);
+      .toBe(totalEsperado);
+    expect(calcularDesglosePago(cantidad * 100).total).toBe(totalEsperado);
     expect(batch.pushNotification).toMatchObject({
       userId: 'user-001',
       perfilId: 'perf-001',
       tipo: 'pago_confirmado',
       dedupeKey: 'pago_confirmado:mp:12345:perf-001',
     });
-    expect(result.folios).toHaveLength(12);
+    expect(result.folios).toHaveLength(cantidad);
+    expect(result.monto).toBe(totalEsperado);
     expect(deps.pagoRepo.createWithLock).not.toHaveBeenCalled();
-  });
+    },
+  );
 
   it('devuelve como replay el lote que el repositorio asocia al mismo paymentId', async () => {
     const deps = makeDeps();
@@ -207,5 +228,18 @@ describe('ProcesarPagoMpHandler', () => {
     vi.mocked(deps.residenteRepo.findById).mockResolvedValueOnce(PERFIL);
     vi.mocked(deps.circuitoRepo.findById).mockResolvedValueOnce(null);
     await expect(new ProcesarPagoMpHandler(deps).execute(CMD)).rejects.toThrow('Circuito no encontrado');
+  });
+
+  it('rechaza si el perfil ya no pertenece al circuito verificado', async () => {
+    const deps = makeDeps();
+    vi.mocked(deps.residenteRepo.findById).mockResolvedValueOnce({
+      ...PERFIL,
+      circuitoId: 'circ-movido',
+    });
+
+    await expect(new ProcesarPagoMpHandler(deps).execute(CMD))
+      .rejects.toThrow('cambio de circuito');
+    expect(deps.circuitoRepo.findById).not.toHaveBeenCalled();
+    expect(deps.createMercadoPagoBatchWithLock).not.toHaveBeenCalled();
   });
 });
