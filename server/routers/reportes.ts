@@ -129,6 +129,7 @@ export const reportesRouter = router({
           mes: true,
           anio: true,
           monto: true,
+          montoBase: true,
           montoNetoRepresentante: true,
           estado: true,
           fechaPago: true,
@@ -145,7 +146,7 @@ export const reportesRouter = router({
           return {
             mes,
             anio,
-            monto:     pago ? Number(pago.monto) : null,
+            monto:     pago ? montoDisponibleCircuito(pago) : null,
             estado:    pago ? ('pagado' as const) : ('pendiente' as const),
             fechaPago: pago?.fechaPago ?? null,
           };
@@ -228,7 +229,7 @@ export const reportesRouter = router({
               eq(g.mes, input.mes),
               eq(g.anio, input.anio),
             ),
-          orderBy: (g, { asc }) => [asc(g.fecha)],
+          orderBy: (g, { desc }) => [desc(g.fecha)],
         }),
         db.query.ingresosAdicionales.findMany({
           where: (i, { eq, and }) =>
@@ -237,7 +238,7 @@ export const reportesRouter = router({
               eq(i.mes, input.mes),
               eq(i.anio, input.anio),
             ),
-          orderBy: (i, { asc }) => [asc(i.fecha)],
+          orderBy: (i, { desc }) => [desc(i.fecha)],
         }),
       ]);
 

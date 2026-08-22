@@ -97,6 +97,13 @@ export const ticketsRouter = router({
         },
       },
       orderBy: (t, { desc }) => [desc(t.emitidoEn)],
-    });
+    }).then(rows => rows.map(ticket => ({
+      ...ticket,
+      pago: ticket.pago ? {
+        ...ticket.pago,
+        montoCircuito: ticket.pago.montoBase ?? ticket.pago.monto,
+        montoTotalCobrado: ticket.pago.monto,
+      } : null,
+    })));
   }),
 });

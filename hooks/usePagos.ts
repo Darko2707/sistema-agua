@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { trpcReact } from '@/lib/trpc-react';
 import { useSession } from '@/hooks/useAuth';
+import { userFacingError } from '@/lib/user-facing-error';
 
 // Historial del residente autenticado (para la página /residente)
 export function useMiHistorial() {
@@ -65,7 +66,7 @@ export function useCheckoutMP() {
       if (!res.ok) throw new Error(data.error || 'No se pudo iniciar el pago');
       window.location.href = data.url;
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'No se pudo iniciar el pago');
+      setError(userFacingError(err, 'SIS4S-301'));
       setIsPending(false);
     }
   }

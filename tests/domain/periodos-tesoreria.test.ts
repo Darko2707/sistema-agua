@@ -3,6 +3,7 @@ import {
   compararPeriodos,
   construirEstadoPagosTesorera,
   periodoDesdeFecha,
+  periodoInicioCapturaTesorera,
   periodoKey,
   type PeriodoCalendario,
 } from '@/src/domain/pagos/periodos-tesoreria';
@@ -10,17 +11,20 @@ import {
 function construir({
   actual,
   inicio,
+  inicioAdeudo,
   pagados = [],
   mesesAdelanto = 2,
 }: {
   actual: PeriodoCalendario;
   inicio: PeriodoCalendario | null;
+  inicioAdeudo?: PeriodoCalendario | null;
   pagados?: PeriodoCalendario[];
   mesesAdelanto?: number;
 }) {
   return construirEstadoPagosTesorera({
     periodoActual: actual,
     periodoInicio: inicio,
+    periodoInicioAdeudo: inicioAdeudo,
     periodosPagados: pagados,
     mesesAdelanto,
   });
@@ -46,6 +50,25 @@ describe('periodos de tesoreria', () => {
       { mes: 9, anio: 2026, tipo: 'adelantado', estado: 'bloqueado' },
       { mes: 10, anio: 2026, tipo: 'adelantado', estado: 'bloqueado' },
     ]);
+  });
+
+  it('permite ver y capturar historicos sin tratarlos como deuda obligatoria', () => {
+    const actual = { mes: 8, anio: 2026 };
+    const alta = { mes: 8, anio: 2026 };
+    const inicioCaptura = periodoInicioCapturaTesorera(new Date('2026-08-02T18:00:00.000Z'), actual);
+    const resultado = construir({
+      actual,
+      inicio: inicioCaptura,
+      inicioAdeudo: alta,
+      mesesAdelanto: 1,
+    });
+
+    expect(inicioCaptura).toEqual({ mes: 9, anio: 2025 });
+    expect(resultado.accionDisponible).toBe('pagar_actual');
+    expect(resultado.atrasadosPendientes).toBe(0);
+    expect(resultado.periodos.filter(periodo => periodo.tipo === 'atrasado')).toHaveLength(11);
+    expect(resultado.periodos.filter(periodo => periodo.tipo === 'atrasado').every(periodo => periodo.estado === 'disponible')).toBe(true);
+    expect(resultado.periodos.find(periodo => periodoKey(periodo) === '2026-08')?.estado).toBe('disponible');
   });
 
   it('trata un inicio futuro como una alta del periodo actual', () => {

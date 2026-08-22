@@ -11,6 +11,7 @@ import {
   auditoria,
   bitacoraCortes,
   consentimientosLegales,
+  circuitos,
   notificaciones,
   pagos,
   perfilesResidente,
@@ -353,6 +354,34 @@ export const operacionRouter = router({
     }).from(pagos).where(and(eq(pagos.estado, 'pagado'), eq(pagos.mes, periodo.mes), eq(pagos.anio, periodo.anio), pagoCircuitoFilter));
     const [cortesPendientes] = await db.select({ total: sql<number>`count(*)::int` }).from(perfilesResidente).where(and(eq(perfilesResidente.estadoAgua, 'pendiente_corte'), circuitoFilter));
     const [reconexionesPendientes] = await db.select({ total: sql<number>`count(*)::int` }).from(perfilesResidente).where(and(eq(perfilesResidente.estadoAgua, 'pendiente_reconexion'), circuitoFilter));
+    const porCircuitoRows = ctx.user.role === 'admin'
+      ? await db
+        .select({
+          circuitoId: circuitos.id,
+          nombre: circuitos.nombre,
+          residentes: sql<number>`count(distinct ${perfilesResidente.id})::int`,
+          pagosMes: sql<number>`count(${pagos.id})::int`,
+          ingresosMes: sql<number>`coalesce(sum(${pagos.montoBase}::numeric), 0)::float`,
+          efectivo: sql<number>`count(${pagos.id}) filter (where ${pagos.metodo} = 'efectivo')::int`,
+          transferencia: sql<number>`count(${pagos.id}) filter (where ${pagos.metodo} = 'transferencia')::int`,
+          mercadoPago: sql<number>`count(${pagos.id}) filter (where ${pagos.metodo} = 'mercado_pago')::int`,
+          cortesPendientes: sql<number>`count(distinct ${perfilesResidente.id}) filter (where ${perfilesResidente.estadoAgua} = 'pendiente_corte')::int`,
+          reconexionesPendientes: sql<number>`count(distinct ${perfilesResidente.id}) filter (where ${perfilesResidente.estadoAgua} = 'pendiente_reconexion')::int`,
+        })
+        .from(circuitos)
+        .leftJoin(perfilesResidente, eq(perfilesResidente.circuitoId, circuitos.id))
+        .leftJoin(
+          pagos,
+          and(
+            eq(pagos.perfilId, perfilesResidente.id),
+            eq(pagos.estado, 'pagado'),
+            eq(pagos.mes, periodo.mes),
+            eq(pagos.anio, periodo.anio),
+          ),
+        )
+        .groupBy(circuitos.id, circuitos.nombre)
+        .orderBy(circuitos.nombre)
+      : [];
 
     const totalResidentes = residentesRow?.total ?? 0;
     const totalPagos = pagosRow?.total ?? 0;
@@ -369,6 +398,23 @@ export const operacionRouter = router({
       },
       cortesPendientes: cortesPendientes?.total ?? 0,
       reconexionesPendientes: reconexionesPendientes?.total ?? 0,
+      porCircuito: porCircuitoRows.map((row) => ({
+        circuitoId: row.circuitoId,
+        nombre: row.nombre,
+        ingresosMes: row.ingresosMes ?? 0,
+        residentesActivos: row.residentes ?? 0,
+        pagosMes: row.pagosMes ?? 0,
+        morosidadPct: (row.residentes ?? 0) > 0
+          ? Math.round((((row.residentes ?? 0) - (row.pagosMes ?? 0)) / (row.residentes ?? 0)) * 100)
+          : 0,
+        cortesPendientes: row.cortesPendientes ?? 0,
+        reconexionesPendientes: row.reconexionesPendientes ?? 0,
+        pagosPorMetodo: {
+          efectivo: row.efectivo ?? 0,
+          transferencia: row.transferencia ?? 0,
+          mercadoPago: row.mercadoPago ?? 0,
+        },
+      })),
     };
   }),
 });

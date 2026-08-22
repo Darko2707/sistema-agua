@@ -14,6 +14,17 @@ type Ejecutivo = {
   cortesPendientes: number;
   reconexionesPendientes: number;
   pagosPorMetodo: { efectivo: number; transferencia: number; mercadoPago: number };
+  porCircuito?: Array<{
+    circuitoId: string;
+    nombre: string;
+    ingresosMes: number;
+    residentesActivos: number;
+    pagosMes: number;
+    morosidadPct: number;
+    cortesPendientes: number;
+    reconexionesPendientes: number;
+    pagosPorMetodo: { efectivo: number; transferencia: number; mercadoPago: number };
+  }>;
 };
 
 type AuditoriaRow = {
@@ -127,6 +138,46 @@ export function OperacionTab() {
           <Card><CardContent className="p-5"><p className="text-sm text-muted-foreground">Reconexiones pendientes</p><p className="text-2xl font-bold">{dashboard.reconexionesPendientes}</p></CardContent></Card>
           <Card><CardContent className="p-5"><p className="text-sm text-muted-foreground">Metodos</p><p className="text-sm font-semibold">Efectivo {dashboard.pagosPorMetodo.efectivo} · Transferencia {dashboard.pagosPorMetodo.transferencia} · Tarjeta {dashboard.pagosPorMetodo.mercadoPago}</p></CardContent></Card>
         </div>
+      )}
+
+      {dashboard?.porCircuito && dashboard.porCircuito.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle>Operacion por circuito</CardTitle></CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-xs text-muted-foreground">
+                    <th className="pb-2 pr-4 font-medium">Circuito</th>
+                    <th className="pb-2 pr-4 text-right font-medium">Ingresos</th>
+                    <th className="pb-2 pr-4 text-right font-medium">Pagos</th>
+                    <th className="pb-2 pr-4 text-right font-medium">Residentes</th>
+                    <th className="pb-2 pr-4 text-right font-medium">Morosidad</th>
+                    <th className="pb-2 pr-4 text-right font-medium">Cortes</th>
+                    <th className="pb-2 pr-4 text-right font-medium">Reconexiones</th>
+                    <th className="pb-2 text-right font-medium">Metodos</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {dashboard.porCircuito.map((circuito) => (
+                    <tr key={circuito.circuitoId} className="border-b last:border-0">
+                      <td className="py-2 pr-4 font-medium">{circuito.nombre}</td>
+                      <td className="py-2 pr-4 text-right">${circuito.ingresosMes.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      <td className="py-2 pr-4 text-right">{circuito.pagosMes}</td>
+                      <td className="py-2 pr-4 text-right">{circuito.residentesActivos}</td>
+                      <td className="py-2 pr-4 text-right">{circuito.morosidadPct}%</td>
+                      <td className="py-2 pr-4 text-right">{circuito.cortesPendientes}</td>
+                      <td className="py-2 pr-4 text-right">{circuito.reconexionesPendientes}</td>
+                      <td className="py-2 text-right">
+                        E {circuito.pagosPorMetodo.efectivo} / T {circuito.pagosPorMetodo.transferencia} / MP {circuito.pagosPorMetodo.mercadoPago}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       <div className="grid gap-4 lg:grid-cols-2">

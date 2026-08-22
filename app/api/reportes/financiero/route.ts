@@ -127,14 +127,14 @@ export async function GET(req: Request) {
           eq(g.circuitoId, circuito.id),
           or(...mesesLista.map(m => and(eq(g.mes, m.mes), eq(g.anio, m.anio)))),
         ),
-        orderBy: (g, { asc }) => [asc(g.anio), asc(g.mes), asc(g.fecha)],
+        orderBy: (g, { desc }) => [desc(g.anio), desc(g.mes), desc(g.fecha)],
       }),
       db.query.ingresosAdicionales.findMany({
         where: (i, { eq, and, or }) => and(
           eq(i.circuitoId, circuito.id),
           or(...mesesLista.map(m => and(eq(i.mes, m.mes), eq(i.anio, m.anio)))),
         ),
-        orderBy: (i, { asc }) => [asc(i.anio), asc(i.mes), asc(i.fecha)],
+        orderBy: (i, { desc }) => [desc(i.anio), desc(i.mes), desc(i.fecha)],
       }),
     ]);
 
@@ -230,11 +230,11 @@ export async function GET(req: Request) {
     }),
     db.query.gastosCircuito.findMany({
       where: (g, { eq, and }) => and(eq(g.circuitoId, circuito.id), eq(g.mes, mes), eq(g.anio, anio)),
-      orderBy: (g, { asc }) => [asc(g.fecha)],
+      orderBy: (g, { desc }) => [desc(g.fecha)],
     }),
     db.query.ingresosAdicionales.findMany({
       where: (i, { eq, and }) => and(eq(i.circuitoId, circuito.id), eq(i.mes, mes), eq(i.anio, anio)),
-      orderBy: (i, { asc }) => [asc(i.fecha)],
+      orderBy: (i, { desc }) => [desc(i.fecha)],
     }),
   ]);
 

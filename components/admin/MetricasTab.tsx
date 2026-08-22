@@ -210,6 +210,47 @@ export function MetricasTab() {
               )}
             </CardContent>
           </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Metricas por circuito</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {data.porCircuito.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted-foreground">
+                  No hay circuitos registrados.
+                </p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-left text-xs text-muted-foreground">
+                        <th className="pb-2 pr-4 font-medium">Circuito</th>
+                        <th className="pb-2 pr-4 text-right font-medium">Recaudado</th>
+                        <th className="pb-2 pr-4 text-right font-medium">Pagos</th>
+                        <th className="pb-2 pr-4 text-right font-medium">Al corriente</th>
+                        <th className="pb-2 pr-4 text-right font-medium">Con adeudos</th>
+                        <th className="pb-2 pr-4 text-right font-medium">Pendiente</th>
+                        <th className="pb-2 text-right font-medium">Comisiones online</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.porCircuito.map((circuito) => (
+                        <tr key={circuito.circuitoId} className="border-b last:border-0">
+                          <td className="py-2 pr-4 font-medium">{circuito.nombre}</td>
+                          <td className="py-2 pr-4 text-right">${circuito.totalRecaudado.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                          <td className="py-2 pr-4 text-right">{circuito.pagosRecibidos}</td>
+                          <td className="py-2 pr-4 text-right">{circuito.residentesAlCorriente}</td>
+                          <td className="py-2 pr-4 text-right">{circuito.residentesConAdeudos}</td>
+                          <td className="py-2 pr-4 text-right">${circuito.montoPendientePorCobrar.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                          <td className="py-2 text-right">${circuito.comisionesOnline.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </>
       )}
     </div>

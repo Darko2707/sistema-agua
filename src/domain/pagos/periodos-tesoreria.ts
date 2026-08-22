@@ -40,6 +40,10 @@ export function compararPeriodos(a: PeriodoCalendario, b: PeriodoCalendario): nu
   return indicePeriodo(a) - indicePeriodo(b);
 }
 
+export function restarMeses(periodo: PeriodoCalendario, cantidad: number): PeriodoCalendario {
+  return periodoDesdeIndice(indicePeriodo(periodo) - cantidad);
+}
+
 export function periodoDesdeFecha(
   fecha: Date | null,
   fallback: PeriodoCalendario,
@@ -50,14 +54,26 @@ export function periodoDesdeFecha(
   return { mes: periodo.mes, anio: periodo.anio };
 }
 
+export function periodoInicioCapturaTesorera(
+  fechaAlta: Date | null,
+  periodoActual: PeriodoCalendario,
+): PeriodoCalendario {
+  const desdeAlta = periodoDesdeFecha(fechaAlta, periodoActual);
+  const ultimos12 = restarMeses(periodoActual, 11);
+
+  return compararPeriodos(desdeAlta, ultimos12) < 0 ? desdeAlta : ultimos12;
+}
+
 export function construirEstadoPagosTesorera({
   periodoActual,
   periodoInicio,
+  periodoInicioAdeudo = periodoInicio,
   periodosPagados,
   mesesAdelanto = MAX_MESES_POR_PAGO_TESORERA,
 }: {
   periodoActual: PeriodoCalendario;
   periodoInicio: PeriodoCalendario | null;
+  periodoInicioAdeudo?: PeriodoCalendario | null;
   periodosPagados: readonly PeriodoCalendario[];
   mesesAdelanto?: number;
 }): {
@@ -72,9 +88,15 @@ export function construirEstadoPagosTesorera({
   const inicioSolicitado = periodoInicio && compararPeriodos(periodoInicio, periodoActual) <= 0
     ? periodoInicio
     : periodoActual;
+  const inicioAdeudoSolicitado = periodoInicioAdeudo && compararPeriodos(periodoInicioAdeudo, periodoActual) <= 0
+    ? periodoInicioAdeudo
+    : periodoActual;
   const inicio = compararPeriodos(inicioSolicitado, PRIMER_PERIODO_PERMITIDO) < 0
     ? PRIMER_PERIODO_PERMITIDO
     : inicioSolicitado;
+  const inicioAdeudo = compararPeriodos(inicioAdeudoSolicitado, PRIMER_PERIODO_PERMITIDO) < 0
+    ? PRIMER_PERIODO_PERMITIDO
+    : inicioAdeudoSolicitado;
   const pagados = new Set(periodosPagados.map(periodoKey));
   let fin = periodoActual;
   let adelantosDisponibles = 0;
@@ -107,7 +129,7 @@ export function construirEstadoPagosTesorera({
   }
 
   const atrasadosPendientes = periodosBase.filter(
-    periodo => periodo.tipo === 'atrasado' && !periodo.pagado,
+    periodo => periodo.tipo === 'atrasado' && !periodo.pagado && compararPeriodos(periodo, inicioAdeudo) >= 0,
   ).length;
   const actualPagado = periodosBase.some(
     periodo => periodo.tipo === 'actual' && periodo.pagado,
@@ -121,7 +143,9 @@ export function construirEstadoPagosTesorera({
   const periodos: PeriodoPagoTesorera[] = periodosBase.map(({ pagado, ...periodo }) => {
     if (pagado) return { ...periodo, estado: 'pagado' };
 
+    const historicoCapturable = compararPeriodos(periodo, inicioAdeudo) < 0;
     const disponible =
+      historicoCapturable ||
       (accionDisponible === 'pagar_atrasados' && periodo.tipo === 'atrasado') ||
       (accionDisponible === 'pagar_actual' && periodo.tipo === 'actual') ||
       (accionDisponible === 'adelantar' && periodo.tipo === 'adelantado');

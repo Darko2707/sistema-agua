@@ -9,6 +9,7 @@ import {
   readRememberedLoginEmail,
   writeRememberedLoginEmail,
 } from '@/lib/remembered-login';
+import { userFacingError } from '@/lib/user-facing-error';
 import { AuthCard, C, inputBase, labelBase, buttonGold, linkButton, FM } from '../auth-styles';
 
 export default function LoginPage() {
@@ -54,7 +55,7 @@ export default function LoginPage() {
         password,
       });
       if (signInError) {
-        setError(signInError.message ?? 'Correo o contraseña incorrectos');
+        setError('SIS4S-401: No pudimos iniciar sesion. El correo o la contrasena no coinciden. Verifica los datos e intenta de nuevo.');
         setLoading(false);
         return;
       }
@@ -63,7 +64,7 @@ export default function LoginPage() {
       const rol = (session?.data?.user as { role?: string })?.role ?? 'residente';
       router.replace(homePathForRole(rol));
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error inesperado');
+      setError(userFacingError(err, 'SIS4S-400'));
       setLoading(false);
     }
   }

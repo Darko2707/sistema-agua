@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { trpcReact } from '@/lib/trpc-react';
 import { MESES_CORTO as MESES } from '@/lib/meses';
 import { MAX_MESES_POR_PAGO_TESORERA } from '@/src/domain/pagos/periodos-tesoreria';
+import { userFacingError } from '@/lib/user-facing-error';
 
 const C = {
   green:      '#15493A',
@@ -168,7 +169,7 @@ export function PagosTesorera() {
       );
     } catch (e: unknown) {
       await utils.pagos.listarResidentesParaPago.invalidate();
-      mostrar(e instanceof Error ? e.message : 'No se pudo registrar el pago', 'error');
+      mostrar(userFacingError(e, 'SIS4S-202'), 'error');
     } finally {
       setRegistrando(null);
     }

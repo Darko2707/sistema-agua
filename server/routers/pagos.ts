@@ -17,6 +17,7 @@ import {
   construirEstadoPagosTesorera,
   MAX_MESES_POR_PAGO_TESORERA,
   periodoDesdeFecha,
+  periodoInicioCapturaTesorera,
   periodoKey,
 } from '@/src/domain/pagos/periodos-tesoreria';
 import { calcularDesglosePagoManual, calcularMontoBase } from '@/src/domain/pagos/calculator';
@@ -193,7 +194,8 @@ export const pagosRouter = router({
       residentes: perfiles.map((p) => {
         const estadoPago = construirEstadoPagosTesorera({
           periodoActual,
-          periodoInicio: periodoDesdeFecha(p.creadoEn, periodoActual),
+          periodoInicio: periodoInicioCapturaTesorera(p.creadoEn, periodoActual),
+          periodoInicioAdeudo: periodoDesdeFecha(p.creadoEn, periodoActual),
           periodosPagados: p.pagos,
         });
         const pagos = new Set(p.pagos.map(periodoKey));

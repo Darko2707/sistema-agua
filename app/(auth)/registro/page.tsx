@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation';
 import { trpc } from '@/lib/trpc-client';
 import { homePathForRole } from '@/lib/role-home';
 import { useCircuitos } from '@/hooks/useCircuito';
+import { userFacingError } from '@/lib/user-facing-error';
 import {
   esNombrePersonaValido,
   normalizarNombrePersona,
@@ -28,8 +29,14 @@ const cuentaSchema = z.object({
 });
 type CuentaForm = z.infer<typeof cuentaSchema>;
 
+const TELEFONO_ERROR = 'El telefono debe contener exactamente 10 digitos';
+
+function soloDigitos10(value: string): string {
+  return value.replace(/\D/g, '').slice(0, 10);
+}
+
 const perfilSchema = z.object({
-  telefono: z.string().trim().min(10, 'Mínimo 10 dígitos').max(15, 'Máximo 15 dígitos').regex(/^\d+$/, 'Solo números'),
+  telefono: z.string().regex(/^\d{10}$/, TELEFONO_ERROR),
   sexo: z.enum(['masculino', 'femenino', 'otro']),
   tenencia: z.enum(['propietario', 'inquilino']),
   circuitoId: z.string().trim().min(1, 'Selecciona tu circuito'),
@@ -41,14 +48,14 @@ const perfilSchema = z.object({
     .refine(value => /[1-9]/.test(value), 'Debe ser mayor que cero'),
   deptoLetra: z.string().trim().regex(/^[a-zA-Z]?$/, 'Solo una letra (opcional)').optional(),
   nombrePropietario: z.string().trim().max(120, 'Máximo 120 caracteres').optional(),
-  telefonoPropietario: z.string().trim().max(15, 'Máximo 15 dígitos').regex(/^\d*$/, 'Solo números').optional(),
+  telefonoPropietario: z.string().optional(),
 }).superRefine((data, ctx) => {
   if (data.tenencia === 'inquilino') {
     if (!data.nombrePropietario || data.nombrePropietario.trim().length < 2) {
       ctx.addIssue({ code: 'custom', message: 'Ingresa el nombre del propietario', path: ['nombrePropietario'] });
     }
-    if (!data.telefonoPropietario || data.telefonoPropietario.trim().length < 10) {
-      ctx.addIssue({ code: 'custom', message: 'Teléfono del propietario (mínimo 10 dígitos)', path: ['telefonoPropietario'] });
+    if (!data.telefonoPropietario || !/^\d{10}$/.test(data.telefonoPropietario)) {
+      ctx.addIssue({ code: 'custom', message: TELEFONO_ERROR, path: ['telefonoPropietario'] });
     }
     if (data.nombrePropietario && !esNombrePersonaValido(data.nombrePropietario)) {
       ctx.addIssue({ code: 'custom', message: NOMBRE_PERSONA_ERROR, path: ['nombrePropietario'] });
@@ -115,9 +122,7 @@ export default function RegistroPage() {
         if (perfilExistente) router.replace('/residente');
       } catch (err: unknown) {
         if (active) {
-          setError(err instanceof Error
-            ? err.message
-            : 'No pudimos recuperar tu registro. Intenta nuevamente.');
+          setError(userFacingError(err, 'SIS4S-100'));
         }
       } finally {
         if (active) setCheckingSession(false);
@@ -185,7 +190,7 @@ export default function RegistroPage() {
       await aceptarLegales();
       setPaso(2);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error desconocido');
+      setError(userFacingError(err, 'SIS4S-102'));
     } finally {
       setSubmitting(false);
     }
@@ -197,7 +202,7 @@ export default function RegistroPage() {
     const departamento = `${normalizarNumero(data.deptoNumero)}${(data.deptoLetra ?? '').trim().toUpperCase()}`;
     try {
       await trpc.usuarios.crearPerfil.mutate({
-        telefono: data.telefono.trim(),
+        telefono: data.telefono,
         sexo: data.sexo,
         tenencia: data.tenencia,
         circuitoId: data.circuitoId.trim(),
@@ -207,12 +212,12 @@ export default function RegistroPage() {
           nombrePropietario: data.nombrePropietario
             ? normalizarNombrePersona(data.nombrePropietario)
             : undefined,
-          telefonoPropietario: data.telefonoPropietario?.trim(),
+          telefonoPropietario: data.telefonoPropietario,
         }),
       });
       router.replace('/residente');
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error desconocido');
+      setError(userFacingError(err, 'SIS4S-103'));
     } finally {
       setSubmitting(false);
     }
@@ -229,7 +234,7 @@ export default function RegistroPage() {
       setPaso(1);
       router.refresh();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'No se pudo cerrar la sesión.');
+      setError(userFacingError(err, 'SIS4S-104'));
     } finally {
       setSubmitting(false);
     }
@@ -332,8 +337,27 @@ export default function RegistroPage() {
           <div className="auth-grid-2">
             <div>
               <label htmlFor="telefono" style={labelBase}>Teléfono</label>
-              <input id="telefono" type="tel" inputMode="numeric" maxLength={15} className="auth-inp" placeholder="2281234567" autoComplete="tel" aria-required="true" aria-describedby={perfil.formState.errors.telefono ? 'tel-hint tel-err' : 'tel-hint'} aria-invalid={!!perfil.formState.errors.telefono} style={inputBase} {...perfil.register('telefono')} />
-              <p id="tel-hint" style={{ fontSize: 12, color: C.textWarm, marginTop: 4 }}>Es un dato de contacto administrativo. No enviaremos códigos ni notificaciones automáticas a este número.</p>
+              <input
+                id="telefono"
+                type="tel"
+                inputMode="numeric"
+                maxLength={10}
+                pattern="[0-9]{10}"
+                className="auth-inp"
+                placeholder="2281234567"
+                autoComplete="tel"
+                aria-required="true"
+                aria-describedby={perfil.formState.errors.telefono ? 'tel-hint tel-err' : 'tel-hint'}
+                aria-invalid={!!perfil.formState.errors.telefono}
+                style={inputBase}
+                {...perfil.register('telefono', {
+                  onChange: (event) => {
+                    const input = event.target as HTMLInputElement;
+                    input.value = soloDigitos10(input.value);
+                  },
+                })}
+              />
+              <p id="tel-hint" style={{ fontSize: 12, color: C.textWarm, marginTop: 4 }}>Debe contener exactamente 10 digitos. Es un dato de contacto administrativo.</p>
               <FieldError id="tel-err" message={perfil.formState.errors.telefono?.message} />
             </div>
             <div>
@@ -380,7 +404,25 @@ export default function RegistroPage() {
                 </div>
                 <div>
                   <label htmlFor="telefonoPropietario" style={labelBase}>Teléfono del propietario</label>
-                  <input id="telefonoPropietario" type="tel" inputMode="numeric" maxLength={15} className="auth-inp" placeholder="2281234567" aria-required="true" aria-describedby={perfil.formState.errors.telefonoPropietario ? 'tprop-err' : undefined} aria-invalid={!!perfil.formState.errors.telefonoPropietario} style={inputBase} {...perfil.register('telefonoPropietario')} />
+                  <input
+                    id="telefonoPropietario"
+                    type="tel"
+                    inputMode="numeric"
+                    maxLength={10}
+                    pattern="[0-9]{10}"
+                    className="auth-inp"
+                    placeholder="2281234567"
+                    aria-required="true"
+                    aria-describedby={perfil.formState.errors.telefonoPropietario ? 'tprop-err' : undefined}
+                    aria-invalid={!!perfil.formState.errors.telefonoPropietario}
+                    style={inputBase}
+                    {...perfil.register('telefonoPropietario', {
+                      onChange: (event) => {
+                        const input = event.target as HTMLInputElement;
+                        input.value = soloDigitos10(input.value);
+                      },
+                    })}
+                  />
                   <FieldError id="tprop-err" message={perfil.formState.errors.telefonoPropietario?.message} />
                 </div>
               </div>

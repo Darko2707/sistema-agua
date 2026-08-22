@@ -73,7 +73,7 @@ export default function RootLayout({
           Saltar al contenido principal
         </a>
         <Providers>
-          <main id="main-content" className="min-h-screen">
+          <main id="main-content" className="flex min-h-screen flex-col">
             {children}
           </main>
         </Providers>

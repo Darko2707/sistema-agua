@@ -722,8 +722,8 @@ export function ResidenteDashboard() {
                         )}
                       </div>
                     </div>
-                    <span aria-label={`Monto: $${p.monto} MXN`} style={{ fontFamily: FB, fontSize: 15, fontWeight: 700, color: C.textMain }}>
-                      ${p.monto}
+                    <span aria-label={`Monto al circuito: $${p.montoBase ?? p.monto} MXN`} style={{ fontFamily: FB, fontSize: 15, fontWeight: 700, color: C.textMain }}>
+                      ${p.montoBase ?? p.monto}
                     </span>
                   </div>
                 ))}

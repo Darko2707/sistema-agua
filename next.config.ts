@@ -6,14 +6,18 @@ import { withSentryConfig } from '@sentry/nextjs';
 // Los nonces requieren rendering dinámico en todas las páginas, lo que
 // deshabilita caché CDN y no aporta seguridad adicional significativa aquí.
 const isDev = process.env.NODE_ENV === 'development';
+const isPreview = process.env.VERCEL_ENV === 'preview';
+const vercelLiveSources = isDev || isPreview
+  ? ' https://vercel.live https://*.vercel.live'
+  : '';
 const csp = [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ''}`,
+  `script-src 'self' 'unsafe-inline'${isDev ? " 'unsafe-eval'" : ''}${vercelLiveSources}`,
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' blob: data: https:",
   "font-src 'self'",
   // Sentry ingest (global: *.ingest.sentry.io; US regional: *.ingest.us.sentry.io) + MP APIs
-  "connect-src 'self' https://*.mercadopago.com https://*.ingest.sentry.io https://*.ingest.us.sentry.io",
+  `connect-src 'self' https://*.mercadopago.com https://*.ingest.sentry.io https://*.ingest.us.sentry.io${vercelLiveSources} wss://*.vercel.live`,
   "frame-src https://www.mercadopago.com.mx https://www.mercadopago.com https://www.mercadolibre.com",
   "frame-ancestors 'none'",
   "base-uri 'self'",

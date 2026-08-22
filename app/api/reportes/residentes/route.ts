@@ -29,6 +29,14 @@ function safeFilenamePart(value: string): string {
     .slice(0, 80) || 'circuito';
 }
 
+function montoDisponibleCircuito(pago: {
+  monto: string;
+  montoBase?: string | null;
+  montoNetoRepresentante?: string | null;
+}) {
+  return Number(pago.montoNetoRepresentante ?? pago.montoBase ?? pago.monto);
+}
+
 export const dynamic = 'force-dynamic';
 const MAX_RANGO_MESES = 36;
 
@@ -117,7 +125,17 @@ export async function GET(req: Request) {
   const pagosList = perfilIds.length > 0
     ? await db.query.pagos.findMany({
         where: (p, { inArray }) => inArray(p.perfilId, perfilIds),
-        columns: { id: true, perfilId: true, mes: true, anio: true, monto: true, estado: true, fechaPago: true },
+        columns: {
+          id: true,
+          perfilId: true,
+          mes: true,
+          anio: true,
+          monto: true,
+          montoBase: true,
+          montoNetoRepresentante: true,
+          estado: true,
+          fechaPago: true,
+        },
       })
     : [];
 
@@ -125,7 +143,7 @@ export async function GET(req: Request) {
     const pagosR = pagosList.filter(p => p.perfilId === r.id);
     const pagosAnio = periodos.map(({ mes, anio }) => {
       const p = pagosR.find(p => p.mes === mes && p.anio === anio && p.estado === 'pagado');
-      return { mes, anio, monto: p ? Number(p.monto) : null, estado: p ? 'pagado' as const : 'pendiente' as const };
+      return { mes, anio, monto: p ? montoDisponibleCircuito(p) : null, estado: p ? 'pagado' as const : 'pendiente' as const };
     });
     const totalPagado   = pagosAnio.reduce((s, p) => s + (p.monto ?? 0), 0);
     const mesesSinPagar = pagosAnio.filter(p => p.estado === 'pendiente').length;

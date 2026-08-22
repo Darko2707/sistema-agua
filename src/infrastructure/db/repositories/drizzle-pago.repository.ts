@@ -6,6 +6,7 @@ import {
   cortes,
   tickets,
   perfilesResidente,
+  circuitos,
   notificaciones,
   mercadoPagoPaymentIntents,
 } from '@/db/schema';
@@ -32,6 +33,7 @@ import {
   construirEstadoPagosTesorera,
   MAX_MESES_POR_PAGO_TESORERA,
   periodoDesdeFecha,
+  periodoInicioCapturaTesorera,
 } from '@/src/domain/pagos/periodos-tesoreria';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
 import { TRPCError } from '@trpc/server';
@@ -354,7 +356,8 @@ export class DrizzlePagoRepository implements PagoRepository {
           const periodoActual = { mes: vigente.mes, anio: vigente.anio };
           const estadoPagos = construirEstadoPagosTesorera({
             periodoActual,
-            periodoInicio: periodoDesdeFecha(perfil.creadoEn, periodoActual),
+            periodoInicio: periodoInicioCapturaTesorera(perfil.creadoEn, periodoActual),
+            periodoInicioAdeudo: periodoDesdeFecha(perfil.creadoEn, periodoActual),
             periodosPagados: existentes,
           });
           const periodosDisponibles = new Set(
@@ -724,6 +727,31 @@ export class DrizzlePagoRepository implements PagoRepository {
       .select({ total: sql<number>`count(*)::int` })
       .from(perfilesResidente);
 
+    const porCircuitoRows = await db
+      .select({
+        circuitoId: circuitos.id,
+        nombre: circuitos.nombre,
+        cuota: sql<number>`${circuitos.montoMensual}::numeric`,
+        totalResidentes: sql<number>`count(distinct ${perfilesResidente.id})::int`,
+        residentesAlCorriente: sql<number>`count(distinct ${pagos.perfilId}) filter (where ${pagos.id} is not null)::int`,
+        pagosRecibidos: sql<number>`count(${pagos.id})::int`,
+        totalRecaudado: sql<number>`coalesce(sum(${pagos.montoBase}::numeric), 0)::float`,
+        comisionesOnline: sql<number>`coalesce(sum((${pagos.comisionMercadoPago}::numeric + ${pagos.retencionIsr}::numeric + ${pagos.retencionIva}::numeric)) filter (where ${pagos.metodo} = 'mercado_pago'), 0)::float`,
+      })
+      .from(circuitos)
+      .leftJoin(perfilesResidente, eq(perfilesResidente.circuitoId, circuitos.id))
+      .leftJoin(
+        pagos,
+        and(
+          eq(pagos.perfilId, perfilesResidente.id),
+          eq(pagos.estado, 'pagado'),
+          eq(pagos.mes, mes),
+          eq(pagos.anio, anio),
+        ),
+      )
+      .groupBy(circuitos.id, circuitos.nombre, circuitos.montoMensual)
+      .orderBy(circuitos.nombre);
+
     const totalResidentes = totalRow?.total ?? 0;
     const totalPagadosMes = mesRow?.pagados ?? 0;
     const morosidadPct = totalResidentes > 0
@@ -737,6 +765,19 @@ export class DrizzlePagoRepository implements PagoRepository {
       totalResidentes,
       morosidadPct,
       reconexionesMes: mesRow?.reconexiones ?? 0,
+      porCircuito: porCircuitoRows.map((row) => {
+        const residentesConAdeudos = Math.max((row.totalResidentes ?? 0) - (row.residentesAlCorriente ?? 0), 0);
+        return {
+          circuitoId: row.circuitoId,
+          nombre: row.nombre,
+          totalRecaudado: row.totalRecaudado ?? 0,
+          pagosRecibidos: row.pagosRecibidos ?? 0,
+          residentesAlCorriente: row.residentesAlCorriente ?? 0,
+          residentesConAdeudos,
+          montoPendientePorCobrar: residentesConAdeudos * Number(row.cuota ?? 0),
+          comisionesOnline: row.comisionesOnline ?? 0,
+        };
+      }),
     };
   }
 }

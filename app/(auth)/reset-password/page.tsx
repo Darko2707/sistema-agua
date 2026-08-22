@@ -8,6 +8,7 @@ import {
   isRepresentativeResetCodeValid,
   REPRESENTATIVE_RESET_CODE_LENGTH,
 } from '@/src/domain/usuarios/representative-reset-code';
+import { userFacingError } from '@/lib/user-facing-error';
 import { AuthCard, C, inputBase, labelBase, buttonGold, linkButton, FM } from '../auth-styles';
 
 function ResetPasswordContent() {
@@ -38,8 +39,8 @@ function ResetPasswordContent() {
       setRequestMessage(
         'Si el correo corresponde a un residente activo, su representante ya puede generar el código.',
       );
-    } catch {
-      setRequestError('No se pudo registrar la solicitud. Intenta de nuevo más tarde.');
+    } catch (err: unknown) {
+      setRequestError(userFacingError(err, 'SIS4S-402'));
     } finally {
       setRequestingCode(false);
     }
@@ -75,7 +76,7 @@ function ResetPasswordContent() {
       setConfirmPassword('');
       setCode('');
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error al restablecer la contraseña');
+      setError(userFacingError(err, 'SIS4S-401'));
     }
     setLoading(false);
   }

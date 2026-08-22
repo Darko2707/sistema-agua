@@ -24,6 +24,7 @@ function mapPerfil(p: ResidenteConRelaciones, periodo: ReturnType<typeof Periodo
     id:                  p.id,
     edificio:            p.edificio,
     departamento:        p.departamento,
+    telefono:            p.telefono,
     estadoAgua:          p.estadoAgua,
     tenencia:            p.tenencia ?? null,
     nombrePropietario:   p.nombrePropietario ?? null,

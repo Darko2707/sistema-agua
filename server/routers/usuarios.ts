@@ -25,6 +25,8 @@ import { ListarPersonalHandler } from '@/src/application/usuarios/queries/listar
 import { representativePasswordResetService } from '@/src/infrastructure/db/services/representative-password-reset.service';
 import { isRepresentativeResetCodeValid } from '@/src/domain/usuarios/representative-reset-code';
 
+const telefono10 = z.string().regex(/^\d{10}$/, 'El telefono debe contener exactamente 10 digitos');
+
 const crearPerfilHandler        = new CrearPerfilHandler({ residenteRepo, circuitoRepo });
 const listarResidentesHandler   = new ListarResidentesHandler({ residenteRepo, circuitoRepo });
 const crearPersonalHandler      = new CrearPersonalHandler({ userRepo, circuitoRepo });
@@ -54,14 +56,14 @@ async function limitOrThrow(
 export const usuariosRouter = router({
   crearPerfil: authenticatedProcedure
     .input(z.object({
-      telefono:            z.string().trim().regex(/^\d{10,15}$/, 'El telefono debe contener entre 10 y 15 digitos'),
+      telefono:            telefono10,
       sexo:                z.enum(['masculino', 'femenino', 'otro']),
       tenencia:            z.enum(['propietario', 'inquilino']),
       circuitoId:          z.string().uuid(),
       edificio:            z.string().trim().min(1).max(8),
       departamento:        z.string().trim().min(1).max(8),
       nombrePropietario:   z.string().trim().min(2).max(120).optional(),
-      telefonoPropietario: z.string().trim().regex(/^\d{10,15}$/, 'El telefono debe contener entre 10 y 15 digitos').optional(),
+      telefonoPropietario: telefono10.optional(),
     }).refine(d => d.tenencia === 'propietario' || (!!d.nombrePropietario && !!d.telefonoPropietario), {
       message: 'Los datos del propietario son requeridos cuando eres inquilino',
       path: ['nombrePropietario'],

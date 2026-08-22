@@ -112,6 +112,16 @@ export type MetricasAdmin = {
   totalResidentes: number;
   morosidadPct: number;
   reconexionesMes: number;
+  porCircuito: Array<{
+    circuitoId: string;
+    nombre: string;
+    totalRecaudado: number;
+    pagosRecibidos: number;
+    residentesAlCorriente: number;
+    residentesConAdeudos: number;
+    montoPendientePorCobrar: number;
+    comisionesOnline: number;
+  }>;
 };
 
 export interface PagoRepository {

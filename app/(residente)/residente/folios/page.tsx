@@ -37,6 +37,8 @@ type Ticket = {
     mes: number;
     anio: number;
     monto: string;
+    montoCircuito?: string;
+    montoTotalCobrado?: string;
     estado: string | null;
     montoBase: string | null;
     comisionMercadoPago: string | null;
@@ -133,7 +135,7 @@ export default function FoliosPage() {
 
   const ticketsFiltrados = tickets.filter(t => t.pago?.anio === selectedYear);
   const totalPagado = ticketsFiltrados
-    .reduce((sum, t) => sum + Number(t.pago?.monto ?? 0), 0)
+    .reduce((sum, t) => sum + Number(t.pago?.montoCircuito ?? t.pago?.montoBase ?? t.pago?.monto ?? 0), 0)
     .toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
 
   // Account info from first ticket
@@ -214,7 +216,7 @@ export default function FoliosPage() {
           {/* Total paid card */}
           <div style={{ background: '#fff', borderRadius: 22, padding: '18px 20px', boxShadow: '0 8px 24px rgba(120,90,30,.08)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <div style={{ fontSize: 12.5, color: C.textWarm, fontWeight: 700 }}>Total pagado en {selectedYear}</div>
+              <div style={{ fontSize: 12.5, color: C.textWarm, fontWeight: 700 }}>Total al circuito en {selectedYear}</div>
               <div style={{ fontFamily: FB, fontSize: 28, fontWeight: 800, color: C.green, marginTop: 3 }}>{totalPagado}</div>
             </div>
             <span style={{ width: 46, height: 46, borderRadius: '50%', background: C.greenBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }} aria-hidden="true">
@@ -262,8 +264,8 @@ export default function FoliosPage() {
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <span aria-label={`Monto: ${p?.monto}`} style={{ fontFamily: FB, fontSize: 14.5, fontWeight: 700, color: C.green }}>
-                          ${p?.monto ?? '0.00'}
+                        <span aria-label={`Monto al circuito: ${p?.montoCircuito ?? p?.montoBase ?? p?.monto}`} style={{ fontFamily: FB, fontSize: 14.5, fontWeight: 700, color: C.green }}>
+                          ${p?.montoCircuito ?? p?.montoBase ?? p?.monto ?? '0.00'}
                         </span>
                         <a
                           href={`/api/tickets/${ticket.folio}/pdf`}
