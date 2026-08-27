@@ -348,7 +348,7 @@ describe('marcarMorososDelMes — integración con BD real', () => {
       vi.setSystemTime(new Date(ANIO, MES - 1, 15, 12, 0, 0));
 
       try {
-        const resultado = await safeMarcarViaHandler(handler, MES, ANIO);
+        const resultado = await safeMarcarViaHandler(handler);
         expect(resultado.mes).toBe(MES);
         expect(resultado.anio).toBe(ANIO);
         expect(resultado.dia).toBe(15);
@@ -366,8 +366,6 @@ describe('marcarMorososDelMes — integración con BD real', () => {
 async function safeMarcarViaHandler(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   handler: { execute(): Promise<any> },
-  _mes: number,
-  _anio: number,
 ) {
   const colateral = await db
     .select({ id: perfilesResidente.id })

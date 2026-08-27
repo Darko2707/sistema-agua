@@ -34,14 +34,13 @@ export default function AdminRepresentantesPage() {
   const circuitosQuery = trpcReact.circuitos.listar.useQuery();
 
   const representantes = repsQuery.data      ?? [];
-  const circuitos      = circuitosQuery.data  ?? [];
   const cargando       = repsQuery.isLoading;
 
   // Circuitos libres + el circuito actual del representante que se edita
-  const circuitosDisponibles = useMemo(
-    () => circuitos.filter(c => !c.representanteId || c.representanteId === editando?.id),
-    [circuitos, editando],
-  );
+  const circuitosDisponibles = useMemo(() => {
+    const circuitos = circuitosQuery.data ?? [];
+    return circuitos.filter(c => !c.representanteId || c.representanteId === editando?.id);
+  }, [circuitosQuery.data, editando]);
 
   const actualizarMut = trpcReact.usuarios.actualizarRepresentante.useMutation();
 

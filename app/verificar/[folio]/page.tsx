@@ -1,6 +1,4 @@
 import { db } from '@/db';
-import { tickets, pagos, perfilesResidente, user } from '@/db/schema';
-import { eq } from 'drizzle-orm';
 import { MESES_FULL } from '@/lib/meses';
 
 export default async function VerificarPage({ params }: { params: Promise<{ folio: string }> }) {

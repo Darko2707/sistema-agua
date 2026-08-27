@@ -76,7 +76,6 @@ export async function generarReporteResidentesPDF(data: {
   const COL_TOTAL   = 52;
   const COL_SINPAGAR = 36;
 
-  const totalFixedW = MARGIN * 2 + COL_NOMBRE + COL_TEL + COL_EDIF + COL_DEPTO + COL_ESTADO + COL_MES * 12 + COL_TOTAL + COL_SINPAGAR;
   // We'll work with fixed widths, content will clip
 
   function addPage() {
@@ -274,7 +273,7 @@ export async function generarReporteFinancieroPDF(data: {
   y -= 16;
 
   // Table header
-  const COL_ED = 80, COL_PAG = 90, COL_CANT = 70, COL_ACT = 80, COL_MOR = 80;
+  const COL_ED = 80, COL_PAG = 90, COL_CANT = 70, COL_ACT = 80;
   page.drawRectangle({ x: MARGIN, y: y - 2, width: W - MARGIN * 2, height: 14, color: rgb(0.15, 0.22, 0.35) });
   page.drawText('Edificio',    { x: MARGIN + 4, y, size: 8, font: bold, color: C.WHITE });
   page.drawText('Total pagado', { x: MARGIN + COL_ED + 4, y, size: 8, font: bold, color: C.WHITE });
@@ -305,7 +304,7 @@ export async function generarReporteFinancieroPDF(data: {
     page.drawText('Sin gastos registrados para este período.', { x: MARGIN + 4, y, size: 9, font, color: C.GRAY });
     y -= 18;
   } else {
-    const COL_GCONC = 200, COL_GCAT = 100, COL_GFECH = 80, COL_GMONT = 90;
+    const COL_GCONC = 200, COL_GCAT = 100, COL_GFECH = 80;
     page.drawRectangle({ x: MARGIN, y: y - 2, width: W - MARGIN * 2, height: 14, color: rgb(0.15, 0.22, 0.35) });
     page.drawText('Concepto',  { x: MARGIN + 4, y, size: 8, font: bold, color: C.WHITE });
     page.drawText('Categoría', { x: MARGIN + COL_GCONC + 4, y, size: 8, font: bold, color: C.WHITE });

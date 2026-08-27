@@ -6,6 +6,8 @@ import { DIA_CORTE } from '@/src/domain/pagos/constants';
 import { calcularDesglosePago, calcularMontoBase } from '@/src/domain/pagos/calculator';
 import { fechaNegocio } from '@/src/domain/shared/fecha-negocio';
 
+const DEFAULT_HISTORIAL_LIMIT = 48;
+
 type Deps = {
   pagoRepo: PagoRepository;
   residenteRepo: ResidenteRepository;
@@ -22,7 +24,7 @@ export class HistorialPagosHandler {
       return { perfil: null, circuito: null, pagos: [], corteActivo: false, esMoroso: false, mes: null, anio: null };
     }
 
-    const historial = await pagoRepo.findByPerfilId(perfil.id, query.limit ?? 12);
+    const historial = await pagoRepo.findByPerfilId(perfil.id, query.limit ?? DEFAULT_HISTORIAL_LIMIT);
     const corteActivo = await pagoRepo.findCorteActivo(perfil.id);
     const periodo = PeriodoVO.vigente();
     const hoy = fechaNegocio().dia;

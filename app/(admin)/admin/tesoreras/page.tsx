@@ -48,14 +48,13 @@ export default function AdminTesorerasPage() {
   const circuitosQuery = trpcReact.circuitos.listar.useQuery();
 
   const tesoreras = tesorerasQuery.data ?? [];
-  const circuitos = circuitosQuery.data ?? [];
   const cargando  = tesorerasQuery.isLoading;
 
   // Circuitos disponibles: sin tesorera o el circuito actual de la que se edita
-  const circuitosDisponibles = useMemo(
-    () => circuitos.filter(c => !c.tesoreraId || c.tesoreraId === editando?.id),
-    [circuitos, editando],
-  );
+  const circuitosDisponibles = useMemo(() => {
+    const circuitos = circuitosQuery.data ?? [];
+    return circuitos.filter(c => !c.tesoreraId || c.tesoreraId === editando?.id);
+  }, [circuitosQuery.data, editando]);
 
   const actualizarMut = trpcReact.usuarios.actualizarTesorera.useMutation();
 

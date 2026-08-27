@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { trpcReact } from '@/lib/trpc-react';
-import { FileDown, Search, Loader2, Users } from 'lucide-react';
+import { FileDown, Loader2, Search, Users } from 'lucide-react';
 import { ExcelRangoModal } from '@/components/shared/ExcelRangoModal';
 
 import { Button } from '@/components/ui/button';
@@ -69,7 +69,7 @@ export function ReporteResidentes() {
     orden,
   });
 
-  const residentes  = residentesQuery.data ?? [];
+  const residentes  = useMemo(() => residentesQuery.data ?? [], [residentesQuery.data]);
   const edificios   = edificiosQuery.data ?? [];
   const cargando    = residentesQuery.isLoading;
   const error       = residentesQuery.error?.message;
@@ -163,9 +163,9 @@ export function ReporteResidentes() {
             </select>
 
             {/* Exportar */}
-            <Button onClick={() => setExcelModal(true)} disabled={cargando} variant="outline" className="gap-2">
-              <FileDown className="h-4 w-4" />
-              Generar Excel
+            <Button onClick={() => setExcelModal(true)} disabled={cargando || descargando} variant="outline" className="gap-2">
+              {descargando ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+              {descargando ? 'Generando...' : 'Generar Excel'}
             </Button>
           </div>
         </CardContent>

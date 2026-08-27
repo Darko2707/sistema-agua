@@ -43,9 +43,7 @@ export const circuitosRouter = router({
 
   // These two queries join the `user` table inline which the current repo interface
   // doesn't support. Kept with inline DB until a richer repo method is added.
-  // eslint-disable-next-line no-restricted-imports
   miCircuito: roleProcedure('representante').query(async ({ ctx }) => {
-    // eslint-disable-next-line no-restricted-imports
     const { db } = await import('@/db');
     const circuito = await db.query.circuitos.findFirst({
       where: (c, { eq }) => eq(c.representanteId, ctx.user.id),
@@ -57,7 +55,6 @@ export const circuitosRouter = router({
   }),
 
   miCircuitoTesorera: roleProcedure('tesorera').query(async ({ ctx }) => {
-    // eslint-disable-next-line no-restricted-imports
     const { db } = await import('@/db');
     const circuito = await db.query.circuitos.findFirst({
       where: (c, { eq }) => eq(c.tesoreraId, ctx.user.id),

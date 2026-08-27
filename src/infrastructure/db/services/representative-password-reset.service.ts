@@ -1,6 +1,6 @@
 import { createHash, randomInt } from 'node:crypto';
 import { TRPCError } from '@trpc/server';
-import { and, desc, eq, gt, isNull } from 'drizzle-orm';
+import { and, desc, eq, gt, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import {
   account,
@@ -64,7 +64,7 @@ export class RepresentativePasswordResetService {
       .innerJoin(perfilesResidente, eq(perfilesResidente.userId, users.id))
       .innerJoin(circuitos, eq(circuitos.id, perfilesResidente.circuitoId))
       .where(and(
-        eq(users.email, email),
+        sql`lower(${users.email}) = ${email}`,
         eq(users.role, 'residente'),
         isNull(users.deletedAt),
         eq(circuitos.activo, true),
@@ -291,7 +291,7 @@ export class RepresentativePasswordResetService {
       .innerJoin(circuitos, eq(circuitos.id, perfilesResidente.circuitoId))
       .innerJoin(passwordResetCodes, eq(passwordResetCodes.userId, users.id))
       .where(and(
-        eq(users.email, email),
+        sql`lower(${users.email}) = ${email}`,
         eq(users.role, 'residente'),
         isNull(users.deletedAt),
         eq(circuitos.activo, true),
@@ -400,11 +400,19 @@ export class RepresentativePasswordResetService {
         return false;
       }
 
-      const updatedAccounts = await tx
+      let updatedAccounts = await tx
         .update(account)
         .set({ password: hashedPassword, updatedAt: now })
         .where(and(eq(account.userId, preliminaryChallenge.userId), eq(account.providerId, 'credential')))
         .returning({ id: account.id });
+
+      if (updatedAccounts.length === 0) {
+        updatedAccounts = await tx
+          .update(account)
+          .set({ password: hashedPassword, updatedAt: now })
+          .where(and(eq(account.userId, preliminaryChallenge.userId), isNotNull(account.password)))
+          .returning({ id: account.id });
+      }
 
       if (updatedAccounts.length === 0) {
         throw new TRPCError({

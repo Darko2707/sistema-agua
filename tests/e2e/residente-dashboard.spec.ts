@@ -132,6 +132,7 @@ test.describe('Dashboard de residente', () => {
     await pagarBtn.click();
     // Button goes into loading state
     await expect(page.getByRole('button', { name: /Redirigiendo/i })).toBeVisible({ timeout: 3_000 });
+    await expect.poll(() => redirectedTo).toContain('mercadopago.com');
   });
 });
 

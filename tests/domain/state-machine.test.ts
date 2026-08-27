@@ -5,7 +5,6 @@ import {
   aplicarTransicion,
   puedeTransicionar,
   transicionesDisponibles,
-  type EstadoAgua,
 } from '@/src/domain/agua/state-machine';
 
 const FECHA = new Date('2025-06-15T10:00:00Z');
