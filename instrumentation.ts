@@ -1,5 +1,6 @@
 import type { Instrumentation } from 'next';
 import type { ErrorEvent } from '@sentry/nextjs';
+import { sentryEnvironment } from '@/lib/sentry-config';
 
 const GROUPED_OPERATIONAL_EVENTS = new Set([
   'webhook:misconfigured',
@@ -44,7 +45,7 @@ export async function register() {
     const { init } = await import('@sentry/nextjs');
     init({
       dsn:              process.env.NEXT_PUBLIC_SENTRY_DSN,
-      environment:      process.env.NODE_ENV,
+      environment:      sentryEnvironment(),
       enabled:          !!process.env.NEXT_PUBLIC_SENTRY_DSN,
       tracesSampleRate: process.env.NODE_ENV === 'production' ? 0.1 : 1.0,
       debug:            process.env.NODE_ENV !== 'production',

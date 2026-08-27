@@ -103,10 +103,6 @@ export async function POST(request: Request) {
     return Response.json({ received: true });
   } catch (error) {
     if (error instanceof InvalidWebhookSignatureError) {
-      Sentry.captureException(error, {
-        tags: { component: 'webhook', error_type: 'signature_invalid' },
-        level: 'warning',
-      });
       logger.warn('mp.webhook.firma_invalida', { reason: error.reason });
       return Response.json({ error: 'Firma invalida' }, { status: 401 });
     }

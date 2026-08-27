@@ -175,6 +175,7 @@ describe('POST /api/mercadopago/webhook', () => {
       expect(res.status).toBe(401);
       const body = await res.json();
       expect(body.error).toBe('Firma invalida');
+      expect(Sentry.captureException).not.toHaveBeenCalled();
     });
 
     it('llama a validate con la firma y el request-id del header', async () => {
