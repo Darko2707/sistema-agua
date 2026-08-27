@@ -103,7 +103,12 @@ export class RepresentativePasswordResetService {
   async listPendingForRepresentative(representanteId: string) {
     const pending = await db
       .select({
-        perfilId: passwordResetRequests.perfilId,
+        perfilId:     passwordResetRequests.perfilId,
+        requestedAt:  passwordResetRequests.requestedAt,
+        nombre:       users.name,
+        email:        users.email,
+        edificio:     perfilesResidente.edificio,
+        departamento: perfilesResidente.departamento,
       })
       .from(passwordResetRequests)
       .innerJoin(
@@ -121,9 +126,15 @@ export class RepresentativePasswordResetService {
       ))
       .orderBy(desc(passwordResetRequests.requestedAt));
 
-    // El dashboard ya conoce los ids de los perfiles de su circuito. Este
-    // listado no agrega correo, nombre, codigo ni metadatos de la solicitud.
-    return pending.map(({ perfilId }) => ({ perfilId, pendiente: true as const }));
+    return pending.map((solicitud) => ({
+      perfilId:     solicitud.perfilId,
+      pendiente:    true as const,
+      requestedAt:  solicitud.requestedAt,
+      nombre:       solicitud.nombre,
+      email:        solicitud.email,
+      edificio:     solicitud.edificio,
+      departamento: solicitud.departamento,
+    }));
   }
 
   async generateForResident(input: GenerateInput) {

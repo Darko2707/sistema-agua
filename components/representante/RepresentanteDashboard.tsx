@@ -154,6 +154,10 @@ export function RepresentanteDashboard() {
     () => new Set((solicitudesQuery.data ?? []).filter(s => s.pendiente).map(s => s.perfilId)),
     [solicitudesQuery.data],
   );
+  const solicitudesPendientesDetalle = useMemo(
+    () => (solicitudesQuery.data ?? []).filter(s => s.pendiente),
+    [solicitudesQuery.data],
+  );
 
   const candidatos = useMemo(
     () => residentes.filter(r => r.usuario?.role === 'residente' && r.usuario?.id),
@@ -356,6 +360,51 @@ export function RepresentanteDashboard() {
         )}
 
         {/* ── Stats row ── */}
+        {solicitudesPendientesDetalle.length > 0 && (
+          <div style={{ background: C.card, borderRadius: 18, border: `1px solid ${C.border}`, padding: 16 }}>
+            <div style={{ fontFamily: FS, fontSize: 15, fontWeight: 800, color: C.textMain }}>Solicitudes de recuperación</div>
+            <p style={{ margin: '4px 0 14px', fontSize: 12.5, color: C.textMuted }}>
+              Estos residentes pidieron un código desde &quot;Olvidé mi contraseña&quot;. Genera el código sólo después de verificar su identidad.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {solicitudesPendientesDetalle.map(solicitud => (
+                <div
+                  key={solicitud.perfilId}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                    flexWrap: 'wrap',
+                    padding: '12px 14px',
+                    borderRadius: 14,
+                    background: C.bg,
+                    border: `1px solid ${C.border}`,
+                  }}
+                >
+                  <div>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: C.textMain }}>
+                      {solicitud.nombre ?? 'Residente'}
+                    </div>
+                    <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2 }}>
+                      {solicitud.email ?? 'Sin correo'} · Edif. {solicitud.edificio ?? '—'} · Depto {solicitud.departamento ?? '—'}
+                    </div>
+                  </div>
+                  <Btn
+                    onClick={() => generarCodigoRecuperacion(solicitud.perfilId)}
+                    disabled={generandoCodigo === solicitud.perfilId}
+                    outline
+                  >
+                    {generandoCodigo === solicitud.perfilId ? <Spin color={C.bgHeader} /> : (
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 7h.01"/><path d="M10 11l4-4 3 3-4 4"/><path d="M9 12l3 3-4 4H5v-3z"/><path d="M4 20h16"/></svg>
+                    )}
+                    Generar código
+                  </Btn>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <StatCard value={resumen?.totalDeptos ?? 0} label="Departamentos" />
           <StatCard value={resumen?.pagados ?? 0}     label="Pagados este mes" color={C.green} />

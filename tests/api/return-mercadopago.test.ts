@@ -14,7 +14,8 @@ const {
   mockFindPaymentIntent: vi.fn(),
 }));
 
-// These mocks prove the browser return route never reaches either write path.
+// The return route is a safe fallback writer: it only reaches the handler after
+// fetching and validating the Mercado Pago payment against the server intent.
 vi.mock('@/src/application/pagos/commands/procesar-pago-mp.handler', () => ({
   ProcesarPagoMpHandler: class {
     execute = (...args: unknown[]) => mockExecute(...args);
@@ -22,6 +23,11 @@ vi.mock('@/src/application/pagos/commands/procesar-pago-mp.handler', () => ({
 }));
 vi.mock('@/lib/push-dispatcher', () => ({
   schedulePushDispatch: mockSchedulePushDispatch,
+}));
+vi.mock('@/src/infrastructure/db/repositories', () => ({
+  residenteRepo: {},
+  pagoRepo: {},
+  circuitoRepo: {},
 }));
 
 vi.mock('@/db', () => ({
@@ -76,21 +82,27 @@ beforeEach(() => {
     currency_id: 'MXN',
     transaction_amount: 1399.84,
   });
+  mockExecute.mockResolvedValue({ yaRegistrado: false });
 });
 
 afterEach(() => vi.clearAllMocks());
 
 describe('GET /api/mercadopago/return', () => {
-  it('solo verifica un pago aprobado y redirige a success sin acreditarlo', async () => {
+  it('verifica un pago aprobado, lo acredita y redirige a success', async () => {
     const response = await GET(request());
 
     expect(response.headers.get('location')).toBe('https://sistema-agua.vercel.app/residente?payment=success');
     expect(mockPaymentGet).toHaveBeenCalledWith({ id: '12345' });
-    expect(mockExecute).not.toHaveBeenCalled();
-    expect(mockSchedulePushDispatch).not.toHaveBeenCalled();
+    expect(mockExecute).toHaveBeenCalledWith(expect.objectContaining({
+      perfilId: 'perfil-001',
+      circuitoId: 'circuito-001',
+      mercadoPagoPaymentId: '12345',
+      metodo: 'mercado_pago',
+    }));
+    expect(mockSchedulePushDispatch).toHaveBeenCalledTimes(1);
   });
 
-  it('verifica una referencia opaca respaldada por su intencion sin escribir', async () => {
+  it('verifica una referencia opaca respaldada por su intencion y la acredita', async () => {
     const reference = `agua_${'b'.repeat(48)}`;
     mockFindPaymentIntent.mockResolvedValue({
       externalReference: reference,
@@ -118,7 +130,21 @@ describe('GET /api/mercadopago/return', () => {
 
     expect(response.headers.get('location')).toBe('https://sistema-agua.vercel.app/residente?payment=success');
     expect(mockFindPaymentIntent).toHaveBeenCalledWith(reference);
-    expect(mockExecute).not.toHaveBeenCalled();
+    expect(mockExecute).toHaveBeenCalledWith(expect.objectContaining({
+      paymentIntentReference: reference,
+      periodos: [{ mes: 8, anio: 2026, monto: '100.00', esReconexion: false }],
+      mercadoPagoPaymentId: '12345',
+    }));
+    expect(mockSchedulePushDispatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('no duplica notificaciones cuando el pago ya estaba registrado por webhook', async () => {
+    mockExecute.mockResolvedValue({ yaRegistrado: true });
+
+    const response = await GET(request());
+
+    expect(response.headers.get('location')).toBe('https://sistema-agua.vercel.app/residente?payment=success');
+    expect(mockExecute).toHaveBeenCalledTimes(1);
     expect(mockSchedulePushDispatch).not.toHaveBeenCalled();
   });
 

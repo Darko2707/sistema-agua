@@ -424,16 +424,29 @@ describe('RepresentativePasswordResetService request lifecycle', () => {
     expect(mocks.hashAccountPassword).not.toHaveBeenCalled();
   });
 
-  it('el listado protegido solo agrega el indicador pendiente al id de perfil ya conocido', async () => {
+  it('el listado protegido muestra solicitudes identificables sin exponer el codigo', async () => {
+    const requestedAt = new Date('2026-08-14T12:00:00.000Z');
     mocks.selectOrderResult = [{
       perfilId: resident.perfilId,
-      requestedAt: new Date('2026-08-14T12:00:00.000Z'),
+      requestedAt,
+      nombre: 'Residente Uno',
+      email: resident.residenteEmail,
+      edificio: '8',
+      departamento: '314A',
       codeHash: 'no-debe-salir',
     }];
     const service = new RepresentativePasswordResetService();
 
     await expect(service.listPendingForRepresentative('representante-1')).resolves.toEqual([
-      { perfilId: resident.perfilId, pendiente: true },
+      {
+        perfilId: resident.perfilId,
+        pendiente: true,
+        requestedAt,
+        nombre: 'Residente Uno',
+        email: resident.residenteEmail,
+        edificio: '8',
+        departamento: '314A',
+      },
     ]);
   });
 });

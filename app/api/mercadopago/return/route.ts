@@ -2,7 +2,12 @@ import {
   fetchVerifiedMercadoPagoPayment,
   MercadoPagoPaymentValidationError,
 } from '@/src/infrastructure/mercadopago/payment-verification';
+import { residenteRepo, pagoRepo, circuitoRepo } from '@/src/infrastructure/db/repositories';
+import { ProcesarPagoMpHandler } from '@/src/application/pagos/commands/procesar-pago-mp.handler';
 import { logger } from '@/lib/logger';
+import { schedulePushDispatch } from '@/lib/push-dispatcher';
+
+const procesarPagoMpHandler = new ProcesarPagoMpHandler({ residenteRepo, pagoRepo, circuitoRepo });
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -26,6 +31,18 @@ export async function GET(request: Request) {
       perfilId: verified.perfilId,
       status: verified.status,
     });
+    if (verified.status === 'approved') {
+      const result = await procesarPagoMpHandler.execute({
+        perfilId: verified.perfilId,
+        circuitoId: verified.circuitoId,
+        paymentIntentReference: verified.paymentIntentReference,
+        periodos: verified.periodos,
+        metodo: 'mercado_pago',
+        mercadoPagoPaymentId: verified.paymentId,
+        mercadoPagoCollectorId: verified.collectorId,
+      });
+      if (!result.yaRegistrado) schedulePushDispatch();
+    }
     fallbackUrl.searchParams.set(
       'payment',
       verified.status === 'approved'
