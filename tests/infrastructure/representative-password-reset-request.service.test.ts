@@ -193,6 +193,27 @@ describe('RepresentativePasswordResetService request lifecycle', () => {
     expect(mocks.insertValues).toHaveLength(0);
   });
 
+  it('permite generar codigo para una cuenta operativa que tambien tiene perfil residente', async () => {
+    mocks.selectLimitResults.push([{ ...resident, residenteRole: 'tesorera' }]);
+    mocks.claimResults.push([{ id: 'request-tesorera' }]);
+    const service = new RepresentativePasswordResetService();
+
+    await expect(service.generateForResident({
+      representanteId: 'representante-1',
+      perfilId: resident.perfilId,
+    })).resolves.toMatchObject({
+      residente: {
+        email: resident.residenteEmail,
+      },
+    });
+
+    expect(mocks.insertValues.filter(value => 'codeHash' in value)).toHaveLength(1);
+    expect(mocks.insertValues).toContainEqual(expect.objectContaining({
+      accion: 'password_reset.codigo_generado',
+      detalle: expect.objectContaining({ requestId: 'request-tesorera' }),
+    }));
+  });
+
   it('una nueva solicitud conserva el codigo vigente hasta que el representante genera el nuevo', async () => {
     mocks.selectLimitResults.push([resident], [resident], [resident]);
     mocks.claimResults.push([{ id: 'request-1' }], [{ id: 'request-2' }]);

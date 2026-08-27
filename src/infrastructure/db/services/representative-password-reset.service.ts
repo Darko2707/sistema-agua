@@ -1,6 +1,6 @@
 import { createHash, randomInt } from 'node:crypto';
 import { TRPCError } from '@trpc/server';
-import { and, desc, eq, gt, isNotNull, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, isNotNull, isNull, or, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import {
   account,
@@ -19,6 +19,23 @@ export const REPRESENTATIVE_RESET_CODE_TTL_MS = 10 * 60 * 1000;
 export const REPRESENTATIVE_RESET_CODE_MAX_ATTEMPTS = 5;
 
 const INVALID_CODE_MESSAGE = 'Codigo invalido o expirado';
+const REPRESENTATIVE_RESET_ELIGIBLE_ROLES = new Set([
+  'residente',
+  'tesorera',
+  'cuadrilla_cortes',
+]);
+
+function eligibleResidentAccountCondition() {
+  return or(
+    eq(users.role, 'residente'),
+    eq(users.role, 'tesorera'),
+    eq(users.role, 'cuadrilla_cortes'),
+  );
+}
+
+function isEligibleResidentAccountRole(role: string): boolean {
+  return REPRESENTATIVE_RESET_ELIGIBLE_ROLES.has(role);
+}
 
 export function hashRepresentativeResetCode(code: string): string {
   if (!isRepresentativeResetCodeValid(code)) {
@@ -65,7 +82,7 @@ export class RepresentativePasswordResetService {
       .innerJoin(circuitos, eq(circuitos.id, perfilesResidente.circuitoId))
       .where(and(
         sql`lower(${users.email}) = ${email}`,
-        eq(users.role, 'residente'),
+        eligibleResidentAccountCondition(),
         isNull(users.deletedAt),
         eq(circuitos.activo, true),
       ))
@@ -120,7 +137,7 @@ export class RepresentativePasswordResetService {
       .where(and(
         eq(circuitos.representanteId, representanteId),
         eq(circuitos.activo, true),
-        eq(users.role, 'residente'),
+        eligibleResidentAccountCondition(),
         isNull(users.deletedAt),
         isNull(passwordResetRequests.generatedAt),
       ))
@@ -159,7 +176,7 @@ export class RepresentativePasswordResetService {
       ))
       .limit(1);
 
-    if (!resident || resident.residenteRole !== 'residente') {
+    if (!resident || !isEligibleResidentAccountRole(resident.residenteRole)) {
       throw new TRPCError({
         code:    'FORBIDDEN',
         message: 'Solo puedes generar codigos para residentes de tu circuito',
@@ -187,7 +204,7 @@ export class RepresentativePasswordResetService {
           eq(perfilesResidente.userId, resident.userId),
           eq(circuitos.representanteId, input.representanteId),
           eq(circuitos.activo, true),
-          eq(users.role, 'residente'),
+          eligibleResidentAccountCondition(),
           isNull(users.deletedAt),
         ))
         .limit(1)
@@ -292,7 +309,7 @@ export class RepresentativePasswordResetService {
       .innerJoin(passwordResetCodes, eq(passwordResetCodes.userId, users.id))
       .where(and(
         sql`lower(${users.email}) = ${email}`,
-        eq(users.role, 'residente'),
+        eligibleResidentAccountCondition(),
         isNull(users.deletedAt),
         eq(circuitos.activo, true),
         isNull(passwordResetCodes.usedAt),
@@ -327,7 +344,7 @@ export class RepresentativePasswordResetService {
           eq(perfilesResidente.userId, preliminaryChallenge.userId),
           eq(perfilesResidente.circuitoId, preliminaryChallenge.circuitoId),
           eq(users.id, preliminaryChallenge.userId),
-          eq(users.role, 'residente'),
+          eligibleResidentAccountCondition(),
           isNull(users.deletedAt),
           eq(circuitos.id, preliminaryChallenge.circuitoId),
           eq(circuitos.activo, true),
