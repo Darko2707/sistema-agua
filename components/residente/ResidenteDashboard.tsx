@@ -185,7 +185,7 @@ export function ResidenteDashboard() {
   const router        = useRouter();
   const searchParams  = useSearchParams();
   const { data: sessionData, isPending: sessionPending } = useSession();
-  const { data: historial, isLoading: historialLoading } = useMiHistorial();
+  const { data: historial, isLoading: historialLoading, refetch: refetchHistorial } = useMiHistorial();
   const { checkout, isPending: pagando, error } = useCheckoutMP();
 
   const [menuOpen,      setMenuOpen]      = useState(false);
@@ -205,6 +205,22 @@ export function ResidenteDashboard() {
       window.history.replaceState({}, '', url.toString());
     }
   }, [paymentResult]);
+
+  useEffect(() => {
+    if (paymentResult !== 'success' && paymentResult !== 'pending') return;
+
+    let active = true;
+    const timers = [0, 2_000, 5_000, 10_000].map((delay) =>
+      window.setTimeout(() => {
+        if (active) void refetchHistorial();
+      }, delay),
+    );
+
+    return () => {
+      active = false;
+      timers.forEach(window.clearTimeout);
+    };
+  }, [paymentResult, refetchHistorial]);
 
   // Close menu on outside click
   useEffect(() => {

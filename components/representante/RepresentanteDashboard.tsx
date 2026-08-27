@@ -349,6 +349,12 @@ export function RepresentanteDashboard() {
           </div>
         )}
 
+        {(tab === 'residentes' || tab === 'morosos') && (
+          <div style={{ background: '#FFF8E3', border: '1px solid #F1D48B', borderRadius: 14, padding: '10px 14px', fontSize: 12.5, color: '#71520A', fontWeight: 600 }}>
+            Solicitudes de recuperacion pendientes: {solicitudesPendientes.size}. El boton para generar codigo aparece solo despues de que el residente lo solicita desde &quot;Olvide mi contrasena&quot;.
+          </div>
+        )}
+
         {/* ── Stats row ── */}
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <StatCard value={resumen?.totalDeptos ?? 0} label="Departamentos" />
