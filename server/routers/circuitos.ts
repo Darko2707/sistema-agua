@@ -2,6 +2,7 @@ import { router, roleProcedure } from '../trpc';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import { circuitoRepo } from '@/src/infrastructure/db/repositories';
+import { subscriptionService } from '@/src/infrastructure/db/services/subscription.service';
 
 const circuitoOutputColumns = {
   id: true,
@@ -22,6 +23,9 @@ export const circuitosRouter = router({
   toggleActivo: roleProcedure('admin')
     .input(z.object({ circuitoId: z.string().uuid(), activo: z.boolean() }))
     .mutation(async ({ input }) => {
+      const circuito = await circuitoRepo.findById(input.circuitoId);
+      if (!circuito?.fraccionamientoId) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Circuito sin fraccionamiento' });
+      await subscriptionService.requireOperational(circuito.fraccionamientoId);
       await circuitoRepo.updateActivo(input.circuitoId, input.activo);
       return { ok: true };
     }),
@@ -33,6 +37,9 @@ export const circuitosRouter = router({
       montoReconexion: z.number().positive(),
     }))
     .mutation(async ({ input }) => {
+      const circuito = await circuitoRepo.findById(input.circuitoId);
+      if (!circuito?.fraccionamientoId) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Circuito sin fraccionamiento' });
+      await subscriptionService.requireOperational(circuito.fraccionamientoId);
       await circuitoRepo.updateMontos(
         input.circuitoId,
         String(input.montoMensual),

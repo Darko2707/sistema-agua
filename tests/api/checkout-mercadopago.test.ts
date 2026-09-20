@@ -8,6 +8,7 @@ const {
   mockDecryptTokenSafe,
   mockPersistPaymentIntent,
   mockCheckoutAccountLimit,
+  mockRequireOperational,
 } = vi.hoisted(() => ({
   mockGetSession: vi.fn(),
   mockFindByUserIdWithPaymentConfig: vi.fn(),
@@ -16,6 +17,7 @@ const {
   mockDecryptTokenSafe: vi.fn(),
   mockPersistPaymentIntent: vi.fn(),
   mockCheckoutAccountLimit: vi.fn(),
+  mockRequireOperational: vi.fn(),
 }));
 
 vi.mock('next/headers', () => ({
@@ -53,12 +55,17 @@ vi.mock('@/lib/ratelimit', () => ({
   checkoutAccountLimiter: { limit: mockCheckoutAccountLimit },
 }));
 
+vi.mock('@/src/infrastructure/db/services/subscription.service', () => ({
+  subscriptionService: { requireOperational: mockRequireOperational },
+}));
+
 import { POST } from '@/app/api/mercadopago/checkout/route';
 
 const PERFIL = {
   id: 'perfil-001',
   userId: 'user-001',
   circuitoId: 'circuito-001',
+  fraccionamientoId: 'fraccionamiento-001',
   edificio: 'A',
   departamento: '101',
   estadoAgua: 'activo',
@@ -124,6 +131,7 @@ beforeEach(() => {
     remaining: 4,
     reset: Date.now() + 60_000,
   });
+  mockRequireOperational.mockResolvedValue({ puedeOperar: true });
   mockPreferenceCreate.mockResolvedValue({ init_point: 'https://mercadopago.example/preference' });
 });
 

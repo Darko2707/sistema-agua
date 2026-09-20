@@ -26,8 +26,23 @@ export class CrearPersonalHandler {
     const existe = await userRepo.findByEmail(cmd.email);
     if (existe) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Ya existe un usuario con ese correo' });
 
+    if (cmd.role === 'admin') {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'El administrador global no se crea desde este flujo' });
+    }
+    if (!cmd.circuitoId) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Debes asignar un circuito al personal' });
+    }
+    const circuito = await circuitoRepo.findById(cmd.circuitoId);
+    if (!circuito?.fraccionamientoId) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'El circuito no tiene fraccionamiento asignado' });
+    }
+
     const userId = await userRepo.create({
-      nombre: cmd.nombre, email: cmd.email, password: cmd.password, role: cmd.role,
+      nombre: cmd.nombre,
+      email: cmd.email,
+      password: cmd.password,
+      role: cmd.role,
+      fraccionamientoId: circuito.fraccionamientoId,
     });
 
     if (cmd.circuitoId) {

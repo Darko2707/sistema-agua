@@ -7,8 +7,16 @@ export const rolEnum = pgEnum('rol', [
   'representante',
   'tesorera',
   'cuadrilla_cortes',
+  'operador_pozo',
   'residente',
 ]);
+
+export const estadoSuscripcionFraccionamientoEnum = pgEnum('estado_suscripcion_fraccionamiento', [
+  'activa', 'gracia', 'vencida', 'suspendida', 'cancelada',
+]);
+export const estadoActivacionServicioEnum = pgEnum('estado_activacion_servicio', ['activo', 'inactivo']);
+export const estadoSolicitudPerfilEnum = pgEnum('estado_solicitud_perfil', ['pendiente', 'aprobada', 'rechazada']);
+export const estadoCargoServicioEnum = pgEnum('estado_cargo_servicio', ['pendiente', 'pagado', 'cancelado']);
 
 export const estadoPagoEnum = pgEnum('estado_pago', ['pendiente', 'pagado', 'vencido']);
 export const tenenciaEnum   = pgEnum('tenencia', ['propietario', 'inquilino']);
@@ -43,10 +51,16 @@ export const user = pgTable('user', {
   emailVerified: boolean('email_verified').notNull().default(false),
   image:         text('image'),
   role:          rolEnum('role').notNull().default('residente'),
+  // Nullable para el admin global y durante el onboarding del residente;
+  // el perfil terminado debe fijar exactamente un fraccionamiento.
+  fraccionamientoId: uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
   createdAt:     timestamp('created_at').notNull().defaultNow(),
   updatedAt:     timestamp('updated_at').notNull().defaultNow(),
   deletedAt:     timestamp('deleted_at'),
-});
+}, (t) => [
+  uniqueIndex('uq_user_single_global_admin').on(t.role).where(sql`${t.role} = 'admin' AND ${t.deletedAt} IS NULL`),
+  index('idx_user_fraccionamiento_role').on(t.fraccionamientoId, t.role),
+]);
 
 export const session = pgTable('session', {
   id:        text('id').primaryKey(),
@@ -89,6 +103,76 @@ export const verification = pgTable('verification', {
 // ─────────────────────────────────────────────
 // Estructura del fraccionamiento
 // ─────────────────────────────────────────────
+export const fraccionamientos = pgTable('fraccionamientos', {
+  id:        uuid('id').defaultRandom().primaryKey(),
+  nombre:    text('nombre').notNull(),
+  slug:      text('slug').notNull().unique(),
+  activo:    boolean('activo').notNull().default(true),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+});
+
+export const suscripcionesFraccionamiento = pgTable('suscripciones_fraccionamiento', {
+  id:                uuid('id').defaultRandom().primaryKey(),
+  fraccionamientoId: uuid('fraccionamiento_id').notNull().references(() => fraccionamientos.id, { onDelete: 'restrict' }),
+  plan:              text('plan').notNull().default('anual'),
+  estado:            estadoSuscripcionFraccionamientoEnum('estado').notNull().default('activa'),
+  vigenciaDesde:     timestamp('vigencia_desde').notNull(),
+  vigenciaHasta:     timestamp('vigencia_hasta').notNull(),
+  graciaHasta:       timestamp('gracia_hasta'),
+  proveedor:         text('proveedor'),
+  referenciaExterna: text('referencia_externa'),
+  creadoEn:          timestamp('creado_en').notNull().defaultNow(),
+  actualizadoEn:     timestamp('actualizado_en').notNull().defaultNow(),
+}, (t) => [
+  check('suscripciones_fraccionamiento_plan_anual_chk', sql`${t.plan} = 'anual'`),
+  check('suscripciones_fraccionamiento_fechas_chk', sql`${t.vigenciaHasta} > ${t.vigenciaDesde}`),
+  check('suscripciones_fraccionamiento_gracia_chk', sql`${t.graciaHasta} IS NULL OR ${t.graciaHasta} >= ${t.vigenciaHasta}`),
+  index('idx_suscripciones_fraccionamiento_estado').on(t.fraccionamientoId, t.estado, t.vigenciaHasta),
+  uniqueIndex('uq_suscripciones_fraccionamiento_vigente')
+    .on(t.fraccionamientoId)
+    .where(sql`${t.estado} IN ('activa', 'gracia')`),
+]);
+
+export const servicios = pgTable('servicios', {
+  id:             uuid('id').defaultRandom().primaryKey(),
+  clave:          text('clave').notNull().unique(),
+  nombre:         text('nombre').notNull(),
+  cobroMensual:   boolean('cobro_mensual').notNull().default(true),
+  conCorteFisico: boolean('con_corte_fisico').notNull().default(false),
+  activo:         boolean('activo').notNull().default(true),
+});
+
+export const fraccionamientoServicios = pgTable('fraccionamiento_servicios', {
+  id:                uuid('id').defaultRandom().primaryKey(),
+  fraccionamientoId: uuid('fraccionamiento_id').notNull().references(() => fraccionamientos.id, { onDelete: 'cascade' }),
+  servicioId:        uuid('servicio_id').notNull().references(() => servicios.id, { onDelete: 'restrict' }),
+  estado:            estadoActivacionServicioEnum('estado').notNull().default('activo'),
+  montoMensual:      decimal('monto_mensual', { precision: 10, scale: 2 }).notNull(),
+  montoReconexion:   decimal('monto_reconexion', { precision: 10, scale: 2 }).notNull().default('0.00'),
+  configuracion:     jsonb('configuracion').$type<Record<string, unknown>>(),
+  creadoEn:          timestamp('creado_en').notNull().defaultNow(),
+  actualizadoEn:    timestamp('actualizado_en').notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('fraccionamiento_servicios_unique').on(t.fraccionamientoId, t.servicioId),
+  uniqueIndex('uq_fraccionamiento_servicios_tenant_id').on(t.id, t.fraccionamientoId),
+  index('idx_fraccionamiento_servicios_estado').on(t.fraccionamientoId, t.estado),
+  check('fraccionamiento_servicios_montos_chk', sql`${t.montoMensual} >= 0 AND ${t.montoReconexion} >= 0`),
+]);
+
+export const fraccionamientoMetodosPago = pgTable('fraccionamiento_metodos_pago', {
+  id:                uuid('id').defaultRandom().primaryKey(),
+  fraccionamientoId: uuid('fraccionamiento_id').notNull().references(() => fraccionamientos.id, { onDelete: 'cascade' }),
+  proveedor:        text('proveedor').notNull().default('mercado_pago'),
+  accessTokenCifrado:text('access_token_cifrado').notNull(),
+  collectorId:      text('collector_id'),
+  activo:           boolean('activo').notNull().default(true),
+  creadoEn:         timestamp('creado_en').notNull().defaultNow(),
+  actualizadoEn:    timestamp('actualizado_en').notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('fraccionamiento_metodos_pago_unique').on(t.fraccionamientoId, t.proveedor),
+]);
+
 // Solicitudes iniciadas por el residente. Una solicitud pendiente se consume
 // atomicamente al generar el codigo; por eso el representante no puede emitir
 // dos codigos para la misma solicitud ni generar uno sin peticion previa.
@@ -133,6 +217,8 @@ export const passwordResetCodes = pgTable('password_reset_codes', {
 export const circuitos = pgTable('circuitos', {
   id:                     uuid('id').defaultRandom().primaryKey(),
   nombre:                 text('nombre').notNull(),
+  // Nullable during the backfill window; migration 0024 enforces NOT NULL in DB.
+  fraccionamientoId:      uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
   representanteId:        text('representante_id').references(() => user.id),
   tesoreraId:             text('tesorera_id').references(() => user.id),
   montoMensual:           decimal('monto_mensual', { precision: 10, scale: 2 }).notNull().default('50.00'),
@@ -141,12 +227,17 @@ export const circuitos = pgTable('circuitos', {
   mercadoPagoCollectorId: text('mercado_pago_collector_id'),
   activo:                 boolean('activo').notNull().default(true),
   updatedAt:              timestamp('updated_at').notNull().defaultNow(),
-});
+}, (t) => [
+  index('idx_circuitos_fraccionamiento').on(t.fraccionamientoId),
+  uniqueIndex('uq_circuitos_representante_unico').on(t.representanteId).where(sql`${t.representanteId} IS NOT NULL`),
+  uniqueIndex('uq_circuitos_tesorera_unica').on(t.tesoreraId).where(sql`${t.tesoreraId} IS NOT NULL`),
+]);
 
 // Perfil extendido del residente — 1:1 con user
 export const perfilesResidente = pgTable('perfiles_residente', {
   id:           uuid('id').defaultRandom().primaryKey(),
   userId:       text('user_id').notNull().unique().references(() => user.id, { onDelete: 'cascade' }),
+  fraccionamientoId: uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
   telefono:     text('telefono').notNull(),
   sexo:         sexoEnum('sexo').notNull(),
   tenencia:     tenenciaEnum('tenencia').notNull(),
@@ -162,9 +253,67 @@ export const perfilesResidente = pgTable('perfiles_residente', {
   // Defensa final ante altas simultaneas de la misma vivienda.
   uniqueIndex('uq_perfiles_residente_ubicacion')
     .on(t.circuitoId, t.edificio, t.departamento),
+  uniqueIndex('uq_perfiles_residente_tenant_id').on(t.id, t.fraccionamientoId),
   check('chk_perfiles_edificio_canonico', sql`${t.edificio} ~ '^[1-9][0-9]{0,5}$'`),
   check('chk_perfiles_departamento_canonico', sql`${t.departamento} ~ '^[1-9][0-9]{0,5}[A-Z]?$'`),
   index('idx_perfiles_circuito_estado').on(t.circuitoId, t.estadoAgua),
+]);
+
+export const perfilesServicios = pgTable('perfiles_servicios', {
+  id:                  uuid('id').defaultRandom().primaryKey(),
+  perfilId:             uuid('perfil_id').notNull().references(() => perfilesResidente.id, { onDelete: 'cascade' }),
+  fraccionamientoId:    uuid('fraccionamiento_id').notNull().references(() => fraccionamientos.id, { onDelete: 'restrict' }),
+  fraccionamientoServicioId: uuid('fraccionamiento_servicio_id').notNull().references(() => fraccionamientoServicios.id, { onDelete: 'restrict' }),
+  estadoAgua:           estadoAguaEnum('estado_agua').notNull().default('activo'),
+  activo:               boolean('activo').notNull().default(true),
+  creadoEn:             timestamp('creado_en').notNull().defaultNow(),
+  actualizadoEn:       timestamp('actualizado_en').notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('uq_perfiles_servicios_perfil_servicio').on(t.perfilId, t.fraccionamientoServicioId),
+  index('idx_perfiles_servicios_tenant_estado').on(t.fraccionamientoId, t.estadoAgua),
+]);
+
+export const cargosServicios = pgTable('cargos_servicios', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  fraccionamientoId: uuid('fraccionamiento_id').notNull().references(() => fraccionamientos.id, { onDelete: 'restrict' }),
+  perfilId: uuid('perfil_id').notNull().references(() => perfilesResidente.id, { onDelete: 'restrict' }),
+  fraccionamientoServicioId: uuid('fraccionamiento_servicio_id').notNull().references(() => fraccionamientoServicios.id, { onDelete: 'restrict' }),
+  mes: integer('mes').notNull(),
+  anio: integer('anio').notNull(),
+  monto: decimal('monto', { precision: 10, scale: 2 }).notNull(),
+  estado: estadoCargoServicioEnum('estado').notNull().default('pendiente'),
+  metodo: metodoPagoEnum('metodo'),
+  mercadoPagoPaymentId: text('mercado_pago_payment_id'),
+  folio: text('folio').unique(),
+  creadoEn: timestamp('creado_en').notNull().defaultNow(),
+  pagadoEn: timestamp('pagado_en'),
+}, (t) => [
+  uniqueIndex('uq_cargos_servicio_periodo').on(t.perfilId, t.fraccionamientoServicioId, t.mes, t.anio),
+  index('idx_cargos_servicio_tenant_periodo').on(t.fraccionamientoId, t.mes, t.anio, t.estado),
+  index('idx_cargos_servicio_perfil_estado').on(t.perfilId, t.estado),
+  check('chk_cargos_servicio_mes', sql`${t.mes} BETWEEN 1 AND 12`),
+  check('chk_cargos_servicio_anio', sql`${t.anio} BETWEEN 2020 AND 2100`),
+  check('chk_cargos_servicio_monto', sql`${t.monto} >= 0`),
+]);
+
+export const solicitudesCambioPerfil = pgTable('solicitudes_cambio_perfil', {
+  id:                  uuid('id').defaultRandom().primaryKey(),
+  perfilId:             uuid('perfil_id').notNull().references(() => perfilesResidente.id, { onDelete: 'cascade' }),
+  fraccionamientoId:    uuid('fraccionamiento_id').notNull().references(() => fraccionamientos.id, { onDelete: 'restrict' }),
+  solicitanteId:        text('solicitante_id').notNull().references(() => user.id, { onDelete: 'restrict' }),
+  aprobadorId:          text('aprobador_id').references(() => user.id, { onDelete: 'set null' }),
+  estado:               estadoSolicitudPerfilEnum('estado').notNull().default('pendiente'),
+  valoresAnteriores:    jsonb('valores_anteriores').notNull().$type<Record<string, unknown>>(),
+  valoresNuevos:        jsonb('valores_nuevos').notNull().$type<Record<string, unknown>>(),
+  motivo:               text('motivo').notNull(),
+  solicitadoEn:         timestamp('solicitado_en').notNull().defaultNow(),
+  resueltoEn:           timestamp('resuelto_en'),
+  }, (t) => [
+    uniqueIndex('uq_solicitudes_cambio_perfil_pendiente')
+      .on(t.perfilId)
+      .where(sql`${t.estado} = 'pendiente'`),
+    index('idx_solicitudes_cambio_perfil_tenant_estado').on(t.fraccionamientoId, t.estado, t.solicitadoEn),
+  index('idx_solicitudes_cambio_perfil_perfil').on(t.perfilId, t.solicitadoEn),
 ]);
 
 // ─────────────────────────────────────────────
@@ -179,6 +328,7 @@ export type MercadoPagoPaymentIntentPeriodo = {
 
 export const mercadoPagoPaymentIntents = pgTable('mercado_pago_payment_intents', {
   externalReference:    text('external_reference').primaryKey(),
+  fraccionamientoId:    uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
   perfilId:             uuid('perfil_id').notNull().references(() => perfilesResidente.id),
   circuitoId:           uuid('circuito_id').notNull().references(() => circuitos.id),
   periodos:             jsonb('periodos').$type<MercadoPagoPaymentIntentPeriodo[]>().notNull(),
@@ -214,6 +364,7 @@ export const mercadoPagoPaymentIntents = pgTable('mercado_pago_payment_intents',
 
 export const pagos = pgTable('pagos', {
   id:                     uuid('id').defaultRandom().primaryKey(),
+  fraccionamientoId:      uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
   perfilId:               uuid('perfil_id').references(() => perfilesResidente.id).notNull(),
   circuitoId:             uuid('circuito_id').references(() => circuitos.id).notNull(),
   representanteId:        text('representante_id').references(() => user.id, { onDelete: 'set null' }),
@@ -411,6 +562,7 @@ export const pushDeliveries = pgTable('push_deliveries', {
 
 export const ingresosAdicionales = pgTable('ingresos_adicionales', {
   id:              uuid('id').defaultRandom().primaryKey(),
+  fraccionamientoId: uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
   circuitoId:      uuid('circuito_id').notNull().references(() => circuitos.id, { onDelete: 'cascade' }),
   representanteId: text('representante_id').notNull().references(() => user.id),
   concepto:        text('concepto').notNull(),
@@ -425,6 +577,7 @@ export const ingresosAdicionales = pgTable('ingresos_adicionales', {
 
 export const gastosCircuito = pgTable('gastos_circuito', {
   id:              uuid('id').defaultRandom().primaryKey(),
+  fraccionamientoId: uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
   circuitoId:      uuid('circuito_id').notNull().references(() => circuitos.id, { onDelete: 'cascade' }),
   representanteId: text('representante_id').notNull().references(() => user.id),
   concepto:        text('concepto').notNull(),

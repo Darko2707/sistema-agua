@@ -242,7 +242,10 @@ export class DrizzlePagoRepository implements PagoRepository {
           });
         }
 
-        const [pago] = await tx.insert(pagos).values(input).returning();
+        const [pago] = await tx.insert(pagos).values({
+          ...input,
+          fraccionamientoId: perfil.fraccionamientoId!,
+        }).returning();
 
         // Actualizar estado del perfil según tipo de pago
         if (perfil?.estadoAgua === 'pendiente_corte' && !input.esReconexion) {
@@ -395,7 +398,10 @@ export class DrizzlePagoRepository implements PagoRepository {
 
         let insertados: typeof existentes = [];
         if (faltantes.length > 0) {
-          insertados = await tx.insert(pagos).values(faltantes).returning();
+          insertados = await tx.insert(pagos).values(faltantes.map((pago) => ({
+            ...pago,
+            fraccionamientoId: perfil.fraccionamientoId!,
+          }))).returning();
           await tx.insert(tickets).values(insertados.map(pago => ({
             pagoId: pago.id,
             folio: pago.folio!,
@@ -596,7 +602,10 @@ export class DrizzlePagoRepository implements PagoRepository {
       const faltantes = input.pagos.filter(pago => !existentesPorPeriodo.has(periodoKey(pago)));
       let insertados: typeof existentesPerfilPagados = [];
       if (faltantes.length > 0) {
-        insertados = await tx.insert(pagos).values(faltantes).returning();
+        insertados = await tx.insert(pagos).values(faltantes.map((pago) => ({
+          ...pago,
+          fraccionamientoId: perfil.fraccionamientoId!,
+        }))).returning();
         const incluyeReconexion = input.pagos.some(pago => pago.esReconexion);
         if (perfil.estadoAgua === 'pendiente_corte' && !incluyeReconexion) {
           await tx

@@ -1,10 +1,11 @@
-export type UserRole = 'admin' | 'representante' | 'tesorera' | 'cuadrilla_cortes' | 'residente';
+export type UserRole = 'admin' | 'representante' | 'tesorera' | 'cuadrilla_cortes' | 'operador_pozo' | 'residente';
 
 export type UserData = {
   id:    string;
   name:  string;
   email: string;
   role:  UserRole;
+  fraccionamientoId?: string | null;
 };
 
 export type RepresentanteData = UserData & {
@@ -20,11 +21,14 @@ export type CreatePersonalInput = {
   email:    string;
   password: string;
   role:     UserRole;
+  /** Tenant is mandatory for every non-admin account. */
+  fraccionamientoId: string;
 };
 
 export type UpdatePersonalInput = {
   nombre?: string;
   email?:  string;
+  fraccionamientoId?: string | null;
 };
 
 export type CambiarRolInput = {
@@ -34,7 +38,7 @@ export type CambiarRolInput = {
 
 export type CambiarRolEnCircuitoInput = {
   userId:     string;
-  nuevoRol:   'residente' | 'tesorera' | 'cuadrilla_cortes';
+  nuevoRol:   'residente' | 'tesorera' | 'cuadrilla_cortes' | 'operador_pozo';
   circuitoId: string;
 };
 

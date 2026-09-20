@@ -16,6 +16,7 @@ import {
   persistMercadoPagoPaymentIntent,
   type MercadoPagoPaymentIntentPeriod,
 } from '@/src/infrastructure/mercadopago/payment-intent';
+import { subscriptionService } from '@/src/infrastructure/db/services/subscription.service';
 
 const checkoutSchema = z.object({
   esReconexion:     z.boolean().optional(),
@@ -64,10 +65,14 @@ export function mercadoPagoIntentReference(input: {
   return `agua_${createHash('sha256').update(canonical).digest('hex').slice(0, 48)}`;
 }
 
-async function nextUnpaidPeriods(perfilId: string, count: number) {
+async function nextUnpaidPeriods(perfilId: string, tenantId: string, count: number) {
   const periodo = PeriodoVO.vigente();
   const pagados = await db.query.pagos.findMany({
-    where: (p, { eq, and }) => and(eq(p.perfilId, perfilId), eq(p.estado, 'pagado')),
+    where: (p, { eq, and }) => and(
+      eq(p.perfilId, perfilId),
+      eq(p.fraccionamientoId, tenantId),
+      eq(p.estado, 'pagado'),
+    ),
     columns: { mes: true, anio: true },
   });
   const paidKeys = new Set(pagados.map(pago => periodoKey(pago)));
@@ -152,6 +157,12 @@ export async function POST(request: Request) {
 
   const perfil = await residenteRepo.findByUserIdWithPaymentConfig(session.user.id);
   if (!perfil) return Response.json({ error: 'Completa tu perfil primero' }, { status: 400 });
+  if (!perfil.fraccionamientoId) return Response.json({ error: 'Tu perfil no tiene fraccionamiento asignado' }, { status: 403 });
+  try {
+    await subscriptionService.requireOperational(perfil.fraccionamientoId);
+  } catch {
+    return Response.json({ error: 'El fraccionamiento no tiene una suscripcion operativa vigente' }, { status: 403 });
+  }
   if (!perfil.circuito?.activo) {
     return Response.json({ error: 'Tu circuito esta inhabilitado' }, { status: 403 });
   }
@@ -162,7 +173,7 @@ export async function POST(request: Request) {
   }
 
   const mesesAdelantados = body.data.mesesAdelantados ?? 1;
-  const periodosSolicitados = await nextUnpaidPeriods(perfil.id, mesesAdelantados);
+  const periodosSolicitados = await nextUnpaidPeriods(perfil.id, perfil.fraccionamientoId, mesesAdelantados);
   if (periodosSolicitados.length !== mesesAdelantados) {
     return Response.json({ error: 'No hay suficientes periodos disponibles para pagar' }, { status: 400 });
   }

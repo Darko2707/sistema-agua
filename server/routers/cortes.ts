@@ -9,20 +9,23 @@ import { CorteOperacionService } from '@/src/application/cortes/services/corte-o
 import { residenteRepo, circuitoRepo } from '@/src/infrastructure/db/repositories';
 import { DrizzleCorteOperacionDatabase } from '@/src/infrastructure/db/services/drizzle-corte-operacion.database';
 
-import { router, roleProcedure } from '../trpc';
+import { router, roleProcedure, operationalRoleProcedure } from '../trpc';
 
 const corteOperacionService = new CorteOperacionService(new DrizzleCorteOperacionDatabase());
 const confirmarCorteHandler = new ConfirmarCorteHandler({ corteOperacionService });
 const confirmarReconexionHandler = new ConfirmarReconexionHandler({ corteOperacionService });
 const pendientesCorteHandler = new PendientesCorteHandler({ residenteRepo, circuitoRepo });
 
-async function assertPerfilDeCuadrilla(userId: string, perfilId: string): Promise<void> {
+async function assertPerfilDeCuadrilla(userId: string, perfilId: string, tenantId?: string | null): Promise<void> {
   const [perfilTrabajador, perfilObjetivo] = await Promise.all([
     residenteRepo.findByUserId(userId),
     residenteRepo.findById(perfilId),
   ]);
   if (!perfilObjetivo) {
     throw new TRPCError({ code: 'NOT_FOUND', message: 'Perfil no encontrado' });
+  }
+  if (tenantId && perfilObjetivo.fraccionamientoId !== tenantId) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'No puedes operar fuera de tu fraccionamiento' });
   }
   if (!perfilTrabajador || perfilTrabajador.circuitoId !== perfilObjetivo.circuitoId) {
     throw new TRPCError({ code: 'FORBIDDEN', message: 'No puedes operar fuera de tu circuito' });
@@ -49,11 +52,11 @@ export const cortesRouter = router({
       });
     }),
 
-  confirmarCorte: roleProcedure('cuadrilla_cortes', 'admin')
+  confirmarCorte: operationalRoleProcedure('cuadrilla_cortes', 'admin')
     .input(z.object({ perfilId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.role !== 'admin') {
-        await assertPerfilDeCuadrilla(ctx.user.id, input.perfilId);
+        await assertPerfilDeCuadrilla(ctx.user.id, input.perfilId, ctx.user.fraccionamientoId);
       }
       const result = await confirmarCorteHandler.execute({
         perfilId: input.perfilId,
@@ -73,11 +76,11 @@ export const cortesRouter = router({
       return residenteRepo.findByCircuitoYEstado(perfilTrabajador.circuitoId, 'cortado');
     }),
 
-  confirmarReconexion: roleProcedure('cuadrilla_cortes', 'admin')
+  confirmarReconexion: operationalRoleProcedure('cuadrilla_cortes', 'admin')
     .input(z.object({ perfilId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.role !== 'admin') {
-        await assertPerfilDeCuadrilla(ctx.user.id, input.perfilId);
+        await assertPerfilDeCuadrilla(ctx.user.id, input.perfilId, ctx.user.fraccionamientoId);
       }
       const result = await confirmarReconexionHandler.execute({
         perfilId: input.perfilId,

@@ -4,6 +4,7 @@ export type ResidenteData = {
   id: string;
   userId: string;
   circuitoId: string;
+  fraccionamientoId?: string | null;
   edificio: string;
   departamento: string;
   estadoAgua: EstadoAgua;

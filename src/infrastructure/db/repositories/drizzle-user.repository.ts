@@ -2,7 +2,7 @@ import { eq, asc, isNull, and } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { TRPCError } from '@trpc/server';
 import { db } from '@/db';
-import { user, account, session, circuitos } from '@/db/schema';
+import { user, account, session, circuitos, fraccionamientoMetodosPago } from '@/db/schema';
 import { hashAccountPassword } from '@/lib/password';
 import type {
   UserRepository,
@@ -17,7 +17,13 @@ import type {
 } from '@/src/application/ports/user.repository';
 
 function toData(row: typeof user.$inferSelect): UserData {
-  return { id: row.id, name: row.name, email: row.email, role: row.role as UserRole };
+  return {
+    id: row.id,
+    name: row.name,
+    email: row.email,
+    role: row.role as UserRole,
+    fraccionamientoId: row.fraccionamientoId ?? null,
+  };
 }
 
 export class DrizzleUserRepository implements UserRepository {
@@ -38,6 +44,7 @@ export class DrizzleUserRepository implements UserRepository {
       await tx.insert(user).values({
         id: userId, name: input.nombre, email: input.email,
         role: input.role,
+        fraccionamientoId: input.fraccionamientoId,
       });
       await tx.insert(account).values({
         id: nanoid(), accountId: input.email, providerId: 'credential',
@@ -51,6 +58,7 @@ export class DrizzleUserRepository implements UserRepository {
     const updates: Record<string, unknown> = {};
     if (data.nombre) updates.name  = data.nombre;
     if (data.email)  updates.email = data.email;
+    if (data.fraccionamientoId !== undefined) updates.fraccionamientoId = data.fraccionamientoId;
     if (Object.keys(updates).length) {
       await db.update(user).set(updates).where(eq(user.id, id));
     }
@@ -123,10 +131,15 @@ export class DrizzleUserRepository implements UserRepository {
         email:                  user.email,
         circuitoId:             circuitos.id,
         circuitoNombre:         circuitos.nombre,
-        mercadoPagoCollectorId: circuitos.mercadoPagoCollectorId,
+        mercadoPagoCollectorId: fraccionamientoMetodosPago.collectorId,
       })
       .from(user)
       .leftJoin(circuitos, eq(circuitos.tesoreraId, user.id))
+      .leftJoin(fraccionamientoMetodosPago, and(
+        eq(fraccionamientoMetodosPago.fraccionamientoId, circuitos.fraccionamientoId),
+        eq(fraccionamientoMetodosPago.proveedor, 'mercado_pago'),
+        eq(fraccionamientoMetodosPago.activo, true),
+      ))
       .where(and(eq(user.role, 'tesorera'), isNull(user.deletedAt)))
       .orderBy(asc(user.name));
 
@@ -164,6 +177,7 @@ export class DrizzleUserRepository implements UserRepository {
     if (!existente) throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
 
     let nuevaCircuitoId: string | undefined;
+    let nuevaFraccionamientoId: string | undefined;
     let anteriorRepresentanteId: string | undefined;
     let anteriorTesoreraId: string | undefined;
 
@@ -176,6 +190,7 @@ export class DrizzleUserRepository implements UserRepository {
         const circ = await db.query.circuitos.findFirst({
           where: (c, { eq }) => eq(c.id, perfil.circuitoId!),
         });
+        nuevaFraccionamientoId = circ?.fraccionamientoId ?? undefined;
         if (nuevoRol === 'representante' && circ?.representanteId && circ.representanteId !== userId) {
           anteriorRepresentanteId = circ.representanteId;
         }
@@ -183,6 +198,13 @@ export class DrizzleUserRepository implements UserRepository {
           anteriorTesoreraId = circ.tesoreraId;
         }
       }
+    }
+
+    if ((nuevoRol === 'representante' || nuevoRol === 'tesorera') && !nuevaCircuitoId) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'El personal debe tener un circuito asignado' });
+    }
+    if (nuevoRol !== 'admin' && !nuevaFraccionamientoId && !existente.fraccionamientoId) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'El usuario no tiene fraccionamiento asignado' });
     }
 
     await db.transaction(async (tx) => {
@@ -204,7 +226,11 @@ export class DrizzleUserRepository implements UserRepository {
         }
         await tx.update(circuitos).set({ tesoreraId: userId }).where(eq(circuitos.id, nuevaCircuitoId));
       }
-      await tx.update(user).set({ role: nuevoRol, updatedAt: new Date() }).where(eq(user.id, userId));
+      await tx.update(user).set({
+        role: nuevoRol,
+        fraccionamientoId: nuevaFraccionamientoId ?? existente.fraccionamientoId ?? null,
+        updatedAt: new Date(),
+      }).where(eq(user.id, userId));
       await tx.delete(session).where(eq(session.userId, userId));
       if (anteriorRepresentanteId) {
         await tx.delete(session).where(eq(session.userId, anteriorRepresentanteId));
@@ -226,20 +252,27 @@ export class DrizzleUserRepository implements UserRepository {
     const existente = await db.query.user.findFirst({ where: (u, { eq }) => eq(u.id, userId) });
     if (!existente) throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
 
-    const circ = nuevoRol === 'tesorera'
-      ? await db.query.circuitos.findFirst({ where: (c, { eq }) => eq(c.id, circuitoId) })
-      : null;
+    const circuito = await db.query.circuitos.findFirst({
+      where: (c, { eq }) => eq(c.id, circuitoId),
+    });
+    if (!circuito?.fraccionamientoId || perfil.fraccionamientoId !== circuito.fraccionamientoId) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'El circuito y el perfil no pertenecen al mismo fraccionamiento' });
+    }
 
     await db.transaction(async (tx) => {
       if (existente.role === 'tesorera' && nuevoRol !== 'tesorera') {
         await tx.update(circuitos).set({ tesoreraId: null }).where(eq(circuitos.tesoreraId, userId));
       }
-      await tx.update(user).set({ role: nuevoRol, updatedAt: new Date() }).where(eq(user.id, userId));
+      await tx.update(user).set({
+        role: nuevoRol,
+        fraccionamientoId: circuito.fraccionamientoId,
+        updatedAt: new Date(),
+      }).where(eq(user.id, userId));
       await tx.delete(session).where(eq(session.userId, userId));
       if (nuevoRol === 'tesorera') {
-        if (circ?.tesoreraId && circ.tesoreraId !== userId) {
-          await tx.update(user).set({ role: 'residente' }).where(eq(user.id, circ.tesoreraId));
-          await tx.delete(session).where(eq(session.userId, circ.tesoreraId));
+        if (circuito.tesoreraId && circuito.tesoreraId !== userId) {
+          await tx.update(user).set({ role: 'residente', updatedAt: new Date() }).where(eq(user.id, circuito.tesoreraId));
+          await tx.delete(session).where(eq(session.userId, circuito.tesoreraId));
         }
         await tx.update(circuitos).set({ tesoreraId: userId }).where(eq(circuitos.id, circuitoId));
       }

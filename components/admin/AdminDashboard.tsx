@@ -139,6 +139,9 @@ export function AdminDashboard() {
           <Button variant="outline" onClick={() => router.push('/admin/circuitos')}>
             Circuitos
           </Button>
+          <Button variant="outline" onClick={() => router.push('/admin/servicios')}>
+            Servicios y cargos
+          </Button>
           <Button
             variant="outline"
             className="flex items-center gap-2"

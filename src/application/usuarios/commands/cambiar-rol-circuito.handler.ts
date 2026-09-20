@@ -4,7 +4,7 @@ import type { UserRepository } from '@/src/application/ports/user.repository';
 export type CambiarRolCircuitoCommand = {
   actorId:    string;
   userId:     string;
-  nuevoRol:   'residente' | 'tesorera' | 'cuadrilla_cortes';
+  nuevoRol:   'residente' | 'tesorera' | 'cuadrilla_cortes' | 'operador_pozo';
   circuitoId: string;
 };
 

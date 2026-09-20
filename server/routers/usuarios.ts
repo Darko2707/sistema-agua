@@ -24,6 +24,9 @@ import { CambiarRolEnCircuitoHandler } from '@/src/application/usuarios/commands
 import { ListarPersonalHandler } from '@/src/application/usuarios/queries/listar-personal.handler';
 import { representativePasswordResetService } from '@/src/infrastructure/db/services/representative-password-reset.service';
 import { isRepresentativeResetCodeValid } from '@/src/domain/usuarios/representative-reset-code';
+import { PerfilCambiosSchema } from '@/src/application/residentes/profile-change';
+import { profileChangeService } from '@/src/infrastructure/db/services/profile-change.service';
+import { subscriptionService } from '@/src/infrastructure/db/services/subscription.service';
 
 const telefono10 = z.string().regex(/^\d{10}$/, 'El telefono debe contener exactamente 10 digitos');
 
@@ -69,12 +72,76 @@ export const usuariosRouter = router({
       path: ['nombrePropietario'],
     }))
     .mutation(async ({ ctx, input }) => {
+      const circuito = await circuitoRepo.findById(input.circuitoId);
+      if (!circuito?.fraccionamientoId) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'El circuito no tiene fraccionamiento asignado' });
+      }
+      await subscriptionService.requireOperational(circuito.fraccionamientoId);
       return crearPerfilHandler.execute({ userId: ctx.user.id, ...input });
     }),
 
   miPerfil: authenticatedProcedure.query(async ({ ctx }) => {
     return residenteRepo.findByUserId(ctx.user.id);
   }),
+
+  solicitarCambioPerfil: roleProcedure('residente')
+    .input(z.object({
+      cambios: PerfilCambiosSchema,
+      motivo: z.string().trim().min(3).max(500),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.user.fraccionamientoId) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Tu cuenta no tiene fraccionamiento asignado' });
+      }
+      const perfil = await residenteRepo.findByUserId(ctx.user.id);
+      if (!perfil) throw new TRPCError({ code: 'NOT_FOUND', message: 'Perfil no encontrado' });
+      return profileChangeService.createRequest({
+        actorId: ctx.user.id,
+        tenantId: ctx.user.fraccionamientoId,
+        perfilId: perfil.id,
+        cambios: input.cambios,
+        motivo: input.motivo,
+      });
+    }),
+
+  misSolicitudesCambioPerfil: roleProcedure('residente').query(async ({ ctx }) => {
+    if (!ctx.user.fraccionamientoId) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Tu cuenta no tiene fraccionamiento asignado' });
+    }
+    return profileChangeService.listMine({
+      actorId: ctx.user.id,
+      tenantId: ctx.user.fraccionamientoId,
+    });
+  }),
+
+  listarSolicitudesCambioPerfil: roleProcedure('representante').query(async ({ ctx }) => {
+    return profileChangeService.listPending({
+      actorId: ctx.user.id,
+      tenantId: ctx.user.fraccionamientoId!,
+    });
+  }),
+
+  resolverCambioPerfil: roleProcedure('representante', 'admin')
+    .input(z.object({
+      solicitudId: z.string().uuid(),
+      decision: z.enum(['aprobar', 'rechazar']),
+      motivo: z.string().trim().max(500).optional(),
+      // El admin es global y debe indicar explícitamente el tenant objetivo.
+      fraccionamientoId: z.string().uuid().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user.role === 'admin'
+        ? input.fraccionamientoId
+        : ctx.user.fraccionamientoId;
+      return profileChangeService.resolve({
+        actorId: ctx.user.id,
+        actorRole: ctx.user.role as 'admin' | 'representante',
+        tenantId,
+        solicitudId: input.solicitudId,
+        decision: input.decision,
+        motivo: input.motivo,
+      });
+    }),
 
   listarCircuitos: publicProcedure.query(async () => {
     return circuitoRepo.findActivos();
@@ -170,7 +237,8 @@ export const usuariosRouter = router({
   cambiarRol: roleProcedure('admin')
     .input(z.object({
       userId: z.string().min(1),
-      rol:    z.enum(['admin', 'representante', 'tesorera', 'cuadrilla_cortes', 'residente']),
+      // El admin es global y único; nunca se asigna mediante este flujo.
+      rol:    z.enum(['representante', 'tesorera', 'cuadrilla_cortes', 'operador_pozo', 'residente']),
     }))
     .mutation(async ({ ctx, input }) => {
       await cambiarRolHandler.execute({ actorId: ctx.user.id, userId: input.userId, nuevoRol: input.rol });
@@ -180,7 +248,7 @@ export const usuariosRouter = router({
   cambiarRolEnCircuito: roleProcedure('representante')
     .input(z.object({
       userId: z.string().min(1),
-      rol:    z.enum(['residente', 'tesorera', 'cuadrilla_cortes']),
+      rol:    z.enum(['residente', 'tesorera', 'cuadrilla_cortes', 'operador_pozo']),
     }))
     .mutation(async ({ ctx, input }) => {
       const miCircuito = await circuitoRepo.findByRepresentante(ctx.user.id);
@@ -202,6 +270,9 @@ export const usuariosRouter = router({
     .mutation(async ({ input }) => {
       const circuito = await circuitoRepo.findById(input.circuitoId);
       if (!circuito) throw new TRPCError({ code: 'NOT_FOUND', message: 'Circuito no encontrado' });
+      if (!circuito.fraccionamientoId) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'El circuito no tiene fraccionamiento asignado' });
+      }
 
       if (!input.userId) {
         await circuitoRepo.updateRepresentante(input.circuitoId, null);
@@ -210,9 +281,13 @@ export const usuariosRouter = router({
 
       const usuario = await userRepo.findById(input.userId);
       if (!usuario) throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
+      if (usuario.fraccionamientoId && usuario.fraccionamientoId !== circuito.fraccionamientoId) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'El usuario pertenece a otro fraccionamiento' });
+      }
 
       await circuitoRepo.updateRepresentante(input.circuitoId, input.userId);
       await userRepo.updateRole(input.userId, 'representante');
+      await userRepo.update(input.userId, { fraccionamientoId: circuito.fraccionamientoId });
       return { ok: true };
     }),
 
@@ -234,6 +309,11 @@ export const usuariosRouter = router({
       mercadoPagoCollectorId: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      if (input.circuitoId) {
+        const circuito = await circuitoRepo.findById(input.circuitoId);
+        if (!circuito?.fraccionamientoId) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Circuito sin fraccionamiento' });
+        await subscriptionService.requireOperational(circuito.fraccionamientoId);
+      }
       await crearPersonalHandler.execute({ actorId: ctx.user.id, role: 'representante', ...input });
       return { ok: true };
     }),
@@ -277,6 +357,11 @@ export const usuariosRouter = router({
       mercadoPagoCollectorId: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
+      if (input.circuitoId) {
+        const circuito = await circuitoRepo.findById(input.circuitoId);
+        if (!circuito?.fraccionamientoId) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Circuito sin fraccionamiento' });
+        await subscriptionService.requireOperational(circuito.fraccionamientoId);
+      }
       await crearPersonalHandler.execute({ actorId: ctx.user.id, role: 'tesorera', ...input });
       return { ok: true };
     }),

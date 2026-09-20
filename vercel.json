@@ -3,6 +3,7 @@
     { "path": "/api/cron/avisos-corte",      "schedule": "0 15 4 * *" },
     { "path": "/api/cron/cortes",             "schedule": "0 9 6 * *" },
     { "path": "/api/cron/limpiar-pendientes", "schedule": "0 4 * * *" },
-    { "path": "/api/cron/notificaciones",     "schedule": "0 12 * * *" }
+    { "path": "/api/cron/notificaciones",     "schedule": "0 12 * * *" },
+    { "path": "/api/cron/cargos-servicios",   "schedule": "0 6 1 * *" }
   ]
 }

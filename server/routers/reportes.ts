@@ -1,7 +1,7 @@
-import { router, roleProcedure } from '../trpc';
+import { router, roleProcedure, operationalRoleProcedure } from '../trpc';
 import { z } from 'zod';
 // eslint-disable-next-line no-restricted-imports -- complex financial aggregations not yet in a repo
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 
 // eslint-disable-next-line no-restricted-imports -- complex financial aggregations not yet in a repo
@@ -49,23 +49,23 @@ function ultimos12Meses(): { mes: number; anio: number }[] {
   return periodos;
 }
 
-async function getCircuitoDelTesorera(userId: string) {
+async function getCircuitoDelTesorera(userId: string, tenantId: string) {
   // Ruta principal: circuito con tesoreraId asignado
   const byId = await db.query.circuitos.findFirst({
-    where: (c, { eq }) => eq(c.tesoreraId, userId),
+    where: (c, { eq, and }) => and(eq(c.tesoreraId, userId), eq(c.fraccionamientoId, tenantId)),
   });
   if (byId) return byId;
 
   // Fallback solo de lectura para datos previos al fix de tesoreraId. No se
   // reasigna el circuito desde una query: esa correccion debe hacerla admin.
   const perfil = await db.query.perfilesResidente.findFirst({
-    where: (p, { eq }) => eq(p.userId, userId),
+    where: (p, { eq, and }) => and(eq(p.userId, userId), eq(p.fraccionamientoId, tenantId)),
   });
   if (!perfil?.circuitoId) {
     throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes un circuito asignado.' });
   }
   const byPerfil = await db.query.circuitos.findFirst({
-    where: (c, { eq }) => eq(c.id, perfil.circuitoId!),
+    where: (c, { eq, and }) => and(eq(c.id, perfil.circuitoId!), eq(c.fraccionamientoId, tenantId)),
   });
   if (!byPerfil) {
     throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes un circuito asignado.' });
@@ -91,11 +91,11 @@ export const reportesRouter = router({
       orden:      z.enum(['edificio', 'nombre', 'estado']).default('edificio'),
     }))
     .query(async ({ ctx, input }) => {
-      const circuito = await getCircuitoDelTesorera(ctx.user.id);
+      const circuito = await getCircuitoDelTesorera(ctx.user.id, ctx.user.fraccionamientoId!);
 
       const residentes = await db.query.perfilesResidente.findMany({
         where: (p, { eq, and }) => {
-          const conds = [eq(p.circuitoId, circuito.id)];
+          const conds = [eq(p.circuitoId, circuito.id), eq(p.fraccionamientoId, ctx.user.fraccionamientoId!)];
           if (input.estadoAgua) conds.push(eq(p.estadoAgua, input.estadoAgua));
           if (input.edificio)   conds.push(eq(p.edificio, input.edificio));
           return and(...conds as [ReturnType<typeof eq>]);
@@ -122,7 +122,10 @@ export const reportesRouter = router({
 
       // Traer todos los pagos de estos residentes de una sola vez
       const pagosList = await db.query.pagos.findMany({
-        where: (p, { inArray }) => inArray(p.perfilId, perfilIds),
+        where: (p, { inArray, and, eq }) => and(
+          inArray(p.perfilId, perfilIds),
+          eq(p.fraccionamientoId, ctx.user.fraccionamientoId!),
+        ),
         columns: {
           id: true,
           perfilId: true,
@@ -189,9 +192,9 @@ export const reportesRouter = router({
 
   // Lista de edificios únicos del circuito (para el filtro)
   edificiosCircuito: roleProcedure('tesorera').query(async ({ ctx }) => {
-    const circuito = await getCircuitoDelTesorera(ctx.user.id);
+    const circuito = await getCircuitoDelTesorera(ctx.user.id, ctx.user.fraccionamientoId!);
     const perfiles = await db.query.perfilesResidente.findMany({
-      where: (p, { eq }) => eq(p.circuitoId, circuito.id),
+      where: (p, { eq, and }) => and(eq(p.circuitoId, circuito.id), eq(p.fraccionamientoId, ctx.user.fraccionamientoId!)),
       columns: { edificio: true },
     });
     return [...new Set(perfiles.map((p) => p.edificio))].sort();
@@ -206,16 +209,17 @@ export const reportesRouter = router({
       anio: z.number().int().min(2020).max(2099),
     }))
     .query(async ({ ctx, input }) => {
-      const circuito = await getCircuitoDelTesorera(ctx.user.id);
+      const circuito = await getCircuitoDelTesorera(ctx.user.id, ctx.user.fraccionamientoId!);
 
       const [residentes, pagosPeriodo, gastosPeriodo, ingresosPeriodo] = await Promise.all([
         db.query.perfilesResidente.findMany({
-          where: (p, { eq }) => eq(p.circuitoId, circuito.id),
+          where: (p, { eq, and }) => and(eq(p.circuitoId, circuito.id), eq(p.fraccionamientoId, ctx.user.fraccionamientoId!)),
         }),
         db.query.pagos.findMany({
           where: (p, { eq, and }) =>
             and(
               eq(p.circuitoId, circuito.id),
+              eq(p.fraccionamientoId, ctx.user.fraccionamientoId!),
               eq(p.mes, input.mes),
               eq(p.anio, input.anio),
               eq(p.estado, 'pagado'),
@@ -226,6 +230,7 @@ export const reportesRouter = router({
           where: (g, { eq, and }) =>
             and(
               eq(g.circuitoId, circuito.id),
+              eq(g.fraccionamientoId, ctx.user.fraccionamientoId!),
               eq(g.mes, input.mes),
               eq(g.anio, input.anio),
             ),
@@ -235,6 +240,7 @@ export const reportesRouter = router({
           where: (i, { eq, and }) =>
             and(
               eq(i.circuitoId, circuito.id),
+              eq(i.fraccionamientoId, ctx.user.fraccionamientoId!),
               eq(i.mes, input.mes),
               eq(i.anio, input.anio),
             ),
@@ -290,7 +296,7 @@ export const reportesRouter = router({
   // ══════════════════════════════════════════════════════════════════════════
   // CRUD GASTOS
   // ══════════════════════════════════════════════════════════════════════════
-  agregarGasto: roleProcedure('tesorera')
+  agregarGasto: operationalRoleProcedure('tesorera')
     .input(z.object({
       concepto:  z.string().min(1, 'Concepto requerido'),
       monto:     z.number().positive('El monto debe ser positivo'),
@@ -300,9 +306,10 @@ export const reportesRouter = router({
       anio:      z.number().int().min(2020).max(2099),
     }))
     .mutation(async ({ ctx, input }) => {
-      const circuito = await getCircuitoDelTesorera(ctx.user.id);
+      const circuito = await getCircuitoDelTesorera(ctx.user.id, ctx.user.fraccionamientoId!);
 
       const [gasto] = await db.insert(gastosCircuito).values({
+        fraccionamientoId: circuito.fraccionamientoId!,
         circuitoId:      circuito.id,
         representanteId: ctx.user.id,
         concepto:        input.concepto,
@@ -316,7 +323,7 @@ export const reportesRouter = router({
       return gasto;
     }),
 
-  editarGasto: roleProcedure('tesorera')
+  editarGasto: operationalRoleProcedure('tesorera')
     .input(z.object({
       id:        z.string().uuid(),
       concepto:  z.string().min(1).optional(),
@@ -325,10 +332,10 @@ export const reportesRouter = router({
       fecha:     z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const circuito = await getCircuitoDelTesorera(ctx.user.id);
+      const circuito = await getCircuitoDelTesorera(ctx.user.id, ctx.user.fraccionamientoId!);
 
       const gasto = await db.query.gastosCircuito.findFirst({
-        where: (g, { eq }) => eq(g.id, input.id),
+        where: (g, { eq, and }) => and(eq(g.id, input.id), eq(g.fraccionamientoId, ctx.user.fraccionamientoId!)),
       });
       if (!gasto)                          throw new TRPCError({ code: 'NOT_FOUND' });
       if (gasto.circuitoId !== circuito.id) throw new TRPCError({ code: 'FORBIDDEN' });
@@ -339,29 +346,35 @@ export const reportesRouter = router({
       if (input.categoria) updates.categoria = input.categoria;
       if (input.fecha)     updates.fecha     = new Date(input.fecha);
 
-      await db.update(gastosCircuito).set(updates).where(eq(gastosCircuito.id, input.id));
+      await db.update(gastosCircuito).set(updates).where(and(
+        eq(gastosCircuito.id, input.id),
+        eq(gastosCircuito.fraccionamientoId, ctx.user.fraccionamientoId!),
+      ));
       return { ok: true };
     }),
 
-  eliminarGasto: roleProcedure('tesorera')
+  eliminarGasto: operationalRoleProcedure('tesorera')
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      const circuito = await getCircuitoDelTesorera(ctx.user.id);
+      const circuito = await getCircuitoDelTesorera(ctx.user.id, ctx.user.fraccionamientoId!);
 
       const gasto = await db.query.gastosCircuito.findFirst({
-        where: (g, { eq }) => eq(g.id, input.id),
+        where: (g, { eq, and }) => and(eq(g.id, input.id), eq(g.fraccionamientoId, ctx.user.fraccionamientoId!)),
       });
       if (!gasto)                          throw new TRPCError({ code: 'NOT_FOUND' });
       if (gasto.circuitoId !== circuito.id) throw new TRPCError({ code: 'FORBIDDEN' });
 
-      await db.delete(gastosCircuito).where(eq(gastosCircuito.id, input.id));
+      await db.delete(gastosCircuito).where(and(
+        eq(gastosCircuito.id, input.id),
+        eq(gastosCircuito.fraccionamientoId, ctx.user.fraccionamientoId!),
+      ));
       return { ok: true };
     }),
 
   // ══════════════════════════════════════════════════════════════════════════
   // CRUD INGRESOS ADICIONALES
   // ══════════════════════════════════════════════════════════════════════════
-  agregarIngreso: roleProcedure('tesorera')
+  agregarIngreso: operationalRoleProcedure('tesorera')
     .input(z.object({
       concepto: z.string().min(1, 'Concepto requerido'),
       monto:    z.number().positive('El monto debe ser positivo'),
@@ -370,8 +383,9 @@ export const reportesRouter = router({
       anio:     z.number().int().min(2020).max(2099),
     }))
     .mutation(async ({ ctx, input }) => {
-      const circuito = await getCircuitoDelTesorera(ctx.user.id);
+      const circuito = await getCircuitoDelTesorera(ctx.user.id, ctx.user.fraccionamientoId!);
       const [ingreso] = await db.insert(ingresosAdicionales).values({
+        fraccionamientoId: circuito.fraccionamientoId!,
         circuitoId:      circuito.id,
         representanteId: ctx.user.id,
         concepto:        input.concepto,
@@ -383,7 +397,7 @@ export const reportesRouter = router({
       return ingreso;
     }),
 
-  editarIngreso: roleProcedure('tesorera')
+  editarIngreso: operationalRoleProcedure('tesorera')
     .input(z.object({
       id:       z.string().uuid(),
       concepto: z.string().min(1).optional(),
@@ -391,9 +405,9 @@ export const reportesRouter = router({
       fecha:    z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const circuito = await getCircuitoDelTesorera(ctx.user.id);
+      const circuito = await getCircuitoDelTesorera(ctx.user.id, ctx.user.fraccionamientoId!);
       const ingreso = await db.query.ingresosAdicionales.findFirst({
-        where: (i, { eq }) => eq(i.id, input.id),
+        where: (i, { eq, and }) => and(eq(i.id, input.id), eq(i.fraccionamientoId, ctx.user.fraccionamientoId!)),
       });
       if (!ingreso)                            throw new TRPCError({ code: 'NOT_FOUND' });
       if (ingreso.circuitoId !== circuito.id)  throw new TRPCError({ code: 'FORBIDDEN' });
@@ -403,21 +417,27 @@ export const reportesRouter = router({
       if (input.monto)    updates.monto    = String(input.monto);
       if (input.fecha)    updates.fecha    = new Date(input.fecha);
 
-      await db.update(ingresosAdicionales).set(updates).where(eq(ingresosAdicionales.id, input.id));
+      await db.update(ingresosAdicionales).set(updates).where(and(
+        eq(ingresosAdicionales.id, input.id),
+        eq(ingresosAdicionales.fraccionamientoId, ctx.user.fraccionamientoId!),
+      ));
       return { ok: true };
     }),
 
-  eliminarIngreso: roleProcedure('tesorera')
+  eliminarIngreso: operationalRoleProcedure('tesorera')
     .input(z.object({ id: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      const circuito = await getCircuitoDelTesorera(ctx.user.id);
+      const circuito = await getCircuitoDelTesorera(ctx.user.id, ctx.user.fraccionamientoId!);
       const ingreso = await db.query.ingresosAdicionales.findFirst({
-        where: (i, { eq }) => eq(i.id, input.id),
+        where: (i, { eq, and }) => and(eq(i.id, input.id), eq(i.fraccionamientoId, ctx.user.fraccionamientoId!)),
       });
       if (!ingreso)                            throw new TRPCError({ code: 'NOT_FOUND' });
       if (ingreso.circuitoId !== circuito.id)  throw new TRPCError({ code: 'FORBIDDEN' });
 
-      await db.delete(ingresosAdicionales).where(eq(ingresosAdicionales.id, input.id));
+      await db.delete(ingresosAdicionales).where(and(
+        eq(ingresosAdicionales.id, input.id),
+        eq(ingresosAdicionales.fraccionamientoId, ctx.user.fraccionamientoId!),
+      ));
       return { ok: true };
     }),
 });

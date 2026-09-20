@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { db } from '@/db';
-import { mercadoPagoPaymentIntents } from '@/db/schema';
+import { mercadoPagoPaymentIntents, perfilesResidente } from '@/db/schema';
 
 export const MERCADO_PAGO_INTENT_REFERENCE_PATTERN = /^agua_[a-f0-9]{48}$/;
 
@@ -16,6 +16,7 @@ const PaymentIntentPeriodSchema = z.object({
 
 const PaymentIntentRowSchema = z.object({
   externalReference: z.string().regex(MERCADO_PAGO_INTENT_REFERENCE_PATTERN),
+  fraccionamientoId: z.string().uuid(),
   perfilId: z.string().uuid(),
   circuitoId: z.string().uuid(),
   periodos: z.array(PaymentIntentPeriodSchema).min(1).max(12),
@@ -78,10 +79,18 @@ export async function persistMercadoPagoPaymentIntent(
     throw new Error('Referencia de intencion de pago invalida');
   }
 
+  const [perfil] = await db
+    .select({ fraccionamientoId: perfilesResidente.fraccionamientoId })
+    .from(perfilesResidente)
+    .where(eq(perfilesResidente.id, input.perfilId))
+    .limit(1);
+  if (!perfil?.fraccionamientoId) throw new Error('El perfil no tiene fraccionamiento asignado');
+
   const [inserted] = await db
     .insert(mercadoPagoPaymentIntents)
     .values({
       externalReference: input.externalReference,
+      fraccionamientoId: perfil.fraccionamientoId,
       perfilId: input.perfilId,
       circuitoId: input.circuitoId,
       periodos: input.periodos,

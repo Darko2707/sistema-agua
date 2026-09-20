@@ -1,6 +1,6 @@
-import { count, eq, sql } from 'drizzle-orm';
+import { and, count, eq, sql } from 'drizzle-orm';
 import { db } from '@/db';
-import { perfilesResidente } from '@/db/schema';
+import { circuitos, fraccionamientoMetodosPago, fraccionamientoServicios, perfilesResidente, perfilesServicios, servicios, user } from '@/db/schema';
 import type { EstadoAgua } from '@/src/domain/agua/state-machine';
 import type {
   ResidenteRepository,
@@ -32,6 +32,7 @@ function toData(row: typeof perfilesResidente.$inferSelect): ResidenteData {
     id:                  row.id,
     userId:              row.userId,
     circuitoId:          row.circuitoId,
+    fraccionamientoId:   row.fraccionamientoId ?? null,
     edificio:            row.edificio,
     departamento:        row.departamento,
     estadoAgua:          row.estadoAgua as EstadoAgua,
@@ -79,7 +80,28 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
       with: { circuito: true },
     });
     if (!row) return null;
-    return { ...toData(row), circuito: row.circuito ?? null };
+    if (!row.circuito) return { ...toData(row), circuito: null };
+
+    // Mercado Pago ahora pertenece al fraccionamiento. El fallback legacy se
+    // mantiene solo durante la ventana de migración 0024.
+    const [tenantPaymentConfig] = await db
+      .select({ accessToken: fraccionamientoMetodosPago.accessTokenCifrado, collectorId: fraccionamientoMetodosPago.collectorId })
+      .from(fraccionamientoMetodosPago)
+      .where(and(
+        eq(fraccionamientoMetodosPago.fraccionamientoId, row.fraccionamientoId!),
+        eq(fraccionamientoMetodosPago.proveedor, 'mercado_pago'),
+        eq(fraccionamientoMetodosPago.activo, true),
+      ))
+      .limit(1);
+
+    return {
+      ...toData(row),
+      circuito: {
+        ...row.circuito,
+        mercadoPagoAccessToken: tenantPaymentConfig?.accessToken ?? row.circuito.mercadoPagoAccessToken,
+        mercadoPagoCollectorId: tenantPaymentConfig?.collectorId ?? row.circuito.mercadoPagoCollectorId,
+      },
+    };
   }
 
   async findByCircuito(circuitoId: string): Promise<ResidenteConRelaciones[]> {
@@ -160,18 +182,58 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
   }
 
   async create(data: Omit<ResidenteData, 'id' | 'creadoEn'>): Promise<ResidenteData> {
-    const [row] = await db.insert(perfilesResidente).values({
-      userId:              data.userId,
-      circuitoId:          data.circuitoId,
-      edificio:            data.edificio,
-      departamento:        data.departamento,
-      estadoAgua:          data.estadoAgua,
-      telefono:            data.telefono ?? null,
-      sexo:                data.sexo ?? null,
-      tenencia:            data.tenencia ?? null,
-      nombrePropietario:   data.nombrePropietario ?? null,
-      telefonoPropietario: data.telefonoPropietario ?? null,
-    } as typeof perfilesResidente.$inferInsert).returning();
+    const row = await db.transaction(async (tx) => {
+      const [circuito] = await tx
+        .select({ fraccionamientoId: circuitos.fraccionamientoId })
+        .from(circuitos)
+        .where(eq(circuitos.id, data.circuitoId))
+        .limit(1);
+      if (!circuito?.fraccionamientoId) {
+        throw new Error('El circuito no tiene fraccionamiento asignado');
+      }
+
+      const [inserted] = await tx.insert(perfilesResidente).values({
+        userId:              data.userId,
+        fraccionamientoId:   circuito.fraccionamientoId,
+        circuitoId:          data.circuitoId,
+        edificio:            data.edificio,
+        departamento:        data.departamento,
+        estadoAgua:          data.estadoAgua,
+        telefono:            data.telefono ?? null,
+        sexo:                data.sexo ?? null,
+        tenencia:            data.tenencia ?? null,
+        nombrePropietario:   data.nombrePropietario ?? null,
+        telefonoPropietario: data.telefonoPropietario ?? null,
+      } as typeof perfilesResidente.$inferInsert).returning();
+
+      // El signup de Better Auth no conoce el circuito todavía. El alta del
+      // perfil fija ambos vínculos en una sola transacción.
+      await tx.update(user)
+        .set({ fraccionamientoId: circuito.fraccionamientoId, updatedAt: new Date() })
+        .where(eq(user.id, data.userId));
+
+      // Agua es el servicio base: cada perfil nuevo lo recibe al registrarse.
+      const [agua] = await tx
+        .select({ id: fraccionamientoServicios.id })
+        .from(fraccionamientoServicios)
+        .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
+        .where(and(
+          eq(fraccionamientoServicios.fraccionamientoId, circuito.fraccionamientoId),
+          eq(fraccionamientoServicios.estado, 'activo'),
+          eq(servicios.clave, 'agua'),
+        ))
+        .limit(1);
+      if (agua) {
+        await tx.insert(perfilesServicios).values({
+          perfilId: inserted.id,
+          fraccionamientoId: circuito.fraccionamientoId,
+          fraccionamientoServicioId: agua.id,
+          estadoAgua: data.estadoAgua,
+          activo: true,
+        });
+      }
+      return inserted;
+    });
     return toData(row);
   }
 

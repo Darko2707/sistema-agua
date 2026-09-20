@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { router, protectedProcedure, roleProcedure } from '../trpc';
+import { router, protectedProcedure, roleProcedure, operationalRoleProcedure } from '../trpc';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 
@@ -22,6 +22,7 @@ import {
 } from '@/src/domain/pagos/periodos-tesoreria';
 import { calcularDesglosePagoManual, calcularMontoBase } from '@/src/domain/pagos/calculator';
 import { FolioVO } from '@/src/domain/pagos/folio.vo';
+import { subscriptionService } from '@/src/infrastructure/db/services/subscription.service';
 import { logger } from '@/lib/logger';
 import { schedulePushDispatch } from '@/lib/push-dispatcher';
 
@@ -69,7 +70,7 @@ export const pagosRouter = router({
       return historialPagosHandler.executeByPerfilId(input.perfilId);
     }),
 
-  registrarManual: roleProcedure('representante')
+  registrarManual: operationalRoleProcedure('representante')
     .input(z.object({
       perfilId: z.uuid(),
       metodo:   z.enum(['efectivo', 'transferencia']),
@@ -217,7 +218,7 @@ export const pagosRouter = router({
   }),
 
   // ── Tesorera: registrar pago en efectivo / transferencia ────────────────────
-  registrarManualTesorera: roleProcedure('tesorera')
+  registrarManualTesorera: operationalRoleProcedure('tesorera')
     .input(z.object({
       perfilId: z.uuid(),
       metodo:   z.enum(['efectivo', 'transferencia']),
@@ -327,6 +328,8 @@ export const pagosRouter = router({
 
       const circuito = await circuitoRepo.findById(perfil.circuitoId);
       if (!circuito) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Circuito no encontrado' });
+      if (!perfil.fraccionamientoId) throw new TRPCError({ code: 'FORBIDDEN', message: 'El residente no tiene fraccionamiento asignado' });
+      await subscriptionService.requireOperational(perfil.fraccionamientoId);
 
       const loteId = randomUUID();
       const fechaPago = new Date();

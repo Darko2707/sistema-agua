@@ -12,6 +12,7 @@ import {
 } from '@/src/infrastructure/mercadopago/payment-verification';
 import { logger } from '@/lib/logger';
 import { schedulePushDispatch } from '@/lib/push-dispatcher';
+import { isServiceCargoReference, processServiceCargoPayment } from '@/src/infrastructure/mercadopago/service-cargo-payment';
 
 const procesarPagoMpHandler = new ProcesarPagoMpHandler({ residenteRepo, pagoRepo, circuitoRepo });
 
@@ -75,8 +76,19 @@ export async function POST(request: Request) {
       }
     }
 
+    const externalReference = url.searchParams.get('ref');
+    if (isServiceCargoReference(externalReference)) {
+      try {
+        const result = await processServiceCargoPayment({ reference: externalReference, paymentId });
+        return Response.json({ received: true, credited: true, alreadyProcessed: result.alreadyProcessed });
+      } catch (error) {
+        logger.warn('mp.webhook.cargo_servicio_invalido', { paymentId, error: error instanceof Error ? error.message : 'unknown' });
+        return Response.json({ received: true, credited: false });
+      }
+    }
+
     const verified = await fetchVerifiedMercadoPagoPayment({
-      externalReference: url.searchParams.get('ref'),
+      externalReference,
       paymentId,
     });
 

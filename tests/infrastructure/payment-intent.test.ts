@@ -46,10 +46,12 @@ const INPUT = {
   collectorId: ' 98765 ',
   expiresAt: new Date('2026-08-09T18:20:00.000Z'),
 };
+const TENANT_ID = '00000000-0000-4000-8000-000000000004';
 
 function storedIntent(overrides: Record<string, unknown> = {}) {
   return {
     externalReference: REFERENCE,
+    fraccionamientoId: TENANT_ID,
     perfilId: INPUT.perfilId,
     circuitoId: INPUT.circuitoId,
     periodos: INPUT.periodos,
@@ -79,11 +81,13 @@ describe('intenciones de pago de Mercado Pago', () => {
   });
 
   it('persiste periodos y normaliza el collector sin exponerlos en la referencia', async () => {
+    mocks.selectRows.mockResolvedValueOnce([{ fraccionamientoId: TENANT_ID }]);
     const result = await persistMercadoPagoPaymentIntent(INPUT);
 
     expect(result.externalReference).toBe(REFERENCE);
     expect(mocks.insertedValues).toHaveBeenCalledWith(expect.objectContaining({
       externalReference: REFERENCE,
+      fraccionamientoId: TENANT_ID,
       periodos: INPUT.periodos,
       total: '120.91',
       currency: 'MXN',
@@ -93,7 +97,9 @@ describe('intenciones de pago de Mercado Pago', () => {
 
   it('rechaza una colision determinista si la fila existente describe otro cobro', async () => {
     mocks.insertReturning.mockResolvedValue([]);
-    mocks.selectRows.mockResolvedValue([storedIntent({ total: '999.99' })]);
+    mocks.selectRows
+      .mockResolvedValueOnce([{ fraccionamientoId: TENANT_ID }])
+      .mockResolvedValueOnce([storedIntent({ total: '999.99' })]);
 
     await expect(persistMercadoPagoPaymentIntent(INPUT))
       .rejects.toThrow('Colision al persistir la intencion de pago');
@@ -101,7 +107,9 @@ describe('intenciones de pago de Mercado Pago', () => {
 
   it('reutiliza de forma idempotente una intencion identica ya persistida', async () => {
     mocks.insertReturning.mockResolvedValue([]);
-    mocks.selectRows.mockResolvedValue([storedIntent()]);
+    mocks.selectRows
+      .mockResolvedValueOnce([{ fraccionamientoId: TENANT_ID }])
+      .mockResolvedValueOnce([storedIntent()]);
 
     await expect(persistMercadoPagoPaymentIntent(INPUT))
       .resolves.toMatchObject({ externalReference: REFERENCE, total: '120.91' });

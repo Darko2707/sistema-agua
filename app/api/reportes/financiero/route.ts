@@ -50,17 +50,17 @@ function montoDisponibleCircuito(pago: {
   return Number(pago.montoNetoRepresentante ?? pago.montoBase ?? pago.monto);
 }
 
-async function resolverCircuito(userId: string) {
+async function resolverCircuito(userId: string, tenantId: string) {
   let circuito = await db.query.circuitos.findFirst({
-    where: (c, { eq }) => eq(c.tesoreraId, userId),
+    where: (c, { eq, and }) => and(eq(c.tesoreraId, userId), eq(c.fraccionamientoId, tenantId)),
   });
   if (!circuito) {
     const perfil = await db.query.perfilesResidente.findFirst({
-      where: (p, { eq }) => eq(p.userId, userId),
+      where: (p, { eq, and }) => and(eq(p.userId, userId), eq(p.fraccionamientoId, tenantId)),
     });
     if (perfil?.circuitoId) {
       circuito = await db.query.circuitos.findFirst({
-        where: (c, { eq }) => eq(c.id, perfil.circuitoId!),
+        where: (c, { eq, and }) => and(eq(c.id, perfil.circuitoId!), eq(c.fraccionamientoId, tenantId)),
       });
       if (circuito?.tesoreraId && circuito.tesoreraId !== userId) return null;
     }
@@ -76,13 +76,14 @@ export async function GET(req: Request) {
     where: (u) => and(eq(u.id, session.user.id), isNull(u.deletedAt)),
   });
   if (dbUser?.role !== 'tesorera') return new Response('Prohibido', { status: 403 });
+  if (!dbUser.fraccionamientoId) return new Response('Cuenta sin fraccionamiento', { status: 403 });
 
   const exportGuard = await guardReportExport(session.user.id);
   if (!exportGuard.allowed) return exportGuard.response;
 
   try {
 
-  const circuito = await resolverCircuito(session.user.id);
+  const circuito = await resolverCircuito(session.user.id, dbUser.fraccionamientoId);
   if (!circuito) return new Response('Sin circuito asignado', { status: 404 });
 
   const url      = new URL(req.url);
@@ -112,11 +113,12 @@ export async function GET(req: Request) {
 
     const [residentes, pagosTodos, gastosTodos, ingresosTodos] = await Promise.all([
       db.query.perfilesResidente.findMany({
-        where: (p, { eq }) => eq(p.circuitoId, circuito.id),
+        where: (p, { eq, and }) => and(eq(p.circuitoId, circuito.id), eq(p.fraccionamientoId, dbUser.fraccionamientoId!)),
       }),
       db.query.pagos.findMany({
         where: (p, { eq, and, or }) => and(
           eq(p.circuitoId, circuito.id),
+          eq(p.fraccionamientoId, dbUser.fraccionamientoId!),
           eq(p.estado, 'pagado'),
           or(...mesesLista.map(m => and(eq(p.mes, m.mes), eq(p.anio, m.anio)))),
         ),
@@ -125,6 +127,7 @@ export async function GET(req: Request) {
       db.query.gastosCircuito.findMany({
         where: (g, { eq, and, or }) => and(
           eq(g.circuitoId, circuito.id),
+          eq(g.fraccionamientoId, dbUser.fraccionamientoId!),
           or(...mesesLista.map(m => and(eq(g.mes, m.mes), eq(g.anio, m.anio)))),
         ),
         orderBy: (g, { desc }) => [desc(g.anio), desc(g.mes), desc(g.fecha)],
@@ -132,6 +135,7 @@ export async function GET(req: Request) {
       db.query.ingresosAdicionales.findMany({
         where: (i, { eq, and, or }) => and(
           eq(i.circuitoId, circuito.id),
+          eq(i.fraccionamientoId, dbUser.fraccionamientoId!),
           or(...mesesLista.map(m => and(eq(i.mes, m.mes), eq(i.anio, m.anio)))),
         ),
         orderBy: (i, { desc }) => [desc(i.anio), desc(i.mes), desc(i.fecha)],
@@ -222,18 +226,18 @@ export async function GET(req: Request) {
 
   const [residentes, pagosPeriodo, gastosPeriodo, ingresosPeriodo] = await Promise.all([
     db.query.perfilesResidente.findMany({
-      where: (p, { eq }) => eq(p.circuitoId, circuito.id),
+      where: (p, { eq, and }) => and(eq(p.circuitoId, circuito.id), eq(p.fraccionamientoId, dbUser.fraccionamientoId!)),
     }),
     db.query.pagos.findMany({
-      where: (p, { eq, and }) => and(eq(p.circuitoId, circuito.id), eq(p.mes, mes), eq(p.anio, anio), eq(p.estado, 'pagado')),
+      where: (p, { eq, and }) => and(eq(p.circuitoId, circuito.id), eq(p.fraccionamientoId, dbUser.fraccionamientoId!), eq(p.mes, mes), eq(p.anio, anio), eq(p.estado, 'pagado')),
       with: { perfil: true },
     }),
     db.query.gastosCircuito.findMany({
-      where: (g, { eq, and }) => and(eq(g.circuitoId, circuito.id), eq(g.mes, mes), eq(g.anio, anio)),
+      where: (g, { eq, and }) => and(eq(g.circuitoId, circuito.id), eq(g.fraccionamientoId, dbUser.fraccionamientoId!), eq(g.mes, mes), eq(g.anio, anio)),
       orderBy: (g, { desc }) => [desc(g.fecha)],
     }),
     db.query.ingresosAdicionales.findMany({
-      where: (i, { eq, and }) => and(eq(i.circuitoId, circuito.id), eq(i.mes, mes), eq(i.anio, anio)),
+      where: (i, { eq, and }) => and(eq(i.circuitoId, circuito.id), eq(i.fraccionamientoId, dbUser.fraccionamientoId!), eq(i.mes, mes), eq(i.anio, anio)),
       orderBy: (i, { desc }) => [desc(i.fecha)],
     }),
   ]);

@@ -113,7 +113,7 @@ export function useAdmin() {
     try {
       await trpc.usuarios.cambiarRol.mutate({
         userId,
-        rol: rol as 'admin' | 'representante' | 'tesorera' | 'cuadrilla_cortes' | 'residente',
+        rol: rol as 'representante' | 'tesorera' | 'cuadrilla_cortes' | 'operador_pozo' | 'residente',
       });
       await cargarDatos();
     } catch (err: unknown) {

@@ -1,7 +1,15 @@
 import { db } from './index'
-import { circuitos } from './schema'
+import { circuitos, fraccionamientos } from './schema'
+
+const DEFAULT_FRACCIONAMIENTO_ID = '00000000-0000-4000-8000-000000000004'
 
 async function seed() {
+  await db.insert(fraccionamientos).values({
+    id: DEFAULT_FRACCIONAMIENTO_ID,
+    nombre: 'Fraccionamiento 4 Soles',
+    slug: '4-soles',
+  }).onConflictDoNothing()
+
   const nombres = [
     'Circuito Interior Xalapa',
     'Coatzacoalcos',
@@ -11,7 +19,7 @@ async function seed() {
   ]
 
   for (const nombre of nombres) {
-    await db.insert(circuitos).values({ nombre })
+    await db.insert(circuitos).values({ nombre, fraccionamientoId: DEFAULT_FRACCIONAMIENTO_ID })
   }
 
   console.log('Circuitos creados ✓')

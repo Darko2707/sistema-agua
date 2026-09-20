@@ -1,12 +1,13 @@
 import { eq } from 'drizzle-orm';
 import { db } from '@/db';
-import { circuitos } from '@/db/schema';
+import { circuitos, fraccionamientoMetodosPago } from '@/db/schema';
 import type { CircuitoRepository, CircuitoData, MpFields } from '@/src/application/ports/circuito.repository';
 
 function toData(row: typeof circuitos.$inferSelect): CircuitoData {
   return {
     id:                     row.id,
     nombre:                 row.nombre,
+    fraccionamientoId:      row.fraccionamientoId ?? null,
     representanteId:        row.representanteId ?? null,
     tesoreraId:             row.tesoreraId ?? null,
     montoMensual:           row.montoMensual,
@@ -56,6 +57,7 @@ export class DrizzleCircuitoRepository implements CircuitoRepository {
     return db.select({
       id:              circuitos.id,
       nombre:          circuitos.nombre,
+      fraccionamientoId: circuitos.fraccionamientoId,
       activo:          circuitos.activo,
       representanteId: circuitos.representanteId,
     }).from(circuitos).where(eq(circuitos.activo, true));
@@ -70,19 +72,49 @@ export class DrizzleCircuitoRepository implements CircuitoRepository {
   }
 
   async updateRepresentanteWithMp(id: string, representanteId: string, mp: MpFields): Promise<void> {
-    await db.update(circuitos).set({
-      representanteId,
-      ...(mp.encryptedAccessToken ? { mercadoPagoAccessToken: mp.encryptedAccessToken } : {}),
-      ...(mp.collectorId          ? { mercadoPagoCollectorId: mp.collectorId }          : {}),
-    }).where(eq(circuitos.id, id));
+    await db.transaction(async (tx) => {
+      const [circuito] = await tx.select({ fraccionamientoId: circuitos.fraccionamientoId })
+        .from(circuitos).where(eq(circuitos.id, id)).limit(1);
+      if (!circuito?.fraccionamientoId) throw new Error('El circuito no tiene fraccionamiento asignado');
+      await tx.update(circuitos).set({ representanteId }).where(eq(circuitos.id, id));
+      if (mp.encryptedAccessToken || mp.collectorId) {
+        await tx.insert(fraccionamientoMetodosPago).values({
+          fraccionamientoId: circuito.fraccionamientoId,
+          accessTokenCifrado: mp.encryptedAccessToken ?? '',
+          collectorId: mp.collectorId ?? null,
+        }).onConflictDoUpdate({
+          target: [fraccionamientoMetodosPago.fraccionamientoId, fraccionamientoMetodosPago.proveedor],
+          set: {
+            ...(mp.encryptedAccessToken ? { accessTokenCifrado: mp.encryptedAccessToken } : {}),
+            ...(mp.collectorId ? { collectorId: mp.collectorId } : {}),
+            actualizadoEn: new Date(),
+          },
+        });
+      }
+    });
   }
 
   async updateTesoreraWithMp(id: string, tesoreraId: string, mp: MpFields): Promise<void> {
-    await db.update(circuitos).set({
-      tesoreraId,
-      ...(mp.encryptedAccessToken ? { mercadoPagoAccessToken: mp.encryptedAccessToken } : {}),
-      ...(mp.collectorId          ? { mercadoPagoCollectorId: mp.collectorId }          : {}),
-    }).where(eq(circuitos.id, id));
+    await db.transaction(async (tx) => {
+      const [circuito] = await tx.select({ fraccionamientoId: circuitos.fraccionamientoId })
+        .from(circuitos).where(eq(circuitos.id, id)).limit(1);
+      if (!circuito?.fraccionamientoId) throw new Error('El circuito no tiene fraccionamiento asignado');
+      await tx.update(circuitos).set({ tesoreraId }).where(eq(circuitos.id, id));
+      if (mp.encryptedAccessToken || mp.collectorId) {
+        await tx.insert(fraccionamientoMetodosPago).values({
+          fraccionamientoId: circuito.fraccionamientoId,
+          accessTokenCifrado: mp.encryptedAccessToken ?? '',
+          collectorId: mp.collectorId ?? null,
+        }).onConflictDoUpdate({
+          target: [fraccionamientoMetodosPago.fraccionamientoId, fraccionamientoMetodosPago.proveedor],
+          set: {
+            ...(mp.encryptedAccessToken ? { accessTokenCifrado: mp.encryptedAccessToken } : {}),
+            ...(mp.collectorId ? { collectorId: mp.collectorId } : {}),
+            actualizadoEn: new Date(),
+          },
+        });
+      }
+    });
   }
 
   async clearRepresentanteByUserId(userId: string): Promise<void> {

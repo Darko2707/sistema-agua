@@ -7,6 +7,7 @@ import {
   CircuitoInhabilitadoError,
   PerfilIncompletoError,
 } from '@/src/application/acceso/verificar-acceso.service';
+import { subscriptionService } from '@/src/infrastructure/db/services/subscription.service';
 
 // ── Shared auth types ──────────────────────────────────────────────────────────
 // Re-export from domain port so routers can import UserRole from this file.
@@ -21,6 +22,8 @@ export type AuthUser = {
   createdAt:     Date;
   updatedAt:     Date;
   role:          UserRole;
+  /** null only for the global admin or a resident still in onboarding. */
+  fraccionamientoId?: string | null;
 };
 
 // ── Domain error → TRPCError mapper ───────────────────────────────────────────
@@ -73,6 +76,7 @@ export const createTRPCContext = async (opts: { headers: Headers }) => {
     createdAt:     session.user.createdAt,
     updatedAt:     session.user.updatedAt,
     role:          currentUser.role,
+    fraccionamientoId: currentUser.fraccionamientoId ?? null,
   };
 
   return { user, headers: opts.headers };
@@ -92,6 +96,9 @@ export const authenticatedProcedure = t.procedure.use(({ ctx, next }) => {
 
 export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
   if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
+  if (ctx.user.role !== 'admin' && !ctx.user.fraccionamientoId) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'La cuenta aún no tiene un fraccionamiento asignado' });
+  }
   try {
     await verificarAcceso(ctx.user.id, ctx.user.role);
   } catch (e) {
@@ -107,4 +114,30 @@ export function roleProcedure(...roles: UserRole[]) {
     }
     return next({ ctx });
   });
+}
+
+/** Procedure for mutations that create operational state (cobros, cortes). */
+export function operationalRoleProcedure(...roles: UserRole[]) {
+  return protectedProcedure
+    .use(({ ctx, next }) => {
+      if (!roles.includes(ctx.user.role)) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes permisos' });
+      return next({ ctx });
+    })
+    .use(async ({ ctx, next }) => {
+      if (ctx.user.role !== 'admin') {
+        await subscriptionService.requireOperational(ctx.user.fraccionamientoId!);
+      }
+      return next({ ctx });
+    });
+}
+
+/** Checks the tenant boundary for a resource selected by an input id. */
+export function assertTenantAccess(ctx: { user: AuthUser }, tenantId: string | null | undefined): void {
+  if (!tenantId) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'El fraccionamiento objetivo es obligatorio' });
+  }
+  if (ctx.user.role === 'admin') return;
+  if (!ctx.user.fraccionamientoId || ctx.user.fraccionamientoId !== tenantId) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes acceso a este fraccionamiento' });
+  }
 }

@@ -6,6 +6,8 @@ import { usuariosRouter } from './usuarios'
 import { circuitosRouter } from './circuitos'
 import { reportesRouter } from './reportes'
 import { operacionRouter } from './operacion'
+import { suscripcionesRouter } from './suscripciones'
+import { serviciosRouter } from './servicios'
 
 export const appRouter = router({
   pagos:     pagosRouter,
@@ -15,6 +17,8 @@ export const appRouter = router({
   circuitos: circuitosRouter,
   reportes:  reportesRouter,
   operacion: operacionRouter,
+  suscripciones: suscripcionesRouter,
+  servicios: serviciosRouter,
 })
 
 export type AppRouter = typeof appRouter

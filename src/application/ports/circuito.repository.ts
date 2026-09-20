@@ -1,6 +1,7 @@
 export type CircuitoData = {
   id: string;
   nombre: string;
+  fraccionamientoId?: string | null;
   representanteId: string | null;
   tesoreraId: string | null;
   montoMensual: string;

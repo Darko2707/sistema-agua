@@ -56,6 +56,7 @@ export async function GET(req: Request) {
     where: (u) => and(eq(u.id, session.user.id), isNull(u.deletedAt)),
   });
   if (dbUser?.role !== 'tesorera') return new Response('Prohibido', { status: 403 });
+  if (!dbUser.fraccionamientoId) return new Response('Cuenta sin fraccionamiento', { status: 403 });
 
   const exportGuard = await guardReportExport(session.user.id);
   if (!exportGuard.allowed) return exportGuard.response;
@@ -63,15 +64,15 @@ export async function GET(req: Request) {
   try {
 
   let circuito = await db.query.circuitos.findFirst({
-    where: (c, { eq }) => eq(c.tesoreraId, session.user.id),
+    where: (c, { eq, and }) => and(eq(c.tesoreraId, session.user.id), eq(c.fraccionamientoId, dbUser.fraccionamientoId!)),
   });
   if (!circuito) {
     const perfil = await db.query.perfilesResidente.findFirst({
-      where: (p, { eq }) => eq(p.userId, session.user.id),
+      where: (p, { eq, and }) => and(eq(p.userId, session.user.id), eq(p.fraccionamientoId, dbUser.fraccionamientoId!)),
     });
     if (perfil?.circuitoId) {
       circuito = await db.query.circuitos.findFirst({
-        where: (c, { eq }) => eq(c.id, perfil.circuitoId!),
+        where: (c, { eq, and }) => and(eq(c.id, perfil.circuitoId!), eq(c.fraccionamientoId, dbUser.fraccionamientoId!)),
       });
       if (circuito?.tesoreraId && circuito.tesoreraId !== session.user.id) circuito = undefined;
     }
@@ -90,7 +91,7 @@ export async function GET(req: Request) {
 
   const residentes = await db.query.perfilesResidente.findMany({
     where: (p, { eq, and }) => {
-      const conds = [eq(p.circuitoId, circuito.id)];
+      const conds = [eq(p.circuitoId, circuito.id), eq(p.fraccionamientoId, dbUser.fraccionamientoId!)];
       if (estadoFiltro)   conds.push(eq(p.estadoAgua, estadoFiltro));
       if (edificioFiltro) conds.push(eq(p.edificio, edificioFiltro));
       return and(...conds as [ReturnType<typeof eq>]);
@@ -124,7 +125,10 @@ export async function GET(req: Request) {
   const perfilIds = residentes.map(r => r.id);
   const pagosList = perfilIds.length > 0
     ? await db.query.pagos.findMany({
-        where: (p, { inArray }) => inArray(p.perfilId, perfilIds),
+        where: (p, { inArray, and, eq }) => and(
+          inArray(p.perfilId, perfilIds),
+          eq(p.fraccionamientoId, dbUser.fraccionamientoId!),
+        ),
         columns: {
           id: true,
           perfilId: true,

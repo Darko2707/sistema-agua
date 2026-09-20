@@ -398,6 +398,11 @@ export function ResidenteDashboard() {
                     icon="doc"
                     onClick={() => { setMenuOpen(false); router.push('/residente/folios'); }}
                   />
+                  <MenuItem
+                    label="Servicios y cargos"
+                    icon="doc"
+                    onClick={() => { setMenuOpen(false); router.push('/residente/servicios'); }}
+                  />
                   <div style={{ height: 1, background: C.border, margin: '5px 9px' }} />
                   <MenuItem
                     label="Cerrar sesión"

@@ -51,9 +51,15 @@ export const ticketsRouter = router({
       where: (p, { eq }) => eq(p.userId, ctx.user.id),
     });
     if (!perfil) return [];
+    if (perfil.fraccionamientoId !== ctx.user.fraccionamientoId) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'El perfil no pertenece a tu fraccionamiento' });
+    }
 
     const misPagos = await db.query.pagos.findMany({
-      where: (p, { eq }) => eq(p.perfilId, perfil.id),
+      where: (p, { eq, and }) => and(
+        eq(p.perfilId, perfil.id),
+        eq(p.fraccionamientoId, ctx.user.fraccionamientoId!),
+      ),
     });
     const ids = misPagos.map((p) => p.id);
     if (ids.length === 0) return [];
