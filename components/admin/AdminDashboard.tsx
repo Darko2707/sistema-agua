@@ -139,6 +139,10 @@ export function AdminDashboard() {
           <Button variant="outline" onClick={() => router.push('/admin/circuitos')}>
             Circuitos
           </Button>
+          <Button variant="outline" onClick={() => router.push('/admin/fraccionamientos')}>
+            <Building2 className="mr-2 h-4 w-4" />
+            Fraccionamientos
+          </Button>
           <Button variant="outline" onClick={() => router.push('/admin/servicios')}>
             Servicios y cargos
           </Button>
