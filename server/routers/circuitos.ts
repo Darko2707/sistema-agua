@@ -1,8 +1,11 @@
 import { router, roleProcedure } from '../trpc';
+import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import { circuitoRepo } from '@/src/infrastructure/db/repositories';
 import { subscriptionService } from '@/src/infrastructure/db/services/subscription.service';
+import { db } from '@/db';
+import { auditoria, circuitos, fraccionamientos } from '@/db/schema';
 
 const circuitoOutputColumns = {
   id: true,
@@ -17,8 +20,53 @@ const circuitoOutputColumns = {
 
 export const circuitosRouter = router({
   listar: roleProcedure('admin').query(async () => {
-    return circuitoRepo.findAll();
+    return db.select({
+      id: circuitos.id,
+      nombre: circuitos.nombre,
+      fraccionamientoId: circuitos.fraccionamientoId,
+      fraccionamientoNombre: fraccionamientos.nombre,
+      representanteId: circuitos.representanteId,
+      tesoreraId: circuitos.tesoreraId,
+      montoMensual: circuitos.montoMensual,
+      montoReconexion: circuitos.montoReconexion,
+      mercadoPagoCollectorId: circuitos.mercadoPagoCollectorId,
+      activo: circuitos.activo,
+    }).from(circuitos)
+      .leftJoin(fraccionamientos, eq(fraccionamientos.id, circuitos.fraccionamientoId))
+      .orderBy(circuitos.nombre);
   }),
+
+  listarPorFraccionamiento: roleProcedure('admin')
+    .input(z.object({ fraccionamientoId: z.string().uuid() }))
+    .query(async ({ input }) => db.query.circuitos.findMany({
+      where: (c, { eq }) => eq(c.fraccionamientoId, input.fraccionamientoId),
+      orderBy: (c, { asc }) => [asc(c.nombre)],
+    })),
+
+  crear: roleProcedure('admin')
+    .input(z.object({
+      fraccionamientoId: z.string().uuid(),
+      nombre: z.string().trim().min(1).max(120),
+      montoMensual: z.number().min(0),
+      montoReconexion: z.number().min(0),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await subscriptionService.requireOperational(input.fraccionamientoId);
+      const [created] = await db.insert(circuitos).values({
+        fraccionamientoId: input.fraccionamientoId,
+        nombre: input.nombre,
+        montoMensual: input.montoMensual.toFixed(2),
+        montoReconexion: input.montoReconexion.toFixed(2),
+      }).returning({ id: circuitos.id, nombre: circuitos.nombre });
+      await db.insert(auditoria).values({
+        actorId: ctx.user.id,
+        accion: 'circuito.creado',
+        entidad: 'circuitos',
+        entidadId: created.id,
+        detalle: { fraccionamientoId: input.fraccionamientoId, nombre: created.nombre },
+      });
+      return created;
+    }),
 
   toggleActivo: roleProcedure('admin')
     .input(z.object({ circuitoId: z.string().uuid(), activo: z.boolean() }))

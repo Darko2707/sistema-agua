@@ -1,4 +1,4 @@
-import { and, eq, gte, lt, sql } from 'drizzle-orm';
+import { and, eq, gte, lt, sql, type SQL } from 'drizzle-orm';
 import { db } from '@/db';
 import {
   auditoria,
@@ -37,6 +37,59 @@ import {
 } from '@/src/domain/pagos/periodos-tesoreria';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
 import { TRPCError } from '@trpc/server';
+
+type PagoTransactionExecutor = {
+  execute(query: SQL): Promise<unknown>;
+};
+
+/**
+ * El pago de reconexión solo cambia el estado a pendiente_reconexion. La
+ * reconexión física sigue siendo trabajo de una cuadrilla, por lo que se crea
+ * una orden independiente dentro de la misma transacción del pago.
+ */
+async function enqueueReconnectionOrder(
+  tx: PagoTransactionExecutor,
+  perfilId: string,
+  idempotencyKey: string,
+): Promise<void> {
+  await tx.execute(sql`
+    INSERT INTO ordenes_trabajo (
+      fraccionamiento_id,
+      circuito_id,
+      perfil_id,
+      fraccionamiento_servicio_id,
+      tipo,
+      estado,
+      motivo,
+      idempotency_key
+    )
+    SELECT
+      perfil.fraccionamiento_id,
+      perfil.circuito_id,
+      perfil.id,
+      perfil_servicio.fraccionamiento_servicio_id,
+      'reconexion',
+      'pendiente',
+      'pago_reconexion',
+      ${idempotencyKey}
+    FROM perfiles_residente AS perfil
+    INNER JOIN perfiles_servicios AS perfil_servicio
+      ON perfil_servicio.perfil_id = perfil.id
+     AND perfil_servicio.fraccionamiento_id = perfil.fraccionamiento_id
+     AND perfil_servicio.activo = true
+    INNER JOIN fraccionamiento_servicios AS activacion
+      ON activacion.id = perfil_servicio.fraccionamiento_servicio_id
+     AND activacion.fraccionamiento_id = perfil.fraccionamiento_id
+     AND activacion.estado = 'activo'
+    INNER JOIN servicios AS servicio
+      ON servicio.id = activacion.servicio_id
+     AND servicio.clave = 'agua'
+     AND servicio.con_corte_fisico = true
+    WHERE perfil.id = ${perfilId}
+      AND perfil.estado_agua = 'pendiente_reconexion'
+    ON CONFLICT DO NOTHING
+  `);
+}
 
 function esViolacionUnicidad(err: unknown): boolean {
   let current: unknown = err;
@@ -180,6 +233,36 @@ function cancelCutoffNotificationsQuery(
   `;
 }
 
+/** Reconciliación del ledger histórico con el cargo genérico de agua. */
+function reconcileWaterServiceCargoQuery(pago: {
+  perfilId: string;
+  mes: number;
+  anio: number;
+  monto: string;
+  metodo: string;
+  mercadoPagoPaymentId?: string | null;
+  folio: string;
+  fechaPago: Date;
+}) {
+  return sql`
+    UPDATE cargos_servicios c
+    SET estado = 'pagado',
+        metodo = ${pago.metodo}::metodo_pago,
+        mercado_pago_payment_id = ${pago.mercadoPagoPaymentId ?? null},
+        folio = ${pago.folio},
+        pagado_en = ${pago.fechaPago}
+    FROM fraccionamiento_servicios fs
+    JOIN servicios s ON s.id = fs.servicio_id
+    WHERE c.fraccionamiento_servicio_id = fs.id
+      AND s.clave = 'agua'
+      AND c.perfil_id = ${pago.perfilId}
+      AND c.mes = ${pago.mes}
+      AND c.anio = ${pago.anio}
+      AND c.estado = 'pendiente'
+      AND c.monto = ${pago.monto}
+  `;
+}
+
 export class DrizzlePagoRepository implements PagoRepository {
   async findByPerfilYMes(perfilId: string, mes: number, anio: number): Promise<PagoData | null> {
     const row = await db.query.pagos.findFirst({
@@ -246,6 +329,16 @@ export class DrizzlePagoRepository implements PagoRepository {
           ...input,
           fraccionamientoId: perfil.fraccionamientoId!,
         }).returning();
+        await tx.execute(reconcileWaterServiceCargoQuery({
+          perfilId: pago.perfilId,
+          mes: pago.mes,
+          anio: pago.anio,
+          monto: pago.monto,
+          metodo: pago.metodo!,
+          mercadoPagoPaymentId: pago.mercadoPagoPaymentId,
+          folio: pago.folio!,
+          fechaPago: pago.fechaPago!,
+        }));
 
         // Actualizar estado del perfil según tipo de pago
         if (perfil?.estadoAgua === 'pendiente_corte' && !input.esReconexion) {
@@ -254,6 +347,7 @@ export class DrizzlePagoRepository implements PagoRepository {
           // Transición a pendiente_reconexion: el pago cubre mes + reconexión.
           // El corte físico permanece abierto hasta que la cuadrilla confirme la reconexión.
           await tx.update(perfilesResidente).set({ estadoAgua: 'pendiente_reconexion' }).where(eq(perfilesResidente.id, perfilId));
+          await enqueueReconnectionOrder(tx, perfilId, `reconexion:pago:${pago.id}`);
         }
 
         await tx.insert(tickets).values({ pagoId: pago.id, folio: input.folio, pdfUrl: null });
@@ -402,6 +496,18 @@ export class DrizzlePagoRepository implements PagoRepository {
             ...pago,
             fraccionamientoId: perfil.fraccionamientoId!,
           }))).returning();
+          for (const pago of insertados) {
+            await tx.execute(reconcileWaterServiceCargoQuery({
+              perfilId: pago.perfilId,
+              mes: pago.mes,
+              anio: pago.anio,
+              monto: pago.monto,
+              metodo: pago.metodo!,
+              mercadoPagoPaymentId: pago.mercadoPagoPaymentId,
+              folio: pago.folio!,
+              fechaPago: pago.fechaPago!,
+            }));
+          }
           await tx.insert(tickets).values(insertados.map(pago => ({
             pagoId: pago.id,
             folio: pago.folio!,
@@ -418,6 +524,7 @@ export class DrizzlePagoRepository implements PagoRepository {
               await tx.update(perfilesResidente)
                 .set({ estadoAgua: 'pendiente_reconexion' })
                 .where(eq(perfilesResidente.id, input.perfilId));
+              await enqueueReconnectionOrder(tx, input.perfilId, `reconexion:lote:${insertados[0]?.id ?? input.perfilId}`);
             }
           }
 
@@ -606,6 +713,18 @@ export class DrizzlePagoRepository implements PagoRepository {
           ...pago,
           fraccionamientoId: perfil.fraccionamientoId!,
         }))).returning();
+        for (const pago of insertados) {
+          await tx.execute(reconcileWaterServiceCargoQuery({
+            perfilId: pago.perfilId,
+            mes: pago.mes,
+            anio: pago.anio,
+            monto: pago.monto,
+            metodo: pago.metodo!,
+            mercadoPagoPaymentId: pago.mercadoPagoPaymentId,
+            folio: pago.folio!,
+            fechaPago: pago.fechaPago!,
+          }));
+        }
         const incluyeReconexion = input.pagos.some(pago => pago.esReconexion);
         if (perfil.estadoAgua === 'pendiente_corte' && !incluyeReconexion) {
           await tx
@@ -617,6 +736,7 @@ export class DrizzlePagoRepository implements PagoRepository {
             .update(perfilesResidente)
             .set({ estadoAgua: 'pendiente_reconexion' })
             .where(eq(perfilesResidente.id, input.perfilId));
+          await enqueueReconnectionOrder(tx, input.perfilId, `reconexion:mp:${insertados[0]?.id ?? input.mercadoPagoPaymentId}`);
         }
 
         await tx.insert(tickets).values(insertados.map((pago) => ({

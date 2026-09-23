@@ -6,6 +6,7 @@ export default async function VerificarPage({ params }: { params: Promise<{ foli
   const ticket = await db.query.tickets.findFirst({
     where: (t, { eq }) => eq(t.folio, folio),
     with: {
+      cargoServicio: true,
       pago: {
         with: {
           perfil: {
@@ -35,8 +36,12 @@ export default async function VerificarPage({ params }: { params: Promise<{ foli
   const MESES = MESES_FULL;
 
   const pago = ticket.pago;
+  const cargo = ticket.cargoServicio;
   const perfil = pago?.perfil;
   const residente = perfil?.usuario;
+  const periodoMes = pago?.mes ?? cargo?.mes ?? 1;
+  const periodoAnio = pago?.anio ?? cargo?.anio;
+  const monto = pago?.monto ?? cargo?.monto;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-muted/40 p-4">
@@ -44,7 +49,7 @@ export default async function VerificarPage({ params }: { params: Promise<{ foli
         <div className="text-center space-y-1">
           <div className="text-5xl">✅</div>
           <h1 className="text-xl font-semibold text-green-700">Ticket válido</h1>
-          <p className="text-sm text-muted-foreground">Pago verificado correctamente</p>
+          <p className="text-sm text-muted-foreground">{cargo ? 'Servicio verificado correctamente' : 'Pago verificado correctamente'}</p>
         </div>
         <div className="rounded-lg border bg-white p-4 space-y-3">
           <div className="flex justify-between text-sm">
@@ -58,12 +63,12 @@ export default async function VerificarPage({ params }: { params: Promise<{ foli
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Periodo</span>
             <span className="font-medium">
-              {MESES[(pago?.mes ?? 1) - 1]} {pago?.anio}
+              {MESES[periodoMes - 1]} {periodoAnio}
             </span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Monto</span>
-            <span className="font-medium text-green-700">${pago?.monto} MXN</span>
+            <span className="font-medium text-green-700">${monto} MXN</span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-muted-foreground">Emitido</span>

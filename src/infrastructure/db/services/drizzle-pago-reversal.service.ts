@@ -9,6 +9,7 @@ import {
   perfilesResidente,
   reversosPago,
   tickets,
+  ordenesTrabajo,
 } from '@/db/schema';
 import { DIA_CORTE } from '@/src/domain/pagos/constants';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
@@ -95,6 +96,23 @@ export async function reversarPagoAtomico(input: ReversarPagoInput): Promise<Rev
       await tx.update(perfilesResidente)
         .set({ estadoAgua: nuevoEstado })
         .where(eq(perfilesResidente.id, pago.perfilId));
+
+      // Reversar el pago de reconexión invalida cualquier trabajo físico aún
+      // no ejecutado. El corte histórico permanece intacto, pero la orden ya
+      // no puede ser reclamada por una cuadrilla.
+      if (nuevoEstado === 'cortado') {
+        await tx.update(ordenesTrabajo)
+          .set({
+            estado: 'cancelada',
+            canceladoEn: new Date(),
+            actualizadoEn: new Date(),
+          })
+          .where(and(
+            eq(ordenesTrabajo.perfilId, pago.perfilId),
+            eq(ordenesTrabajo.tipo, 'reconexion'),
+            sql`${ordenesTrabajo.estado} IN ('pendiente', 'asignada', 'en_progreso')`,
+          ));
+      }
 
       notificarReverso = true;
       await tx.insert(notificaciones).values({

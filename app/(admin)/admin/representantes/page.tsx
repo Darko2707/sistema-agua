@@ -173,7 +173,7 @@ export default function AdminRepresentantesPage() {
                 >
                   <option value="">Sin circuito</option>
                   {circuitosDisponibles.map(c => (
-                    <option key={c.id} value={c.id}>{c.nombre}</option>
+                    <option key={c.id} value={c.id}>{c.fraccionamientoNombre ? `${c.fraccionamientoNombre} · ` : ''}{c.nombre}</option>
                   ))}
                 </select>
               </div>

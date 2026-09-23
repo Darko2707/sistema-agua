@@ -9,6 +9,7 @@ import type {
   PaginatedResult,
   CircuitoRef,
   CircuitoPaymentConfigRef,
+  ServicioCobroRef,
 } from '@/src/application/ports/residente.repository';
 
 const circuitoSafeColumns = {
@@ -70,6 +71,24 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
     });
     if (!row) return null;
     return { ...toData(row), circuito: row.circuito ?? null };
+  }
+
+  async findWaterServiceConfig(perfilId: string): Promise<ServicioCobroRef | null> {
+    const [row] = await db.select({
+      montoMensual: fraccionamientoServicios.montoMensual,
+      montoReconexion: fraccionamientoServicios.montoReconexion,
+      conCorteFisico: servicios.conCorteFisico,
+    }).from(perfilesServicios)
+      .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, perfilesServicios.fraccionamientoServicioId))
+      .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
+      .where(and(
+        eq(perfilesServicios.perfilId, perfilId),
+        eq(perfilesServicios.activo, true),
+        eq(servicios.clave, 'agua'),
+        eq(fraccionamientoServicios.estado, 'activo'),
+      ))
+      .limit(1);
+    return row ?? null;
   }
 
   async findByUserIdWithPaymentConfig(userId: string): Promise<(
@@ -237,6 +256,24 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
     return toData(row);
   }
 
+  async findByTenantPaginated(fraccionamientoId: string, circuitoId: string | undefined, page: number, pageSize: number): Promise<PaginatedResult<ResidenteConRelaciones>> {
+    const offset = (page - 1) * pageSize;
+    const where = circuitoId
+      ? and(eq(perfilesResidente.fraccionamientoId, fraccionamientoId), eq(perfilesResidente.circuitoId, circuitoId))
+      : eq(perfilesResidente.fraccionamientoId, fraccionamientoId);
+    const [rows, [{ total }]] = await Promise.all([
+      db.query.perfilesResidente.findMany({
+        where: (p, { and, eq }) => circuitoId ? and(eq(p.fraccionamientoId, fraccionamientoId), eq(p.circuitoId, circuitoId)) : eq(p.fraccionamientoId, fraccionamientoId),
+        with: { usuario: true, circuito: { columns: circuitoSafeColumns }, pagos: true, cortes: true },
+        orderBy: (p, { desc }) => [desc(p.creadoEn)],
+        limit: pageSize,
+        offset,
+      }),
+      db.select({ total: count() }).from(perfilesResidente).where(where),
+    ]);
+    return { items: rows.map(r => toConRelaciones(r as WithRelaciones)), total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
+  }
+
   async updateEstado(id: string, estadoAgua: EstadoAgua): Promise<void> {
     await db.update(perfilesResidente)
       .set({ estadoAgua })
@@ -247,11 +284,25 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
     // Pagos y operaciones de corte bloquean la misma fila de perfil. SKIP
     // LOCKED evita marcar con un snapshot viejo a quien esta pagando; las
     // siguientes ejecuciones idempotentes recogen filas omitidas.
-    const result = await db.execute<{ id: string }>(sql`
+    const result = await db.execute<{ marcados: number; ordenes: number }>(sql`
       WITH candidatos AS MATERIALIZED (
         SELECT perfil.id
         FROM perfiles_residente AS perfil
         WHERE perfil.estado_agua = 'activo'
+          AND EXISTS (
+            SELECT 1
+            FROM perfiles_servicios AS perfil_servicio
+            INNER JOIN fraccionamiento_servicios AS activacion
+              ON activacion.id = perfil_servicio.fraccionamiento_servicio_id
+            INNER JOIN servicios AS servicio
+              ON servicio.id = activacion.servicio_id
+            WHERE perfil_servicio.perfil_id = perfil.id
+              AND perfil_servicio.fraccionamiento_id = perfil.fraccionamiento_id
+              AND perfil_servicio.activo = true
+              AND perfil_servicio.estado_agua = 'activo'
+              AND servicio.clave = 'agua'
+              AND servicio.con_corte_fisico = true
+          )
           AND NOT EXISTS (
             SELECT 1
             FROM pagos AS pago
@@ -261,14 +312,47 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
               AND pago.estado = 'pagado'
           )
         FOR UPDATE OF perfil SKIP LOCKED
-      )
+      ), marcados AS (
       UPDATE perfiles_residente AS perfil
       SET estado_agua = 'pendiente_corte'
       FROM candidatos
       WHERE perfil.id = candidatos.id
-      RETURNING perfil.id
+      RETURNING perfil.id, perfil.fraccionamiento_id, perfil.circuito_id
+      ), ordenadas AS (
+      INSERT INTO ordenes_trabajo (
+        fraccionamiento_id, circuito_id, perfil_id, fraccionamiento_servicio_id,
+        tipo, estado, motivo, idempotency_key
+      )
+      SELECT
+        marcado.fraccionamiento_id,
+        marcado.circuito_id,
+        marcado.id,
+        perfil_servicio.fraccionamiento_servicio_id,
+        'corte',
+        'pendiente',
+        'falta_pago',
+        'corte:' || marcado.id::text || ':' || ${mes}::text || ':' || ${anio}::text
+      FROM marcados AS marcado
+      INNER JOIN perfiles_servicios AS perfil_servicio
+        ON perfil_servicio.perfil_id = marcado.id
+       AND perfil_servicio.fraccionamiento_id = marcado.fraccionamiento_id
+       AND perfil_servicio.activo = true
+      INNER JOIN fraccionamiento_servicios AS activacion
+        ON activacion.id = perfil_servicio.fraccionamiento_servicio_id
+       AND activacion.fraccionamiento_id = marcado.fraccionamiento_id
+       AND activacion.estado = 'activo'
+      INNER JOIN servicios AS servicio
+        ON servicio.id = activacion.servicio_id
+       AND servicio.clave = 'agua'
+       AND servicio.con_corte_fisico = true
+      ON CONFLICT DO NOTHING
+      RETURNING id
+      )
+      SELECT
+        (SELECT count(*)::int FROM marcados) AS marcados,
+        (SELECT count(*)::int FROM ordenadas) AS ordenes
     `);
 
-    return result.rows.length;
+    return Number(result.rows[0]?.marcados ?? 0);
   }
 }

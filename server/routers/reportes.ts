@@ -1,13 +1,13 @@
 import { router, roleProcedure, operationalRoleProcedure } from '../trpc';
 import { z } from 'zod';
 // eslint-disable-next-line no-restricted-imports -- complex financial aggregations not yet in a repo
-import { and, eq } from 'drizzle-orm';
+import { and, desc, eq } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 
 // eslint-disable-next-line no-restricted-imports -- complex financial aggregations not yet in a repo
 import { db } from '@/db';
 // eslint-disable-next-line no-restricted-imports -- complex financial aggregations not yet in a repo
-import { gastosCircuito, ingresosAdicionales } from '@/db/schema';
+import { cortes, gastosCircuito, ingresosAdicionales, ordenesTrabajo } from '@/db/schema';
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 
@@ -139,6 +139,34 @@ export const reportesRouter = router({
         },
       });
 
+      // El estado financiero y el operativo son fuentes distintas. Este
+      // resumen permite a tesorería ver si hay un trabajo físico pendiente sin
+      // inferirlo únicamente a partir del pago.
+      const [ordenesList, cortesActivos] = await Promise.all([
+        db.query.ordenesTrabajo.findMany({
+          where: (o, { and, eq, inArray }) => and(
+            inArray(o.perfilId, perfilIds),
+            eq(o.fraccionamientoId, ctx.user.fraccionamientoId!),
+          ),
+          columns: {
+            id: true,
+            perfilId: true,
+            tipo: true,
+            estado: true,
+            creadoEn: true,
+            completadoEn: true,
+          },
+          orderBy: (o, { desc }) => [desc(o.creadoEn)],
+        }),
+        db.query.cortes.findMany({
+          where: (c, { and, eq, inArray }) => and(
+            inArray(c.perfilId, perfilIds),
+            eq(c.activo, true),
+          ),
+          columns: { id: true, perfilId: true },
+        }),
+      ]);
+
       const resultado = filtrados.map((r) => {
         const pagosResidente = pagosList.filter((p) => p.perfilId === r.id);
 
@@ -162,6 +190,19 @@ export const reportesRouter = router({
           .sort((a, b) => new Date(b.fechaPago!).getTime() - new Date(a.fechaPago!).getTime())[0]
           ?.fechaPago ?? null;
 
+        const ordenesResidente = ordenesList.filter((orden) => orden.perfilId === r.id);
+        const ultimaOrden = (tipo: 'corte' | 'reconexion') => {
+          const orden = ordenesResidente.find((item) => item.tipo === tipo);
+          return orden
+            ? {
+                id: orden.id,
+                estado: orden.estado,
+                creadoEn: orden.creadoEn,
+                completadoEn: orden.completadoEn,
+              }
+            : null;
+        };
+
         return {
           id:           r.id,
           nombre:       r.usuario?.name ?? '',
@@ -169,6 +210,11 @@ export const reportesRouter = router({
           edificio:     r.edificio,
           departamento: r.departamento,
           estadoAgua:   r.estadoAgua,
+          corteFisicoActivo: cortesActivos.some((corte) => corte.perfilId === r.id),
+          ordenTrabajo: {
+            corte: ultimaOrden('corte'),
+            reconexion: ultimaOrden('reconexion'),
+          },
           pagosAnio,
           totalPagado,
           mesesSinPagar,
@@ -200,6 +246,75 @@ export const reportesRouter = router({
     return [...new Set(perfiles.map((p) => p.edificio))].sort();
   }),
 
+  // Reporte operativo independiente de cobranza. Solo devuelve residentes y
+  // órdenes del tenant/circuito autorizado.
+  reporteOrdenesTrabajo: roleProcedure('admin', 'representante', 'cuadrilla_cortes')
+    .input(z.object({
+      fraccionamientoId: z.string().uuid().optional(),
+      circuitoId: z.string().uuid().optional(),
+      tipo: z.enum(['corte', 'reconexion']).optional(),
+      estado: z.enum(['pendiente', 'asignada', 'en_progreso', 'completada', 'cancelada']).optional(),
+      desde: z.string().datetime({ offset: true }).optional(),
+      hasta: z.string().datetime({ offset: true }).optional(),
+    }).default({}))
+    .query(async ({ ctx, input }) => {
+      const tenantId = ctx.user.role === 'admin' ? input.fraccionamientoId : ctx.user.fraccionamientoId;
+      if (ctx.user.role !== 'admin' && !tenantId) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Cuenta sin fraccionamiento' });
+      }
+
+      let circuitoId = input.circuitoId;
+      if (ctx.user.role === 'representante') {
+        const circuito = await db.query.circuitos.findFirst({
+          where: (c, { and, eq }) => and(eq(c.representanteId, ctx.user.id), eq(c.fraccionamientoId, tenantId!)),
+        });
+        if (!circuito) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes un circuito asignado' });
+        if (circuitoId && circuitoId !== circuito.id) throw new TRPCError({ code: 'FORBIDDEN' });
+        circuitoId = circuito.id;
+      } else if (ctx.user.role === 'cuadrilla_cortes') {
+        const perfil = await db.query.perfilesResidente.findFirst({
+          where: (p, { and, eq }) => and(eq(p.userId, ctx.user.id), eq(p.fraccionamientoId, tenantId!)),
+        });
+        if (!perfil) throw new TRPCError({ code: 'FORBIDDEN', message: 'Cuadrilla sin circuito asignado' });
+        if (circuitoId && circuitoId !== perfil.circuitoId) throw new TRPCError({ code: 'FORBIDDEN' });
+        circuitoId = perfil.circuitoId;
+      }
+
+      const rows = await db.query.ordenesTrabajo.findMany({
+        where: (o, { and, eq, gte, lte }) => and(
+          tenantId ? eq(o.fraccionamientoId, tenantId) : undefined,
+          circuitoId ? eq(o.circuitoId, circuitoId) : undefined,
+          input.tipo ? eq(o.tipo, input.tipo) : undefined,
+          input.estado ? eq(o.estado, input.estado) : undefined,
+          input.desde ? gte(o.creadoEn, new Date(input.desde)) : undefined,
+          input.hasta ? lte(o.creadoEn, new Date(input.hasta)) : undefined,
+        ),
+        with: { perfil: { with: { usuario: true } }, circuito: true, trabajador: true },
+        orderBy: (o, { desc }) => [desc(o.creadoEn)],
+      });
+
+      return rows.map((row) => ({
+        id: row.id,
+        tipo: row.tipo,
+        estado: row.estado,
+        motivo: row.motivo,
+        creadoEn: row.creadoEn,
+        asignadoEn: row.asignadoEn,
+        iniciadoEn: row.iniciadoEn,
+        completadoEn: row.completadoEn,
+        canceladoEn: row.canceladoEn,
+        residente: {
+          id: row.perfil.id,
+          nombre: row.perfil.usuario?.name ?? '',
+          edificio: row.perfil.edificio,
+          departamento: row.perfil.departamento,
+          estadoAgua: row.perfil.estadoAgua,
+        },
+        circuito: { id: row.circuito.id, nombre: row.circuito.nombre },
+        trabajador: row.trabajador ? { id: row.trabajador.id, nombre: row.trabajador.name } : null,
+      }));
+    }),
+
   // ══════════════════════════════════════════════════════════════════════════
   // REPORTE 2: Financiero del mes
   // ══════════════════════════════════════════════════════════════════════════
@@ -211,7 +326,7 @@ export const reportesRouter = router({
     .query(async ({ ctx, input }) => {
       const circuito = await getCircuitoDelTesorera(ctx.user.id, ctx.user.fraccionamientoId!);
 
-      const [residentes, pagosPeriodo, gastosPeriodo, ingresosPeriodo] = await Promise.all([
+      const [residentes, pagosPeriodo, gastosPeriodo, ingresosPeriodo, ordenesPeriodo] = await Promise.all([
         db.query.perfilesResidente.findMany({
           where: (p, { eq, and }) => and(eq(p.circuitoId, circuito.id), eq(p.fraccionamientoId, ctx.user.fraccionamientoId!)),
         }),
@@ -246,6 +361,13 @@ export const reportesRouter = router({
             ),
           orderBy: (i, { desc }) => [desc(i.fecha)],
         }),
+        db.query.ordenesTrabajo.findMany({
+          where: (o, { eq, and }) => and(
+            eq(o.circuitoId, circuito.id),
+            eq(o.fraccionamientoId, ctx.user.fraccionamientoId!),
+          ),
+          columns: { tipo: true, estado: true },
+        }),
       ]);
 
       const totalPagos             = pagosPeriodo.reduce((s, p) => s + montoDisponibleCircuito(p), 0);
@@ -258,6 +380,13 @@ export const reportesRouter = router({
       const porcentajeCobranza = residentes.length > 0
         ? Math.round((totalPagaron / residentes.length) * 100 * 10) / 10
         : 0;
+      const ordenesTrabajo = {
+        total: ordenesPeriodo.length,
+        cortesPendientes: ordenesPeriodo.filter((o) => o.tipo === 'corte' && ['pendiente', 'asignada', 'en_progreso'].includes(o.estado)).length,
+        reconexionesPendientes: ordenesPeriodo.filter((o) => o.tipo === 'reconexion' && ['pendiente', 'asignada', 'en_progreso'].includes(o.estado)).length,
+        completadas: ordenesPeriodo.filter((o) => o.estado === 'completada').length,
+        canceladas: ordenesPeriodo.filter((o) => o.estado === 'cancelada').length,
+      };
 
       // Agrupar por edificio
       const edificios = [...new Set(residentes.map((r) => r.edificio))].sort();
@@ -287,6 +416,7 @@ export const reportesRouter = router({
         porcentajeCobranza,
         totalGastos,
         saldo:                   totalRecaudado - totalGastos,
+        ordenesTrabajo,
         porEdificio,
         gastos:                  gastosPeriodo,
         ingresos:                ingresosPeriodo,

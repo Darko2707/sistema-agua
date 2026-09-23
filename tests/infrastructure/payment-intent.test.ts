@@ -75,6 +75,7 @@ beforeEach(() => {
 describe('intenciones de pago de Mercado Pago', () => {
   it('acepta solo la referencia opaca corta definida para nuevos checkouts', () => {
     expect(isMercadoPagoPaymentIntentReference(REFERENCE)).toBe(true);
+    expect(isMercadoPagoPaymentIntentReference('serv_11111111-1111-4111-8111-111111111111')).toBe(true);
     expect(REFERENCE).toHaveLength(53);
     expect(isMercadoPagoPaymentIntentReference(`agua_${'a'.repeat(49)}`)).toBe(false);
     expect(isMercadoPagoPaymentIntentReference('agua3|perfil|202608|0|100.00|0.00')).toBe(false);

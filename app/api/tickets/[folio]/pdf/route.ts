@@ -1,8 +1,8 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { headers } from 'next/headers';
 
 import { db } from '@/db';
-import { tickets } from '@/db/schema';
+import { cargosServicios, circuitos, fraccionamientoServicios, perfilesResidente, servicios, tickets, user } from '@/db/schema';
 import { auth } from '@/lib/auth';
 import { logger } from '@/lib/logger';
 import { guardTicketPdf } from '@/lib/ticket-pdf-guard';
@@ -59,10 +59,11 @@ export async function GET(
           },
         },
       },
+      cargoServicio: true,
     },
   });
 
-  if (!ticket?.pago?.perfil) {
+  if (!ticket) {
     return Response.json({ error: 'Folio no encontrado' }, { status: 404 });
   }
 
@@ -70,37 +71,87 @@ export async function GET(
     where: (userTable, { eq: equals }) => equals(userTable.id, session.user.id),
   });
   const role = usuario?.role ?? 'residente';
-  const esDuenio = ticket.pago.perfil.userId === session.user.id;
-  const esAdmin = role === 'admin';
-  const esRepresentante =
-    role === 'representante' &&
-    ticket.pago.circuito?.representanteId === session.user.id;
-
-  if (!esDuenio && !esAdmin && !esRepresentante) {
-    return Response.json({ error: 'No autorizado' }, { status: 403 });
+  let pdfInput: Parameters<typeof generarTicketPDF>[0];
+  if (ticket.pago?.perfil) {
+    const esDuenio = ticket.pago.perfil.userId === session.user.id;
+    const esAdmin = role === 'admin';
+    const esRepresentante = role === 'representante' && ticket.pago.circuito?.representanteId === session.user.id;
+    if (!esDuenio && !esAdmin && !esRepresentante) return Response.json({ error: 'No autorizado' }, { status: 403 });
+    pdfInput = {
+      folio: ticket.folio,
+      fraccionamiento: process.env.NEXT_PUBLIC_FRACCIONAMIENTO_NOMBRE ?? 'SIS4S',
+      circuito: ticket.pago.circuito?.nombre,
+      nombre: ticket.pago.perfil.usuario?.name ?? 'Residente',
+      edificio: ticket.pago.perfil.edificio,
+      departamento: ticket.pago.perfil.departamento,
+      mes: ticket.pago.mes,
+      anio: ticket.pago.anio,
+      monto: ticket.pago.monto,
+      montoBase: ticket.pago.montoBase,
+      iva: ticket.pago.iva,
+      comisionMercadoPago: ticket.pago.comisionMercadoPago,
+      retencionIsr: ticket.pago.retencionIsr,
+      retencionIva: ticket.pago.retencionIva,
+      emailContacto: process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? 'contactoservicio4soles@gmail.com',
+      tipoComprobante: 'agua',
+      esReconexion: ticket.pago.esReconexion ?? false,
+    };
+  } else if (ticket.cargoServicio) {
+    if (ticket.cargoServicio.estado !== 'pagado') return Response.json({ error: 'El cargo aún no está pagado' }, { status: 409 });
+    const [cargo] = await db.select({
+      perfilId: cargosServicios.perfilId,
+      fraccionamientoId: cargosServicios.fraccionamientoId,
+      mes: cargosServicios.mes,
+      anio: cargosServicios.anio,
+      monto: cargosServicios.monto,
+      servicioNombre: servicios.nombre,
+      circuitoNombre: circuitos.nombre,
+      circuitoRepresentanteId: circuitos.representanteId,
+      userId: perfilesResidente.userId,
+      nombre: user.name,
+      edificio: perfilesResidente.edificio,
+      departamento: perfilesResidente.departamento,
+    }).from(cargosServicios)
+      .innerJoin(perfilesResidente, eq(perfilesResidente.id, cargosServicios.perfilId))
+      .innerJoin(user, eq(user.id, perfilesResidente.userId))
+      .innerJoin(circuitos, eq(circuitos.id, perfilesResidente.circuitoId))
+      .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, cargosServicios.fraccionamientoServicioId))
+      .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
+      .where(and(eq(cargosServicios.id, ticket.cargoServicio.id), eq(cargosServicios.fraccionamientoId, perfilesResidente.fraccionamientoId)))
+      .limit(1);
+    if (!cargo) return Response.json({ error: 'Folio no encontrado' }, { status: 404 });
+    const esDuenio = cargo.userId === session.user.id;
+    const esAdmin = role === 'admin';
+    const esRepresentante = role === 'representante' && cargo.circuitoRepresentanteId === session.user.id;
+    if (!esDuenio && !esAdmin && !esRepresentante) return Response.json({ error: 'No autorizado' }, { status: 403 });
+    pdfInput = {
+      folio: ticket.folio,
+      fraccionamiento: process.env.NEXT_PUBLIC_FRACCIONAMIENTO_NOMBRE ?? 'SIS4S',
+      circuito: cargo.circuitoNombre,
+      nombre: cargo.nombre ?? 'Residente',
+      edificio: cargo.edificio,
+      departamento: cargo.departamento,
+      mes: cargo.mes,
+      anio: cargo.anio,
+      monto: cargo.monto,
+      montoBase: cargo.monto,
+      iva: '0.00',
+      comisionMercadoPago: '0.00',
+      retencionIsr: '0.00',
+      retencionIva: '0.00',
+      emailContacto: process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? 'contactoservicio4soles@gmail.com',
+      tipoComprobante: 'servicio',
+      servicioNombre: cargo.servicioNombre,
+    };
+  } else {
+    return Response.json({ error: 'Folio no encontrado' }, { status: 404 });
   }
 
   // Siempre regeneramos el recibo con la plantilla vigente. Esto evita servir
   // PDFs cacheados de versiones anteriores que pudieran incluir QR u otros
   // elementos retirados del formato oficial.
   logger.info('ticket.pdf.generando', { folio });
-  const pdf = await generarTicketPDF({
-    folio:               ticket.folio,
-    fraccionamiento:     process.env.NEXT_PUBLIC_FRACCIONAMIENTO_NOMBRE ?? 'SIS4S',
-    circuito:            ticket.pago.circuito?.nombre,
-    nombre:              ticket.pago.perfil.usuario?.name ?? 'Residente',
-    edificio:            ticket.pago.perfil.edificio,
-    departamento:        ticket.pago.perfil.departamento,
-    mes:                 ticket.pago.mes,
-    anio:                ticket.pago.anio,
-    monto:               ticket.pago.monto,
-    montoBase:           ticket.pago.montoBase,
-    iva:                 ticket.pago.iva,
-    comisionMercadoPago: ticket.pago.comisionMercadoPago,
-    retencionIsr:        ticket.pago.retencionIsr,
-    retencionIva:        ticket.pago.retencionIva,
-    emailContacto:       process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? 'contactoservicio4soles@gmail.com',
-  });
+  const pdf = await generarTicketPDF(pdfInput);
 
   // Las versiones anteriores guardaban recibos públicos. Sólo borramos la ruta
   // histórica exacta de este folio; referencias desconocidas no se siguen.

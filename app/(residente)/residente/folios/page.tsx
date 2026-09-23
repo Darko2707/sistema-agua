@@ -32,7 +32,14 @@ const FB = "var(--font-bricolage), 'Bricolage Grotesque', sans-serif";
 type Ticket = {
   id: string;
   folio: string;
+  tipo?: 'agua' | 'servicio';
   emitidoEn: string | Date | null;
+  cargoServicio?: {
+    mes: number;
+    anio: number;
+    monto: string;
+    montoTotalCobrado?: string;
+  } | null;
   pago?: {
     mes: number;
     anio: number;
@@ -118,7 +125,7 @@ export default function FoliosPage() {
         const t = data as Ticket[];
         setTickets(t);
         // Default to latest year in tickets
-        const years = t.map(tk => tk.pago?.anio).filter(Boolean) as number[];
+        const years = t.map(tk => tk.pago?.anio ?? tk.cargoServicio?.anio).filter(Boolean) as number[];
         if (years.length > 0) setSelectedYear(Math.max(...years));
       })
       .catch(() => setError('No se pudieron cargar tus recibos'))
@@ -129,13 +136,13 @@ export default function FoliosPage() {
 
   // Derive available years
   const allYears = [...new Set(
-    tickets.map(t => t.pago?.anio).filter(Boolean) as number[]
+    tickets.map(t => t.pago?.anio ?? t.cargoServicio?.anio).filter(Boolean) as number[]
   )].sort((a, b) => b - a);
   if (allYears.length === 0) allYears.push(new Date().getFullYear());
 
-  const ticketsFiltrados = tickets.filter(t => t.pago?.anio === selectedYear);
+  const ticketsFiltrados = tickets.filter(t => (t.pago?.anio ?? t.cargoServicio?.anio) === selectedYear);
   const totalPagado = ticketsFiltrados
-    .reduce((sum, t) => sum + Number(t.pago?.montoCircuito ?? t.pago?.montoBase ?? t.pago?.monto ?? 0), 0)
+    .reduce((sum, t) => sum + Number(t.pago?.montoCircuito ?? t.pago?.montoBase ?? t.pago?.monto ?? t.cargoServicio?.monto ?? 0), 0)
     .toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
 
   // Account info from first ticket
@@ -242,7 +249,8 @@ export default function FoliosPage() {
               <div role="list" aria-label="Lista de recibos">
                 {ticketsFiltrados.map((ticket, i) => {
                   const p = ticket.pago;
-                  const periodo = p ? `${MESES[p.mes - 1]} ${p.anio}` : 'Sin periodo';
+                  const c = ticket.cargoServicio;
+                  const periodo = p ? `${MESES[p.mes - 1]} ${p.anio}` : c ? `Servicio · ${MESES[c.mes - 1]} ${c.anio}` : 'Sin periodo';
                   const fecha = formatFechaCort(ticket.emitidoEn);
                   return (
                     <div
@@ -264,8 +272,8 @@ export default function FoliosPage() {
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <span aria-label={`Monto al circuito: ${p?.montoCircuito ?? p?.montoBase ?? p?.monto}`} style={{ fontFamily: FB, fontSize: 14.5, fontWeight: 700, color: C.green }}>
-                          ${p?.montoCircuito ?? p?.montoBase ?? p?.monto ?? '0.00'}
+                        <span aria-label={`Monto: ${p?.montoCircuito ?? p?.montoBase ?? p?.monto ?? c?.monto}`} style={{ fontFamily: FB, fontSize: 14.5, fontWeight: 700, color: C.green }}>
+                          ${p?.montoCircuito ?? p?.montoBase ?? p?.monto ?? c?.monto ?? '0.00'}
                         </span>
                         <a
                           href={`/api/tickets/${ticket.folio}/pdf`}

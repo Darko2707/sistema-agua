@@ -4,6 +4,7 @@ const {
   mockGetSession,
   mockFindByUserIdWithPaymentConfig,
   mockFindPagos,
+  mockFindCargosAgua,
   mockPreferenceCreate,
   mockDecryptTokenSafe,
   mockPersistPaymentIntent,
@@ -13,6 +14,7 @@ const {
   mockGetSession: vi.fn(),
   mockFindByUserIdWithPaymentConfig: vi.fn(),
   mockFindPagos: vi.fn(),
+  mockFindCargosAgua: vi.fn(),
   mockPreferenceCreate: vi.fn(),
   mockDecryptTokenSafe: vi.fn(),
   mockPersistPaymentIntent: vi.fn(),
@@ -33,7 +35,18 @@ vi.mock('@/src/infrastructure/db/repositories', () => ({
 }));
 
 vi.mock('@/db', () => ({
-  db: { query: { pagos: { findMany: mockFindPagos } } },
+  db: {
+    query: { pagos: { findMany: mockFindPagos } },
+    select: () => ({
+      from: () => ({
+        innerJoin: () => ({
+          innerJoin: () => ({
+            where: mockFindCargosAgua,
+          }),
+        }),
+      }),
+    }),
+  },
 }));
 
 vi.mock('@/lib/crypto', () => ({
@@ -123,6 +136,7 @@ beforeEach(() => {
   });
   mockFindByUserIdWithPaymentConfig.mockResolvedValue(PERFIL);
   mockFindPagos.mockResolvedValue([]);
+  mockFindCargosAgua.mockResolvedValue([]);
   mockDecryptTokenSafe.mockReturnValue('token-plano');
   mockPersistPaymentIntent.mockResolvedValue(undefined);
   mockCheckoutAccountLimit.mockResolvedValue({

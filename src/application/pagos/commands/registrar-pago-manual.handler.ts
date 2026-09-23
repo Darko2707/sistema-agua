@@ -1,6 +1,6 @@
 import { TRPCError } from '@trpc/server';
 
-import { calcularDesglosePagoManual, calcularMontoBase } from '@/src/domain/pagos/calculator';
+import { calcularDesgloseServicio, calcularMontoServicio } from '@/src/domain/pagos/calculator';
 import { FolioVO } from '@/src/domain/pagos/folio.vo';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
 import type { ResidenteRepository } from '../../ports/residente.repository';
@@ -42,8 +42,15 @@ export class RegistrarPagoManualHandler {
 
     const periodo = PeriodoVO.vigente();
     const esReconexion = perfil.estadoAgua === 'cortado';
-    const montoBase = calcularMontoBase(miCircuito.montoMensual, esReconexion, miCircuito.montoReconexion);
-    const desglose = calcularDesglosePagoManual(montoBase);
+    const servicioAgua = this.deps.residenteRepo.findWaterServiceConfig
+      ? await this.deps.residenteRepo.findWaterServiceConfig(perfil.id)
+      : null;
+    const montoBase = calcularMontoServicio(servicioAgua ?? {
+      montoMensual: miCircuito.montoMensual,
+      montoReconexion: miCircuito.montoReconexion,
+      conCorteFisico: true,
+    }, { incluyeReconexion: esReconexion });
+    const desglose = calcularDesgloseServicio(montoBase, 'manual');
     const folio = FolioVO.generate().toString();
 
     const pago = await pagoRepo.createWithLock(perfil.id, {

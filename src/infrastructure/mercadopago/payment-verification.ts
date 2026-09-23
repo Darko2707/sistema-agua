@@ -21,6 +21,7 @@ type ValidationReason =
   | 'collector_mismatch'
   | 'intent_not_found'
   | 'intent_already_consumed'
+  | 'service_intent'
   | 'duplicate_period';
 
 export class MercadoPagoPaymentValidationError extends Error {
@@ -77,6 +78,9 @@ export async function fetchVerifiedMercadoPagoPayment(input: {
     : null;
   if (isIntentReference && !intent) {
     throw new MercadoPagoPaymentValidationError('intent_not_found', 'Intencion de pago no encontrada');
+  }
+  if (intent?.tipo === 'servicio') {
+    throw new MercadoPagoPaymentValidationError('service_intent', 'La intencion corresponde a un cargo de servicio');
   }
 
   const legacyReference = intent ? null : parseExternalReference(input.externalReference);

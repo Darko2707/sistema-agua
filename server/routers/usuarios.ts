@@ -27,6 +27,9 @@ import { isRepresentativeResetCodeValid } from '@/src/domain/usuarios/representa
 import { PerfilCambiosSchema } from '@/src/application/residentes/profile-change';
 import { profileChangeService } from '@/src/infrastructure/db/services/profile-change.service';
 import { subscriptionService } from '@/src/infrastructure/db/services/subscription.service';
+import { db } from '@/db';
+import { and, eq, inArray } from 'drizzle-orm';
+import { asignacionesCircuito, auditoria, circuitos, fraccionamientos, fraccionamientoServicios, user } from '@/db/schema';
 
 const telefono10 = z.string().regex(/^\d{10}$/, 'El telefono debe contener exactamente 10 digitos');
 
@@ -143,8 +146,25 @@ export const usuariosRouter = router({
       });
     }),
 
+  // El alta de residentes es pública, pero nunca debe mostrar una lista
+  // anónima de circuitos sin identificar su fraccionamiento. El backend
+  // devuelve el tenant junto con cada circuito; la UI filtra y presenta la
+  // selección en dos pasos (fraccionamiento → circuito).
   listarCircuitos: publicProcedure.query(async () => {
-    return circuitoRepo.findActivos();
+    const rows = await circuitoRepo.findActivos();
+    const tenantIds = [...new Set(rows.map((row) => row.fraccionamientoId).filter((id): id is string => Boolean(id)))];
+    const tenants = tenantIds.length
+      ? await db.select({ id: fraccionamientos.id, nombre: fraccionamientos.nombre })
+        .from(fraccionamientos)
+        .where(inArray(fraccionamientos.id, tenantIds))
+      : [];
+    const nombres = new Map(tenants.map((tenant) => [tenant.id, tenant.nombre]));
+    return rows
+      .filter((row) => row.fraccionamientoId)
+      .map((row) => ({
+        ...row,
+        fraccionamientoNombre: nombres.get(row.fraccionamientoId!) ?? 'Fraccionamiento',
+      }));
   }),
 
   solicitarCodigoRecuperacion: publicProcedure
@@ -224,6 +244,8 @@ export const usuariosRouter = router({
     .input(z.object({
       page:     z.number().int().min(1).default(1),
       pageSize: z.number().int().min(1).max(200).default(50),
+      fraccionamientoId: z.string().uuid().optional(),
+      circuitoId: z.string().uuid().optional(),
     }).optional())
     .query(async ({ ctx, input }) => {
       return listarResidentesHandler.execute({
@@ -231,6 +253,8 @@ export const usuariosRouter = router({
         userId:   ctx.user.id,
         page:     input?.page,
         pageSize: input?.pageSize,
+        fraccionamientoId: input?.fraccionamientoId,
+        circuitoId: input?.circuitoId,
       });
     }),
 
@@ -267,7 +291,7 @@ export const usuariosRouter = router({
       circuitoId: z.string().uuid(),
       userId:     z.string().min(1),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ ctx, input }) => {
       const circuito = await circuitoRepo.findById(input.circuitoId);
       if (!circuito) throw new TRPCError({ code: 'NOT_FOUND', message: 'Circuito no encontrado' });
       if (!circuito.fraccionamientoId) {
@@ -288,12 +312,114 @@ export const usuariosRouter = router({
       await circuitoRepo.updateRepresentante(input.circuitoId, input.userId);
       await userRepo.updateRole(input.userId, 'representante');
       await userRepo.update(input.userId, { fraccionamientoId: circuito.fraccionamientoId });
+      await db.insert(auditoria).values({ actorId: ctx.user.id, accion: 'circuito.representante.asignado', entidad: 'circuitos', entidadId: input.circuitoId, detalle: { userId: input.userId, fraccionamientoId: circuito.fraccionamientoId } });
       return { ok: true };
     }),
 
   listarPersonal: roleProcedure('admin', 'representante').query(async ({ ctx }) => {
     return listarPersonalHandler.execute({ rol: ctx.user.role as 'admin' | 'representante', userId: ctx.user.id });
   }),
+
+  listarPersonalPorCircuito: roleProcedure('admin')
+    .input(z.object({ fraccionamientoId: z.string().uuid(), circuitoId: z.string().uuid().optional() }))
+    .query(async ({ input }) => {
+      const conditions = [
+        eq(user.fraccionamientoId, input.fraccionamientoId),
+        inArray(user.role, ['representante', 'tesorera', 'cuadrilla_cortes', 'operador_pozo']),
+      ];
+      if (input.circuitoId) conditions.push(eq(asignacionesCircuito.circuitoId, input.circuitoId));
+      return db.select({
+        id: user.id,
+        asignacionId: asignacionesCircuito.id,
+        nombre: user.name,
+        email: user.email,
+        rol: user.role,
+        circuitoId: asignacionesCircuito.circuitoId,
+        servicioId: asignacionesCircuito.fraccionamientoServicioId,
+        activo: asignacionesCircuito.activo,
+      }).from(user)
+        .leftJoin(asignacionesCircuito, and(
+          eq(asignacionesCircuito.usuarioId, user.id),
+          eq(asignacionesCircuito.fraccionamientoId, input.fraccionamientoId),
+          eq(asignacionesCircuito.activo, true),
+        ))
+        .where(and(...conditions));
+    }),
+
+  asignarPersonalOperativo: roleProcedure('admin')
+    .input(z.object({
+      usuarioId: z.string().min(1),
+      fraccionamientoId: z.string().uuid(),
+      circuitoId: z.string().uuid(),
+      fraccionamientoServicioId: z.string().uuid(),
+      rol: z.enum(['cuadrilla_cortes', 'operador_pozo']),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await subscriptionService.requireOperational(input.fraccionamientoId);
+      const [target] = await db.select({ id: user.id, rol: user.role, tenantId: user.fraccionamientoId })
+        .from(user).where(eq(user.id, input.usuarioId)).limit(1);
+      if (!target) throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
+      if (target.rol !== input.rol) throw new TRPCError({ code: 'BAD_REQUEST', message: 'El rol del usuario no coincide con la asignación' });
+      if (target.tenantId !== input.fraccionamientoId) throw new TRPCError({ code: 'FORBIDDEN', message: 'El usuario pertenece a otro fraccionamiento' });
+
+      const [circuito] = await db.select({ id: circuitos.id }).from(circuitos).where(and(
+        eq(circuitos.id, input.circuitoId),
+        eq(circuitos.fraccionamientoId, input.fraccionamientoId),
+      )).limit(1);
+      if (!circuito) throw new TRPCError({ code: 'FORBIDDEN', message: 'El circuito no pertenece al fraccionamiento' });
+      const [servicio] = await db.select({ id: fraccionamientoServicios.id }).from(fraccionamientoServicios).where(and(
+        eq(fraccionamientoServicios.id, input.fraccionamientoServicioId),
+        eq(fraccionamientoServicios.fraccionamientoId, input.fraccionamientoId),
+        eq(fraccionamientoServicios.estado, 'activo'),
+      )).limit(1);
+      if (!servicio) throw new TRPCError({ code: 'BAD_REQUEST', message: 'El servicio no está activo en el fraccionamiento' });
+
+      const [assignment] = await db.insert(asignacionesCircuito).values(input).onConflictDoUpdate({
+        target: [asignacionesCircuito.usuarioId, asignacionesCircuito.circuitoId, asignacionesCircuito.fraccionamientoServicioId, asignacionesCircuito.rol],
+        set: { activo: true, actualizadoEn: new Date() },
+      }).returning({ id: asignacionesCircuito.id });
+      await db.insert(auditoria).values({
+        actorId: ctx.user.id,
+        accion: 'personal.circuito.asignado',
+        entidad: 'asignaciones_circuito',
+        entidadId: assignment.id,
+        detalle: input,
+      });
+      return { ok: true, id: assignment.id };
+    }),
+
+  quitarAsignacionPersonal: roleProcedure('admin')
+    .input(z.object({ asignacionId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const [assignment] = await db.update(asignacionesCircuito).set({ activo: false, actualizadoEn: new Date() })
+        .where(and(eq(asignacionesCircuito.id, input.asignacionId), eq(asignacionesCircuito.activo, true)))
+        .returning({ id: asignacionesCircuito.id, fraccionamientoId: asignacionesCircuito.fraccionamientoId });
+      if (!assignment) throw new TRPCError({ code: 'NOT_FOUND', message: 'Asignación no encontrada o ya inactiva' });
+      await db.insert(auditoria).values({ actorId: ctx.user.id, accion: 'personal.circuito.desasignado', entidad: 'asignaciones_circuito', entidadId: assignment.id, detalle: { fraccionamientoId: assignment.fraccionamientoId } });
+      return { ok: true };
+    }),
+
+  asignarTesorera: roleProcedure('admin')
+    .input(z.object({ circuitoId: z.string().uuid(), userId: z.string().min(1) }))
+    .mutation(async ({ ctx, input }) => {
+      const circuito = await circuitoRepo.findById(input.circuitoId);
+      if (!circuito?.fraccionamientoId) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Circuito sin fraccionamiento' });
+      await subscriptionService.requireOperational(circuito.fraccionamientoId);
+      if (!input.userId) {
+        await circuitoRepo.updateTesorera(input.circuitoId, null);
+        return { ok: true };
+      }
+      const usuario = await userRepo.findById(input.userId);
+      if (!usuario) throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
+      if (usuario.fraccionamientoId && usuario.fraccionamientoId !== circuito.fraccionamientoId) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'El usuario pertenece a otro fraccionamiento' });
+      }
+      await circuitoRepo.updateTesorera(input.circuitoId, input.userId);
+      await userRepo.updateRole(input.userId, 'tesorera');
+      await userRepo.update(input.userId, { fraccionamientoId: circuito.fraccionamientoId });
+      await db.insert(auditoria).values({ actorId: ctx.user.id, accion: 'circuito.tesorera.asignada', entidad: 'circuitos', entidadId: input.circuitoId, detalle: { userId: input.userId, fraccionamientoId: circuito.fraccionamientoId } });
+      return { ok: true };
+    }),
 
   listarRepresentantes: roleProcedure('admin').query(async () => {
     return userRepo.listarRepresentantes();

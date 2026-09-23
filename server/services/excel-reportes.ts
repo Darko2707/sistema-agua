@@ -64,6 +64,9 @@ export interface ResidenteReporte {
   totalPagado: number;
   mesesSinPagar: number;
   ultimoPago: Date | null;
+  corteFisicoActivo?: boolean;
+  ordenCorteEstado?: string | null;
+  ordenReconexionEstado?: string | null;
 }
 
 export async function generarReporteResidentesExcel(params: {
@@ -79,7 +82,7 @@ export async function generarReporteResidentesExcel(params: {
   const ws = wb.addWorksheet('Residentes', { pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 } });
 
   const periodos = params.residentes[0]?.pagosAnio ?? [];
-  const totalCols = 10 + periodos.length; // 7 cols fijas + 12 meses + total/sinpagar/ultimopago
+  const totalCols = 13 + periodos.length; // columnas financieras y operativas
 
   // ── Logo (esquina superior derecha) ──────────────────────────
   agregarLogo(wb, ws, totalCols);
@@ -105,6 +108,10 @@ export async function generarReporteResidentesExcel(params: {
     ...periodos.map(p => `${MESES_ES[p.mes - 1]} ${String(p.anio).slice(2)}`),
     'Total 12m', 'Sin pagar', 'Último pago',
   ]);
+  const operacionHeaderCol = 11 + periodos.length;
+  headerRow.getCell(operacionHeaderCol).value = 'Corte fisico';
+  headerRow.getCell(operacionHeaderCol + 1).value = 'Orden corte';
+  headerRow.getCell(operacionHeaderCol + 2).value = 'Orden reconex.';
   headerRow.height = 22;
   headerRow.eachCell(cell => {
     cell.fill      = headerFill(COLOR_HEADER);
@@ -139,6 +146,11 @@ export async function generarReporteResidentesExcel(params: {
       r.mesesSinPagar,
       r.ultimoPago ? new Date(r.ultimoPago).toLocaleDateString('es-MX') : '—',
     ];
+    rowData.push(
+      r.corteFisicoActivo ? 'Activo' : 'No',
+      r.ordenCorteEstado ?? 'â€”',
+      r.ordenReconexionEstado ?? 'â€”',
+    );
     const row = ws.addRow(rowData);
     row.height = 18;
     const isAlt = i % 2 === 1;

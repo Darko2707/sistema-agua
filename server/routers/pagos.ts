@@ -20,7 +20,7 @@ import {
   periodoInicioCapturaTesorera,
   periodoKey,
 } from '@/src/domain/pagos/periodos-tesoreria';
-import { calcularDesglosePagoManual, calcularMontoBase } from '@/src/domain/pagos/calculator';
+import { calcularDesgloseServicio, calcularMontoServicio } from '@/src/domain/pagos/calculator';
 import { FolioVO } from '@/src/domain/pagos/folio.vo';
 import { subscriptionService } from '@/src/infrastructure/db/services/subscription.service';
 import { logger } from '@/lib/logger';
@@ -237,12 +237,15 @@ export const pagosRouter = router({
       const periodos = [...input.meses].sort(compararPeriodos);
 
       const esReconexion = perfil.estadoAgua === 'cortado';
+      const servicioAgua = residenteRepo.findWaterServiceConfig
+        ? await residenteRepo.findWaterServiceConfig(perfil.id)
+        : null;
       const loteId = randomUUID();
       const fechaPago = new Date();
       const pagosLote = periodos.map((periodo, index) => {
         const incluyeReconexion = index === 0 && esReconexion;
-        const montoBase  = calcularMontoBase(circuito.montoMensual, incluyeReconexion, circuito.montoReconexion);
-        const desglose   = calcularDesglosePagoManual(montoBase);
+        const montoBase  = calcularMontoServicio(servicioAgua ?? { montoMensual: circuito.montoMensual, montoReconexion: circuito.montoReconexion, conCorteFisico: true }, { incluyeReconexion });
+        const desglose   = calcularDesgloseServicio(montoBase, 'manual');
         return {
           perfilId:               perfil.id,
           circuitoId:             circuito.id,
@@ -330,12 +333,15 @@ export const pagosRouter = router({
       if (!circuito) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Circuito no encontrado' });
       if (!perfil.fraccionamientoId) throw new TRPCError({ code: 'FORBIDDEN', message: 'El residente no tiene fraccionamiento asignado' });
       await subscriptionService.requireOperational(perfil.fraccionamientoId);
+      const servicioAgua = residenteRepo.findWaterServiceConfig
+        ? await residenteRepo.findWaterServiceConfig(perfil.id)
+        : null;
 
       const loteId = randomUUID();
       const fechaPago = new Date();
       const pagosLote = input.meses.map(({ mes, anio }) => {
-        const montoBase = calcularMontoBase(circuito.montoMensual, false, circuito.montoReconexion);
-        const desglose  = calcularDesglosePagoManual(montoBase);
+        const montoBase = calcularMontoServicio(servicioAgua ?? { montoMensual: circuito.montoMensual, montoReconexion: circuito.montoReconexion, conCorteFisico: true });
+        const desglose  = calcularDesgloseServicio(montoBase, 'manual');
         return {
           perfilId:               perfil.id,
           circuitoId:             circuito.id,

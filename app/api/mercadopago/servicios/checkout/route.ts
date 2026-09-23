@@ -11,6 +11,7 @@ import { residenteRepo } from '@/src/infrastructure/db/repositories';
 import { subscriptionService } from '@/src/infrastructure/db/services/subscription.service';
 import { cargosServicios, fraccionamientoMetodosPago, fraccionamientoServicios, servicios } from '@/db/schema';
 import { db } from '@/db';
+import { persistMercadoPagoPaymentIntent } from '@/src/infrastructure/mercadopago/payment-intent';
 
 const inputSchema = z.object({ cargoId: z.string().uuid() });
 
@@ -32,6 +33,8 @@ export async function POST(request: Request) {
   const [cargo] = await db.select({
     id: cargosServicios.id,
     monto: cargosServicios.monto,
+    mes: cargosServicios.mes,
+    anio: cargosServicios.anio,
     estado: cargosServicios.estado,
     service: servicios.clave,
   }).from(cargosServicios)
@@ -48,16 +51,40 @@ export async function POST(request: Request) {
     .limit(1);
   const accessToken = decryptTokenSafe(method?.accessToken ?? perfil.circuito?.mercadoPagoAccessToken);
   if (!accessToken) return Response.json({ error: 'Mercado Pago no configurado' }, { status: 503 });
+  const collectorId = method?.collectorId ?? perfil.circuito?.mercadoPagoCollectorId ?? null;
   const reference = `serv_${cargo.id}`;
+  const checkoutWindowMs = 20 * 60 * 1000;
+  const checkoutWindowStart = Math.floor(Date.now() / checkoutWindowMs) * checkoutWindowMs;
+  const expiresAt = new Date(checkoutWindowStart + checkoutWindowMs * 2);
+  await persistMercadoPagoPaymentIntent({
+    externalReference: reference,
+    tipo: 'servicio',
+    perfilId: perfil.id,
+    circuitoId: perfil.circuitoId,
+    cargoServicioId: cargo.id,
+    periodos: [{ mes: cargo.mes, anio: cargo.anio, monto: Number(cargo.monto).toFixed(2), esReconexion: false }],
+    total: Number(cargo.monto).toFixed(2),
+    collectorId,
+    expiresAt,
+  });
   const { preferenceClient } = createMercadoPagoClients(accessToken);
   const preference = await preferenceClient.create({
     body: {
       external_reference: reference,
       items: [{ id: reference, title: `Servicio ${cargo.service}`, quantity: 1, currency_id: 'MXN', unit_price: Number(cargo.monto) }],
       notification_url: `${process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin}/api/mercadopago/webhook?ref=${encodeURIComponent(reference)}`,
-      ...(method?.collectorId ? { collector_id: Number(method.collectorId) } : {}),
+      back_urls: {
+        success: `${process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin}/api/mercadopago/return?ref=${encodeURIComponent(reference)}`,
+        pending: `${process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin}/residente?payment=pending`,
+        failure: `${process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin}/residente?payment=failure`,
+      },
+      auto_return: 'approved',
+      binary_mode: true,
+      expires: true,
+      expiration_date_to: expiresAt.toISOString(),
+      ...(collectorId ? { collector_id: Number(collectorId) } : {}),
     },
-    requestOptions: { idempotencyKey: `serv-${cargo.id}` },
+    requestOptions: { idempotencyKey: `serv-${cargo.id}-${checkoutWindowStart}` },
   });
   return Response.json({ url: preference.init_point, referencia: reference });
 }

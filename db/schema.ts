@@ -17,6 +17,17 @@ export const estadoSuscripcionFraccionamientoEnum = pgEnum('estado_suscripcion_f
 export const estadoActivacionServicioEnum = pgEnum('estado_activacion_servicio', ['activo', 'inactivo']);
 export const estadoSolicitudPerfilEnum = pgEnum('estado_solicitud_perfil', ['pendiente', 'aprobada', 'rechazada']);
 export const estadoCargoServicioEnum = pgEnum('estado_cargo_servicio', ['pendiente', 'pagado', 'cancelado']);
+export const rolAsignacionCircuitoEnum = pgEnum('rol_asignacion_circuito', ['cuadrilla_cortes', 'operador_pozo']);
+export const mercadoPagoIntentTipoEnum = pgEnum('mercado_pago_intent_tipo', ['agua', 'servicio']);
+export const ticketTipoEnum = pgEnum('ticket_tipo', ['agua', 'servicio']);
+export const tipoOrdenTrabajoEnum = pgEnum('tipo_orden_trabajo', ['corte', 'reconexion']);
+export const estadoOrdenTrabajoEnum = pgEnum('estado_orden_trabajo', [
+  'pendiente',
+  'asignada',
+  'en_progreso',
+  'completada',
+  'cancelada',
+]);
 
 export const estadoPagoEnum = pgEnum('estado_pago', ['pendiente', 'pagado', 'vencido']);
 export const tenenciaEnum   = pgEnum('tenencia', ['propietario', 'inquilino']);
@@ -60,6 +71,7 @@ export const user = pgTable('user', {
 }, (t) => [
   uniqueIndex('uq_user_single_global_admin').on(t.role).where(sql`${t.role} = 'admin' AND ${t.deletedAt} IS NULL`),
   index('idx_user_fraccionamiento_role').on(t.fraccionamientoId, t.role),
+  uniqueIndex('uq_user_tenant_id').on(t.id, t.fraccionamientoId),
 ]);
 
 export const session = pgTable('session', {
@@ -218,6 +230,8 @@ export const circuitos = pgTable('circuitos', {
   id:                     uuid('id').defaultRandom().primaryKey(),
   nombre:                 text('nombre').notNull(),
   // Nullable during the backfill window; migration 0024 enforces NOT NULL in DB.
+  // Nullable in the TypeScript model for isolated legacy/integration fixtures;
+  // migration 0030 enforces NOT NULL in the production database after backfill.
   fraccionamientoId:      uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
   representanteId:        text('representante_id').references(() => user.id),
   tesoreraId:             text('tesorera_id').references(() => user.id),
@@ -231,12 +245,33 @@ export const circuitos = pgTable('circuitos', {
   index('idx_circuitos_fraccionamiento').on(t.fraccionamientoId),
   uniqueIndex('uq_circuitos_representante_unico').on(t.representanteId).where(sql`${t.representanteId} IS NOT NULL`),
   uniqueIndex('uq_circuitos_tesorera_unica').on(t.tesoreraId).where(sql`${t.tesoreraId} IS NOT NULL`),
+  uniqueIndex('uq_circuitos_tenant_nombre').on(t.fraccionamientoId, t.nombre),
+  uniqueIndex('uq_circuitos_tenant_id').on(t.id, t.fraccionamientoId),
+]);
+
+// Asignaciones explícitas para personal operativo. Un usuario puede tener
+// varios circuitos, pero únicamente dentro de su propio fraccionamiento.
+export const asignacionesCircuito = pgTable('asignaciones_circuito', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  usuarioId: text('usuario_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
+  fraccionamientoId: uuid('fraccionamiento_id').notNull().references(() => fraccionamientos.id, { onDelete: 'restrict' }),
+  circuitoId: uuid('circuito_id').notNull().references(() => circuitos.id, { onDelete: 'cascade' }),
+  fraccionamientoServicioId: uuid('fraccionamiento_servicio_id').notNull().references(() => fraccionamientoServicios.id, { onDelete: 'restrict' }),
+  rol: rolAsignacionCircuitoEnum('rol').notNull(),
+  activo: boolean('activo').notNull().default(true),
+  creadoEn: timestamp('creado_en').notNull().defaultNow(),
+  actualizadoEn: timestamp('actualizado_en').notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('uq_asignacion_circuito_persona').on(t.usuarioId, t.circuitoId, t.fraccionamientoServicioId, t.rol),
+  index('idx_asignaciones_circuito_tenant').on(t.fraccionamientoId, t.circuitoId, t.activo),
+  index('idx_asignaciones_circuito_usuario').on(t.usuarioId, t.activo),
 ]);
 
 // Perfil extendido del residente — 1:1 con user
 export const perfilesResidente = pgTable('perfiles_residente', {
   id:           uuid('id').defaultRandom().primaryKey(),
   userId:       text('user_id').notNull().unique().references(() => user.id, { onDelete: 'cascade' }),
+  // Migration 0030 makes this column NOT NULL after validating legacy rows.
   fraccionamientoId: uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
   telefono:     text('telefono').notNull(),
   sexo:         sexoEnum('sexo').notNull(),
@@ -271,6 +306,7 @@ export const perfilesServicios = pgTable('perfiles_servicios', {
 }, (t) => [
   uniqueIndex('uq_perfiles_servicios_perfil_servicio').on(t.perfilId, t.fraccionamientoServicioId),
   index('idx_perfiles_servicios_tenant_estado').on(t.fraccionamientoId, t.estadoAgua),
+  index('idx_perfiles_servicios_activo_tenant').on(t.fraccionamientoId, t.activo, t.fraccionamientoServicioId),
 ]);
 
 export const cargosServicios = pgTable('cargos_servicios', {
@@ -289,6 +325,12 @@ export const cargosServicios = pgTable('cargos_servicios', {
   pagadoEn: timestamp('pagado_en'),
 }, (t) => [
   uniqueIndex('uq_cargos_servicio_periodo').on(t.perfilId, t.fraccionamientoServicioId, t.mes, t.anio),
+  uniqueIndex('uq_cargos_servicios_id_tenant').on(t.id, t.fraccionamientoId),
+  // Un pago de Mercado Pago solo puede acreditar un cargo de servicio.
+  // El índice parcial permite que los cargos pendientes sigan sin paymentId.
+  uniqueIndex('uq_cargos_servicios_mp_payment_id')
+    .on(t.mercadoPagoPaymentId)
+    .where(sql`${t.mercadoPagoPaymentId} IS NOT NULL`),
   index('idx_cargos_servicio_tenant_periodo').on(t.fraccionamientoId, t.mes, t.anio, t.estado),
   index('idx_cargos_servicio_perfil_estado').on(t.perfilId, t.estado),
   check('chk_cargos_servicio_mes', sql`${t.mes} BETWEEN 1 AND 12`),
@@ -328,9 +370,11 @@ export type MercadoPagoPaymentIntentPeriodo = {
 
 export const mercadoPagoPaymentIntents = pgTable('mercado_pago_payment_intents', {
   externalReference:    text('external_reference').primaryKey(),
+  tipo:                 mercadoPagoIntentTipoEnum('tipo').notNull().default('agua'),
   fraccionamientoId:    uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
   perfilId:             uuid('perfil_id').notNull().references(() => perfilesResidente.id),
   circuitoId:           uuid('circuito_id').notNull().references(() => circuitos.id),
+  cargoServicioId:      uuid('cargo_servicio_id').references(() => cargosServicios.id, { onDelete: 'restrict' }),
   periodos:             jsonb('periodos').$type<MercadoPagoPaymentIntentPeriodo[]>().notNull(),
   total:                decimal('total', { precision: 10, scale: 2 }).notNull(),
   currency:             text('currency').notNull().default('MXN'),
@@ -342,7 +386,8 @@ export const mercadoPagoPaymentIntents = pgTable('mercado_pago_payment_intents',
 }, (t) => [
   check(
     'chk_mp_payment_intents_external_reference',
-    sql`${t.externalReference} ~ '^agua_[a-f0-9]{48}$'`,
+    sql`(${t.tipo} = 'agua' AND ${t.externalReference} ~ '^agua_[a-f0-9]{48}$' AND ${t.cargoServicioId} IS NULL)
+      OR (${t.tipo} = 'servicio' AND ${t.externalReference} ~ '^serv_[0-9a-f-]{36}$' AND ${t.cargoServicioId} IS NOT NULL)`,
   ),
   check('chk_mp_payment_intents_currency', sql`${t.currency} = 'MXN'`),
   check('chk_mp_payment_intents_total_positive', sql`${t.total} > 0`),
@@ -356,6 +401,7 @@ export const mercadoPagoPaymentIntents = pgTable('mercado_pago_payment_intents',
       OR (${t.mercadoPagoPaymentId} IS NOT NULL AND ${t.consumedAt} IS NOT NULL)`,
   ),
   index('idx_mp_payment_intents_perfil_created').on(t.perfilId, t.createdAt),
+  index('idx_mp_payment_intents_cargo_servicio').on(t.cargoServicioId),
   index('idx_mp_payment_intents_expires_at').on(t.expiresAt),
   uniqueIndex('uq_mp_payment_intents_payment_id')
     .on(t.mercadoPagoPaymentId)
@@ -435,13 +481,22 @@ export const cortes = pgTable('cortes', {
 
 export const tickets = pgTable('tickets', {
   id:        uuid('id').defaultRandom().primaryKey(),
-  pagoId:    uuid('pago_id').references(() => pagos.id).notNull(),
+  // Un ticket respalda un pago legado de agua o un cargo del catálogo de
+  // servicios; la migración agrega el CHECK de exclusión mutua.
+  pagoId:    uuid('pago_id').references(() => pagos.id),
+  cargoServicioId: uuid('cargo_servicio_id').references(() => cargosServicios.id, { onDelete: 'restrict' }),
+  tipo:      ticketTipoEnum('tipo').notNull().default('agua'),
   folio:     text('folio').notNull().unique(),
   qrCode:    text('qr_code'),
   pdfUrl:    text('pdf_url'),
   emitidoEn: timestamp('emitido_en').defaultNow(),
 }, (t) => [
-  uniqueIndex('uq_tickets_pago_id').on(t.pagoId),
+  uniqueIndex('uq_tickets_pago_id').on(t.pagoId).where(sql`${t.pagoId} IS NOT NULL`),
+  uniqueIndex('uq_tickets_cargo_servicio_id').on(t.cargoServicioId).where(sql`${t.cargoServicioId} IS NOT NULL`),
+  check('chk_ticket_referencia_tipo', sql`
+    (${t.tipo} = 'agua' AND ${t.pagoId} IS NOT NULL AND ${t.cargoServicioId} IS NULL)
+    OR (${t.tipo} = 'servicio' AND ${t.pagoId} IS NULL AND ${t.cargoServicioId} IS NOT NULL)
+  `),
 ]);
 
 export const auditoria = pgTable('auditoria', {
@@ -496,6 +551,41 @@ export const bitacoraCortes = pgTable('bitacora_cortes', {
 }, (t) => [
   index('idx_bitacora_cortes_perfil').on(t.perfilId),
   index('idx_bitacora_cortes_corte').on(t.corteId),
+]);
+
+// Una orden representa el trabajo operativo que debe realizarse. `cortes`
+// conserva exclusivamente el resultado físico (histórico); no se usa como
+// cola de trabajo ni como mecanismo de asignación.
+export const ordenesTrabajo = pgTable('ordenes_trabajo', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  fraccionamientoId: uuid('fraccionamiento_id').notNull().references(() => fraccionamientos.id, { onDelete: 'restrict' }),
+  circuitoId: uuid('circuito_id').notNull().references(() => circuitos.id, { onDelete: 'restrict' }),
+  perfilId: uuid('perfil_id').notNull().references(() => perfilesResidente.id, { onDelete: 'restrict' }),
+  fraccionamientoServicioId: uuid('fraccionamiento_servicio_id').notNull().references(() => fraccionamientoServicios.id, { onDelete: 'restrict' }),
+  tipo: tipoOrdenTrabajoEnum('tipo').notNull(),
+  estado: estadoOrdenTrabajoEnum('estado').notNull().default('pendiente'),
+  trabajadorId: text('trabajador_id').references(() => user.id, { onDelete: 'set null' }),
+  creadoPor: text('creado_por').references(() => user.id, { onDelete: 'set null' }),
+  ejecutadoPor: text('ejecutado_por').references(() => user.id, { onDelete: 'set null' }),
+  corteId: uuid('corte_id').references(() => cortes.id, { onDelete: 'set null' }),
+  motivo: text('motivo').notNull(),
+  idempotencyKey: text('idempotency_key').notNull(),
+  notas: text('notas'),
+  creadoEn: timestamp('creado_en').notNull().defaultNow(),
+  asignadoEn: timestamp('asignado_en'),
+  iniciadoEn: timestamp('iniciado_en'),
+  completadoEn: timestamp('completado_en'),
+  canceladoEn: timestamp('cancelado_en'),
+  actualizadoEn: timestamp('actualizado_en').notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('uq_ordenes_trabajo_idempotency').on(t.idempotencyKey),
+  uniqueIndex('uq_ordenes_trabajo_activa')
+    .on(t.perfilId, t.fraccionamientoServicioId, t.tipo)
+    .where(sql`${t.estado} IN ('pendiente', 'asignada', 'en_progreso')`),
+  index('idx_ordenes_trabajo_tenant_estado').on(t.fraccionamientoId, t.estado, t.creadoEn),
+  index('idx_ordenes_trabajo_circuito_estado').on(t.circuitoId, t.estado, t.creadoEn),
+  index('idx_ordenes_trabajo_trabajador_estado').on(t.trabajadorId, t.estado, t.creadoEn),
+  index('idx_ordenes_trabajo_perfil').on(t.perfilId, t.creadoEn),
 ]);
 
 export const notificaciones = pgTable('notificaciones', {
@@ -641,6 +731,7 @@ export const perfilesResidenteRelations = relations(perfilesResidente, ({ one, m
   }),
   pagos:  many(pagos),
   cortes: many(cortes),
+  ordenesTrabajo: many(ordenesTrabajo),
 }));
 
 export const pagosRelations = relations(pagos, ({ one }) => ({
@@ -673,10 +764,49 @@ export const cortesRelations = relations(cortes, ({ one }) => ({
   }),
 }));
 
+export const ordenesTrabajoRelations = relations(ordenesTrabajo, ({ one }) => ({
+  fraccionamiento: one(fraccionamientos, {
+    fields: [ordenesTrabajo.fraccionamientoId],
+    references: [fraccionamientos.id],
+  }),
+  circuito: one(circuitos, {
+    fields: [ordenesTrabajo.circuitoId],
+    references: [circuitos.id],
+  }),
+  perfil: one(perfilesResidente, {
+    fields: [ordenesTrabajo.perfilId],
+    references: [perfilesResidente.id],
+  }),
+  servicio: one(fraccionamientoServicios, {
+    fields: [ordenesTrabajo.fraccionamientoServicioId],
+    references: [fraccionamientoServicios.id],
+  }),
+  trabajador: one(user, {
+    fields: [ordenesTrabajo.trabajadorId],
+    references: [user.id],
+  }),
+  creador: one(user, {
+    fields: [ordenesTrabajo.creadoPor],
+    references: [user.id],
+  }),
+  ejecutor: one(user, {
+    fields: [ordenesTrabajo.ejecutadoPor],
+    references: [user.id],
+  }),
+  corte: one(cortes, {
+    fields: [ordenesTrabajo.corteId],
+    references: [cortes.id],
+  }),
+}));
+
 export const ticketsRelations = relations(tickets, ({ one }) => ({
   pago: one(pagos, {
     fields: [tickets.pagoId],
     references: [pagos.id],
+  }),
+  cargoServicio: one(cargosServicios, {
+    fields: [tickets.cargoServicioId],
+    references: [cargosServicios.id],
   }),
 }));
 

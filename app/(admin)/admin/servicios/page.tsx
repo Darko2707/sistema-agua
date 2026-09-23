@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, RefreshCw, Settings2, Wallet } from 'lucide-react';
 
@@ -21,7 +21,7 @@ export default function ServiciosAdminPage() {
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
 
-  const tenantsQuery = trpcReact.suscripciones.listar.useQuery();
+  const tenantsQuery = trpcReact.fraccionamientos.listar.useQuery();
   const catalogoQuery = trpcReact.servicios.catalogo.useQuery();
   const serviciosQuery = trpcReact.servicios.listarTenant.useQuery(
     { fraccionamientoId: tenantId || '00000000-0000-0000-0000-000000000000' },
@@ -30,13 +30,10 @@ export default function ServiciosAdminPage() {
   const configurarMutation = trpcReact.servicios.configurar.useMutation();
   const generarMutation = trpcReact.servicios.generarCargosMes.useMutation();
 
-  const tenants = useMemo(() => {
-    const rows = tenantsQuery.data ?? [];
-    return rows.filter((tenant, index, all) => all.findIndex(item => item.fraccionamientoId === tenant.fraccionamientoId) === index);
-  }, [tenantsQuery.data]);
+  const tenants = tenantsQuery.data ?? [];
 
   useEffect(() => {
-    if (!tenantId && tenants.length > 0) setTenantId(tenants[0].fraccionamientoId);
+    if (!tenantId && tenants.length > 0) setTenantId(tenants[0].id);
   }, [tenantId, tenants]);
 
   useEffect(() => {
@@ -83,7 +80,7 @@ export default function ServiciosAdminPage() {
         {(error || mensaje) && <div role="alert" className={`rounded-2xl border p-4 ${error ? 'border-red-200 bg-red-50 text-red-700' : 'border-green-200 bg-green-50 text-green-700'}`}>{error ?? mensaje}</div>}
 
         <Card><CardHeader><CardTitle>Fraccionamiento objetivo</CardTitle></CardHeader><CardContent className="grid gap-4 md:grid-cols-[1fr_auto] md:items-end">
-          <div className="space-y-2"><Label htmlFor="tenant">Fraccionamiento</Label><select id="tenant" value={tenantId} onChange={event => setTenantId(event.target.value)} className="h-8 w-full rounded-lg border border-input bg-background px-2 text-sm">{tenants.map(tenant => <option key={tenant.fraccionamientoId} value={tenant.fraccionamientoId}>{tenant.nombre}</option>)}</select></div>
+          <div className="space-y-2"><Label htmlFor="tenant">Fraccionamiento</Label><select id="tenant" value={tenantId} onChange={event => setTenantId(event.target.value)} className="h-8 w-full rounded-lg border border-input bg-background px-2 text-sm">{tenants.map(tenant => <option key={tenant.id} value={tenant.id}>{tenant.nombre}</option>)}</select></div>
           <Button onClick={generarCargos} disabled={busy || !tenantId}><Wallet className="mr-2 h-4 w-4" /> Generar cargos del mes</Button>
         </CardContent></Card>
 

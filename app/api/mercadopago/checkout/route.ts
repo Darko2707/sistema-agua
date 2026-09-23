@@ -1,6 +1,7 @@
 import { headers } from 'next/headers';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
+import { and, eq } from 'drizzle-orm';
 
 import { auth } from '@/lib/auth';
 import { createMercadoPagoClients } from '@/lib/mercadopago';
@@ -9,9 +10,10 @@ import { checkoutAccountLimiter } from '@/lib/ratelimit';
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit-guard';
 import { opaqueRateLimitKey } from '@/lib/request-security';
 import { residenteRepo } from '@/src/infrastructure/db/repositories';
-import { calcularDesglosePago, calcularMontoBase } from '@/src/domain/pagos/calculator';
+import { calcularDesglosePago, calcularMontoServicio } from '@/src/domain/pagos/calculator';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
 import { db } from '@/db';
+import { cargosServicios, fraccionamientoServicios, servicios } from '@/db/schema';
 import {
   persistMercadoPagoPaymentIntent,
   type MercadoPagoPaymentIntentPeriod,
@@ -76,6 +78,16 @@ async function nextUnpaidPeriods(perfilId: string, tenantId: string, count: numb
     columns: { mes: true, anio: true },
   });
   const paidKeys = new Set(pagados.map(pago => periodoKey(pago)));
+  const cargosAgua = await db.select({ mes: cargosServicios.mes, anio: cargosServicios.anio })
+    .from(cargosServicios)
+    .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, cargosServicios.fraccionamientoServicioId))
+    .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
+    .where(and(
+      eq(cargosServicios.perfilId, perfilId),
+      eq(cargosServicios.fraccionamientoId, tenantId),
+      eq(servicios.clave, 'agua'),
+    ));
+  const cargoAguaKeys = new Set(cargosAgua.map(cargo => periodoKey(cargo)));
   const result: Array<{ mes: number; anio: number }> = [];
 
   // El limite es por operacion (12), no por la distancia del calendario. Si
@@ -84,7 +96,8 @@ async function nextUnpaidPeriods(perfilId: string, tenantId: string, count: numb
   for (let offset = 0; result.length < count; offset += 1) {
     const candidate = addMonths(periodo.mes, periodo.anio, offset);
     if (candidate.anio > 2100) break;
-    if (!paidKeys.has(periodoKey(candidate))) result.push(candidate);
+    const key = periodoKey(candidate);
+    if (!paidKeys.has(key) && !cargoAguaKeys.has(key)) result.push(candidate);
   }
 
   return result;
@@ -179,8 +192,18 @@ export async function POST(request: Request) {
   }
 
   const esReconexion = perfil.estadoAgua === 'cortado';
-  const montoMensual = Number(calcularMontoBase(perfil.circuito.montoMensual, false, perfil.circuito.montoReconexion));
-  const montoReconexion = esReconexion ? Number(perfil.circuito.montoReconexion) : 0;
+  const servicioAgua = residenteRepo.findWaterServiceConfig
+    ? await residenteRepo.findWaterServiceConfig(perfil.id)
+    : null;
+  const configAgua = servicioAgua ?? {
+    montoMensual: perfil.circuito.montoMensual,
+    montoReconexion: perfil.circuito.montoReconexion,
+    conCorteFisico: true,
+  };
+  const montoMensual = calcularMontoServicio(configAgua);
+  const montoReconexion = esReconexion
+    ? calcularMontoServicio(configAgua, { incluyeReconexion: true }) - montoMensual
+    : 0;
   const montoBase = montoMensual * mesesAdelantados + montoReconexion;
   const desglose = calcularDesglosePago(montoBase);
 
@@ -188,11 +211,7 @@ export async function POST(request: Request) {
     const periodoEsReconexion = index === 0 && esReconexion;
     return {
       ...periodo,
-      monto: calcularMontoBase(
-        perfil.circuito!.montoMensual,
-        periodoEsReconexion,
-        perfil.circuito!.montoReconexion,
-      ).toFixed(2),
+      monto: calcularMontoServicio(configAgua, { incluyeReconexion: periodoEsReconexion }).toFixed(2),
       esReconexion: periodoEsReconexion,
     };
   });

@@ -1,7 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 
 import { db } from '@/db';
-import { cargosServicios, fraccionamientoServicios, perfilesServicios, servicios } from '@/db/schema';
+import { cargosServicios, fraccionamientoServicios, pagos, perfilesServicios, servicios } from '@/db/schema';
 import { subscriptionService } from './subscription.service';
 
 export type ServiceChargePeriod = {
@@ -11,8 +11,12 @@ export type ServiceChargePeriod = {
 };
 
 /**
- * Genera los cargos de servicios de un periodo de forma idempotente.
- * El servicio de agua queda fuera porque conserva el flujo contable existente.
+ * Genera cargos de servicios de forma idempotente.
+ *
+ * Agua también es un servicio del catálogo; su única particularidad es
+ * `con_corte_fisico`, que pertenece a la operación y no a la facturación.
+ * Los pagos históricos de agua se utilizan para crear el cargo ya pagado y
+ * así no duplicar cobros durante la transición del ledger antiguo.
  */
 export async function generateMonthlyServiceCharges(input: ServiceChargePeriod) {
   await subscriptionService.requireOperational(input.fraccionamientoId);
@@ -33,18 +37,48 @@ export async function generateMonthlyServiceCharges(input: ServiceChargePeriod) 
       eq(servicios.activo, true),
     ));
 
-  const candidates = rows.filter(row => row.clave !== 'agua');
+  const paidWater = await db.select({
+    perfilId: pagos.perfilId,
+    mes: pagos.mes,
+    anio: pagos.anio,
+    monto: pagos.monto,
+    metodo: pagos.metodo,
+    mercadoPagoPaymentId: pagos.mercadoPagoPaymentId,
+    folio: pagos.folio,
+    pagadoEn: pagos.fechaPago,
+  }).from(pagos).where(and(
+    eq(pagos.fraccionamientoId, input.fraccionamientoId),
+    eq(pagos.estado, 'pagado'),
+    eq(pagos.mes, input.mes),
+    eq(pagos.anio, input.anio),
+  ));
+  const paidWaterByPeriod = new Map(
+    paidWater.map(pago => [`${pago.perfilId}:${pago.mes}:${pago.anio}`, pago] as const),
+  );
+  const candidates = rows;
   if (candidates.length === 0) return { generados: 0, candidatos: 0 };
 
-  const inserted = await db.transaction(async tx => tx.insert(cargosServicios).values(candidates.map(row => ({
-    fraccionamientoId: row.fraccionamientoId,
-    perfilId: row.perfilId,
-    fraccionamientoServicioId: row.fraccionamientoServicioId,
-    mes: input.mes,
-    anio: input.anio,
-    monto: row.monto,
-    estado: 'pendiente' as const,
-  }))).onConflictDoNothing().returning({ id: cargosServicios.id }));
+  const inserted = await db.transaction(async tx => tx.insert(cargosServicios).values(candidates.map(row => {
+    const legacyPago = row.clave === 'agua'
+      ? paidWaterByPeriod.get(`${row.perfilId}:${input.mes}:${input.anio}`)
+      : undefined;
+    const pagoCoincide = legacyPago && Math.round(Number(legacyPago.monto) * 100) === Math.round(Number(row.monto) * 100);
+    return {
+      // The tenant is already constrained by the query; use the validated input
+      // because legacy TypeScript rows may still expose a nullable column.
+      fraccionamientoId: input.fraccionamientoId,
+      perfilId: row.perfilId,
+      fraccionamientoServicioId: row.fraccionamientoServicioId,
+      mes: input.mes,
+      anio: input.anio,
+      monto: row.monto,
+      estado: pagoCoincide ? 'pagado' as const : 'pendiente' as const,
+      metodo: pagoCoincide ? legacyPago?.metodo ?? null : null,
+      mercadoPagoPaymentId: pagoCoincide ? legacyPago?.mercadoPagoPaymentId ?? null : null,
+      folio: pagoCoincide ? legacyPago?.folio ?? null : null,
+      pagadoEn: pagoCoincide ? legacyPago?.pagadoEn ?? null : null,
+    };
+  })).onConflictDoNothing().returning({ id: cargosServicios.id }));
 
   return { generados: inserted.length, candidatos: candidates.length };
 }

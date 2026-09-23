@@ -40,6 +40,20 @@ export async function encolarProximosCorte(fecha = new Date()) {
       INNER JOIN circuitos AS circuito ON circuito.id = perfil.circuito_id
       WHERE circuito.activo = true
         AND perfil.estado_agua = 'activo'
+        AND EXISTS (
+          SELECT 1
+          FROM perfiles_servicios AS perfil_servicio
+          INNER JOIN fraccionamiento_servicios AS activacion
+            ON activacion.id = perfil_servicio.fraccionamiento_servicio_id
+          INNER JOIN servicios AS servicio
+            ON servicio.id = activacion.servicio_id
+          WHERE perfil_servicio.perfil_id = perfil.id
+            AND perfil_servicio.fraccionamiento_id = perfil.fraccionamiento_id
+            AND perfil_servicio.activo = true
+            AND perfil_servicio.estado_agua = 'activo'
+            AND servicio.clave = 'agua'
+            AND servicio.con_corte_fisico = true
+        )
         AND NOT EXISTS (
           SELECT 1
           FROM pagos AS pago

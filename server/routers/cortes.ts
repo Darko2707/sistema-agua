@@ -53,7 +53,7 @@ export const cortesRouter = router({
     }),
 
   confirmarCorte: operationalRoleProcedure('cuadrilla_cortes', 'admin')
-    .input(z.object({ perfilId: z.string().uuid() }))
+    .input(z.object({ perfilId: z.string().uuid(), ordenId: z.string().uuid().optional() }))
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.role !== 'admin') {
         await assertPerfilDeCuadrilla(ctx.user.id, input.perfilId, ctx.user.fraccionamientoId);
@@ -61,6 +61,7 @@ export const cortesRouter = router({
       const result = await confirmarCorteHandler.execute({
         perfilId: input.perfilId,
         trabajadorId: ctx.user.id,
+        ordenId: input.ordenId,
       });
 
       // El servicio sólo retorna después del COMMIT que también persistió el outbox.
@@ -77,7 +78,7 @@ export const cortesRouter = router({
     }),
 
   confirmarReconexion: operationalRoleProcedure('cuadrilla_cortes', 'admin')
-    .input(z.object({ perfilId: z.string().uuid() }))
+    .input(z.object({ perfilId: z.string().uuid(), ordenId: z.string().uuid().optional() }))
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.role !== 'admin') {
         await assertPerfilDeCuadrilla(ctx.user.id, input.perfilId, ctx.user.fraccionamientoId);
@@ -85,6 +86,7 @@ export const cortesRouter = router({
       const result = await confirmarReconexionHandler.execute({
         perfilId: input.perfilId,
         actorId: ctx.user.id,
+        ordenId: input.ordenId,
       });
 
       schedulePushDispatch();

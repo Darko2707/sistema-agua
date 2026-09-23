@@ -3,7 +3,7 @@ import type { ResidenteRepository } from '../../ports/residente.repository';
 import type { HistorialPagosQuery } from './historial-pagos.query';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
 import { DIA_CORTE } from '@/src/domain/pagos/constants';
-import { calcularDesglosePago, calcularMontoBase } from '@/src/domain/pagos/calculator';
+import { calcularDesglosePago, calcularMontoServicio } from '@/src/domain/pagos/calculator';
 import { fechaNegocio } from '@/src/domain/shared/fecha-negocio';
 
 const DEFAULT_HISTORIAL_LIMIT = 48;
@@ -35,11 +35,14 @@ export class HistorialPagosHandler {
     const diasVencido = esMoroso ? hoy - DIA_CORTE : 0;
 
     const esReconexion  = perfil.estadoAgua === 'cortado';
-    const montoBase     = calcularMontoBase(
-      perfil.circuito?.montoMensual ?? '50',
-      esReconexion,
-      perfil.circuito?.montoReconexion ?? '300',
-    );
+    const servicioAgua = residenteRepo.findWaterServiceConfig
+      ? await residenteRepo.findWaterServiceConfig(perfil.id)
+      : null;
+    const montoBase     = calcularMontoServicio(servicioAgua ?? {
+      montoMensual: perfil.circuito?.montoMensual ?? '50',
+      montoReconexion: perfil.circuito?.montoReconexion ?? '300',
+      conCorteFisico: true,
+    }, { incluyeReconexion: esReconexion });
     const desgloseVigente = calcularDesglosePago(montoBase);
 
     return {

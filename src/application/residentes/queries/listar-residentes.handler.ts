@@ -9,6 +9,8 @@ export type ListarResidentesQuery = {
   userId: string;
   page?: number;
   pageSize?: number;
+  fraccionamientoId?: string;
+  circuitoId?: string;
 };
 
 type Deps = {
@@ -54,7 +56,9 @@ export class ListarResidentesHandler {
     const pageSize = query.pageSize ?? 50;
 
     if (query.rol === 'admin') {
-      const result = await residenteRepo.findAllPaginated(page, pageSize);
+      const result = query.fraccionamientoId && residenteRepo.findByTenantPaginated
+        ? await residenteRepo.findByTenantPaginated(query.fraccionamientoId, query.circuitoId, page, pageSize)
+        : await residenteRepo.findAllPaginated(page, pageSize);
       return {
         items:      result.items.map(p => mapPerfil(p, periodo, vencido)),
         total:      result.total,

@@ -18,6 +18,9 @@ export async function generarTicketPDF(data: {
   retencionIsr?: string | null;
   retencionIva?: string | null;
   emailContacto?: string;
+  tipoComprobante?: 'agua' | 'servicio';
+  servicioNombre?: string;
+  esReconexion?: boolean;
 }) {
   const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
 
@@ -71,7 +74,7 @@ export async function generarTicketPDF(data: {
     page.drawImage(logoImg, { x: LOGO_X, y: LOGO_Y, width: LOGO_S, height: LOGO_S });
   }
 
-  page.drawText('Comprobante de pago', {
+  page.drawText(data.tipoComprobante === 'servicio' ? 'Comprobante de servicio' : 'Comprobante de pago', {
     x: 28, y: HEADER_Y + 50, size: 19, font: bold, color: BRAND,
   });
   page.drawText(fraccionamiento, {
@@ -108,9 +111,9 @@ export async function generarTicketPDF(data: {
   );
 
   y -= 28;
-  page.drawText('Periodo', { x: 28, y, size: 8, font, color: GRAY });
+  page.drawText(data.tipoComprobante === 'servicio' ? 'Servicio / periodo' : 'Periodo', { x: 28, y, size: 8, font, color: GRAY });
   y -= 18;
-  page.drawText(`${MESES[(data.mes ?? 1) - 1]} ${data.anio}`, {
+  page.drawText(`${data.servicioNombre ? `${data.servicioNombre} · ` : ''}${data.esReconexion ? 'Reconexión · ' : ''}${MESES[(data.mes ?? 1) - 1]} ${data.anio}`, {
     x: 28, y, size: 13, font: bold, color: BLACK,
   });
 

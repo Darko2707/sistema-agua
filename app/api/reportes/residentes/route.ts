@@ -143,6 +143,23 @@ export async function GET(req: Request) {
       })
     : [];
 
+  const [ordenesList, cortesActivos] = perfilIds.length > 0
+    ? await Promise.all([
+        db.query.ordenesTrabajo.findMany({
+          where: (o, { and, eq, inArray }) => and(
+            inArray(o.perfilId, perfilIds),
+            eq(o.fraccionamientoId, dbUser.fraccionamientoId!),
+          ),
+          columns: { id: true, perfilId: true, tipo: true, estado: true, creadoEn: true },
+          orderBy: (o, { desc }) => [desc(o.creadoEn)],
+        }),
+        db.query.cortes.findMany({
+          where: (c, { and, eq, inArray }) => and(inArray(c.perfilId, perfilIds), eq(c.activo, true)),
+          columns: { perfilId: true },
+        }),
+      ])
+    : [[], []];
+
   const residentesData = residentes.map(r => {
     const pagosR = pagosList.filter(p => p.perfilId === r.id);
     const pagosAnio = periodos.map(({ mes, anio }) => {
@@ -154,12 +171,18 @@ export async function GET(req: Request) {
     const ultimoPago    = pagosR
       .filter(p => p.estado === 'pagado' && p.fechaPago)
       .sort((a, b) => new Date(b.fechaPago!).getTime() - new Date(a.fechaPago!).getTime())[0]?.fechaPago ?? null;
+    const ordenesR = ordenesList.filter(orden => orden.perfilId === r.id);
+    const ordenEstado = (tipo: 'corte' | 'reconexion') =>
+      ordenesR.find(orden => orden.tipo === tipo)?.estado ?? null;
     return {
       nombre:              r.usuario.name,
       telefono:            r.telefono,
       edificio:            r.edificio,
       departamento:        r.departamento,
       estadoAgua:          r.estadoAgua,
+      corteFisicoActivo:   cortesActivos.some(corte => corte.perfilId === r.id),
+      ordenCorteEstado:    ordenEstado('corte'),
+      ordenReconexionEstado: ordenEstado('reconexion'),
       tenencia:            r.tenencia ?? null,
       nombrePropietario:   r.nombrePropietario ?? null,
       telefonoPropietario: r.telefonoPropietario ?? null,

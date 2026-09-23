@@ -12,6 +12,7 @@ export const ticketsRouter = router({
       const ticket = await db.query.tickets.findFirst({
         where: (t, { eq }) => eq(t.folio, input.folio),
         with: {
+          cargoServicio: true,
           pago: {
             columns: {
               mes: true, anio: true, monto: true, estado: true, fechaPago: true, metodo: true,
@@ -28,6 +29,7 @@ export const ticketsRouter = router({
       if (!ticket) throw new TRPCError({ code: 'NOT_FOUND', message: 'Ticket no válido' });
       return {
         folio: ticket.folio,
+        tipo: ticket.tipo,
         emitidoEn: ticket.emitidoEn,
         pago: ticket.pago ? {
           mes:       ticket.pago.mes,
@@ -41,6 +43,15 @@ export const ticketsRouter = router({
             departamento: ticket.pago.perfil.departamento,
             usuario:      { name: ticket.pago.perfil.usuario?.name ?? null },
           } : null,
+          } : null,
+        cargoServicio: ticket.cargoServicio ? {
+          id: ticket.cargoServicio.id,
+          mes: ticket.cargoServicio.mes,
+          anio: ticket.cargoServicio.anio,
+          monto: ticket.cargoServicio.monto,
+          estado: ticket.cargoServicio.estado,
+          metodo: ticket.cargoServicio.metodo,
+          folio: ticket.cargoServicio.folio,
         } : null,
       };
     }),
@@ -62,11 +73,32 @@ export const ticketsRouter = router({
       ),
     });
     const ids = misPagos.map((p) => p.id);
-    if (ids.length === 0) return [];
+    const misCargos = await db.query.cargosServicios.findMany({
+      where: (c, { eq, and }) => and(
+        eq(c.perfilId, perfil.id),
+        eq(c.fraccionamientoId, ctx.user.fraccionamientoId!),
+      ),
+    });
+    const cargoIds = misCargos.map((c) => c.id);
+    if (ids.length === 0 && cargoIds.length === 0) return [];
 
-    return db.query.tickets.findMany({
-      where: (t, { inArray }) => inArray(t.pagoId, ids),
+    const rows = await db.query.tickets.findMany({
+      where: (t, { inArray, or }) => or(
+        ...(ids.length ? [inArray(t.pagoId, ids)] : []),
+        ...(cargoIds.length ? [inArray(t.cargoServicioId, cargoIds)] : []),
+      ),
       with: {
+        cargoServicio: {
+          columns: {
+            id: true,
+            mes: true,
+            anio: true,
+            monto: true,
+            estado: true,
+            metodo: true,
+            folio: true,
+          },
+        },
         pago: {
           columns: {
             id: true,
@@ -103,13 +135,19 @@ export const ticketsRouter = router({
         },
       },
       orderBy: (t, { desc }) => [desc(t.emitidoEn)],
-    }).then(rows => rows.map(ticket => ({
+    });
+    return rows.map(ticket => ({
       ...ticket,
+      tipo: ticket.tipo,
+      cargoServicio: ticket.cargoServicio ? {
+        ...ticket.cargoServicio,
+        montoTotalCobrado: ticket.cargoServicio.monto,
+      } : null,
       pago: ticket.pago ? {
         ...ticket.pago,
         montoCircuito: ticket.pago.montoBase ?? ticket.pago.monto,
         montoTotalCobrado: ticket.pago.monto,
       } : null,
-    })));
+    }));
   }),
 });

@@ -39,6 +39,7 @@ const perfilSchema = z.object({
   telefono: z.string().regex(/^\d{10}$/, TELEFONO_ERROR),
   sexo: z.enum(['masculino', 'femenino', 'otro']),
   tenencia: z.enum(['propietario', 'inquilino']),
+  fraccionamientoId: z.string().trim().min(1, 'Selecciona tu fraccionamiento'),
   circuitoId: z.string().trim().min(1, 'Selecciona tu circuito'),
   edificio: z.string().trim()
     .regex(/^\d{1,6}$/, 'Usa un número de hasta 6 dígitos')
@@ -93,13 +94,18 @@ export default function RegistroPage() {
   const perfil = useForm<PerfilForm>({
     resolver: zodResolver(perfilSchema),
     mode: 'onTouched',
-    defaultValues: { sexo: 'masculino', tenencia: 'propietario', deptoLetra: '' },
+    defaultValues: { sexo: 'masculino', tenencia: 'propietario', fraccionamientoId: '', circuitoId: '', deptoLetra: '' },
   });
 
   const tenencia = useWatch({ control: perfil.control, name: 'tenencia' });
+  const fraccionamientoId = useWatch({ control: perfil.control, name: 'fraccionamientoId' }) ?? '';
   const esInquilino = tenencia === 'inquilino';
   const deptoNumero = useWatch({ control: perfil.control, name: 'deptoNumero' }) ?? '';
   const deptoLetra = useWatch({ control: perfil.control, name: 'deptoLetra' }) ?? '';
+  const fraccionamientos = Array.from(new Map(circuitos.map((c) => [c.fraccionamientoId, c.fraccionamientoNombre])).entries())
+    .filter(([id]) => Boolean(id))
+    .map(([id, nombre]) => ({ id: id as string, nombre: nombre ?? 'Fraccionamiento' }));
+  const circuitosDelFraccionamiento = circuitos.filter((c) => c.fraccionamientoId === fraccionamientoId);
 
   useEffect(() => {
     let active = true;
@@ -378,10 +384,29 @@ export default function RegistroPage() {
               </select>
             </div>
             <div>
+              <label htmlFor="fraccionamientoId" style={labelBase}>Fraccionamiento</label>
+              <select
+                id="fraccionamientoId"
+                className="auth-sel"
+                disabled={circuitosQuery.isLoading || circuitosQuery.isError}
+                aria-required="true"
+                aria-describedby={perfil.formState.errors.fraccionamientoId ? 'tenant-err' : undefined}
+                aria-invalid={!!perfil.formState.errors.fraccionamientoId}
+                style={selectBase}
+                {...perfil.register('fraccionamientoId', {
+                  onChange: () => perfil.setValue('circuitoId', '', { shouldDirty: true, shouldValidate: true }),
+                })}
+              >
+                <option value="">{circuitosQuery.isLoading ? 'Cargando fraccionamientos...' : 'Selecciona tu fraccionamiento'}</option>
+                {fraccionamientos.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.nombre}</option>)}
+              </select>
+              <FieldError id="tenant-err" message={perfil.formState.errors.fraccionamientoId?.message} />
+            </div>
+            <div>
               <label htmlFor="circuitoId" style={labelBase}>Circuito</label>
-              <select id="circuitoId" className="auth-sel" disabled={circuitosQuery.isLoading || circuitosQuery.isError} aria-required="true" aria-describedby={perfil.formState.errors.circuitoId ? 'circ-status circ-err' : 'circ-status'} aria-invalid={!!perfil.formState.errors.circuitoId || circuitosQuery.isError} style={{ ...selectBase, opacity: circuitosQuery.isLoading || circuitosQuery.isError ? 0.7 : 1 }} {...perfil.register('circuitoId')}>
-                <option value="">{circuitosQuery.isLoading ? 'Cargando circuitos...' : 'Selecciona tu circuito'}</option>
-                {circuitos.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+              <select id="circuitoId" className="auth-sel" disabled={!fraccionamientoId || circuitosQuery.isLoading || circuitosQuery.isError} aria-required="true" aria-describedby={perfil.formState.errors.circuitoId ? 'circ-status circ-err' : 'circ-status'} aria-invalid={!!perfil.formState.errors.circuitoId || circuitosQuery.isError} style={{ ...selectBase, opacity: !fraccionamientoId || circuitosQuery.isLoading || circuitosQuery.isError ? 0.7 : 1 }} {...perfil.register('circuitoId')}>
+                <option value="">{!fraccionamientoId ? 'Primero selecciona un fraccionamiento' : circuitosQuery.isLoading ? 'Cargando circuitos...' : 'Selecciona tu circuito'}</option>
+                {circuitosDelFraccionamiento.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
               </select>
               <p id="circ-status" role={circuitosQuery.isError ? 'alert' : 'status'} style={{ fontSize: 12, color: circuitosQuery.isError ? C.danger : C.textWarm, marginTop: 4 }}>
                 {circuitosQuery.isError

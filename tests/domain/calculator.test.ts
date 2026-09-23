@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calcularDesglosePago, calcularDesglosePagoManual, calcularMontoBase } from '@/src/domain/pagos/calculator';
+import { calcularDesglosePago, calcularDesglosePagoManual, calcularDesgloseServicio, calcularMontoBase, calcularMontoServicio } from '@/src/domain/pagos/calculator';
 
 describe('calcularDesglosePago', () => {
   it('montoBase y subtotal son iguales (sin IVA — sistema informal sin SAT)', () => {
@@ -74,5 +74,27 @@ describe('calcularMontoBase', () => {
   it('acepta montoMensual como string', () => {
     expect(calcularMontoBase('50', false)).toBe(50);
     expect(calcularMontoBase('50', true, '300')).toBe(350);
+  });
+});
+
+describe('calcularMontoServicio', () => {
+  it('usa la tarifa de la activación del servicio', () => {
+    expect(calcularMontoServicio({ montoMensual: '75.50', montoReconexion: '250', conCorteFisico: true }, { incluyeReconexion: true })).toBe(325.5);
+  });
+
+  it('no cobra reconexión en servicios sin corte físico', () => {
+    expect(() => calcularMontoServicio({ montoMensual: 40, montoReconexion: 200, conCorteFisico: false }, { incluyeReconexion: true })).toThrow('no permite cobrar reconexión');
+  });
+
+  it('mantiene el mismo contrato de desglose para pago manual y Mercado Pago', () => {
+    expect(calcularDesgloseServicio(100, 'manual').total).toBe('100.00');
+    expect(Number(calcularDesgloseServicio(100, 'mercado_pago').total)).toBeGreaterThan(100);
+  });
+
+  it('permite excluir recargos de tarjeta del total cobrado', () => {
+    const d = calcularDesgloseServicio(100, 'mercado_pago', { repercutirRecargosTarjeta: false });
+    expect(d.total).toBe('100.00');
+    expect(Number(d.comisionMercadoPago)).toBeGreaterThan(0);
+    expect(Number(d.montoNetoRepresentante)).toBeLessThan(100);
   });
 });

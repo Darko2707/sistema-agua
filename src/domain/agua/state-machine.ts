@@ -9,6 +9,12 @@ export const ESTADOS = {
 
 export type EstadoAgua = (typeof ESTADOS)[keyof typeof ESTADOS];
 
+/** Metadatos mínimos de un servicio que puede tener operación física. */
+export type ServicioOperable = {
+  clave: string;
+  conCorteFisico: boolean;
+};
+
 // ─── Acciones ────────────────────────────────────────────────────────────────
 
 export const ACCIONES = {
@@ -52,6 +58,37 @@ export type ResultadoTransicion = {
   nuevoEstado: EstadoAgua;
   efectos: Efecto[];
 };
+
+const ACCIONES_CORTE_FISICO = new Set<AccionEstado>([
+  ACCIONES.EJECUTAR_CORTE,
+  ACCIONES.EJECUTAR_RECONEXION,
+  ACCIONES.RECONEXION_DIRECTA,
+]);
+
+/**
+ * Comprueba que una transición física solo se ejecute para un servicio
+ * configurado explícitamente con corte físico. `undefined` se conserva como
+ * compatibilidad temporal con fixtures y datos anteriores a perfil_servicio.
+ */
+export function validarServicioOperable(
+  servicio: ServicioOperable | undefined,
+  accion: AccionEstado,
+): void {
+  if (!servicio || !ACCIONES_CORTE_FISICO.has(accion)) return;
+  if (!servicio.conCorteFisico) {
+    throw new Error(`El servicio "${servicio.clave}" no permite cortes físicos`);
+  }
+}
+
+export function aplicarTransicionServicio(
+  estadoActual: EstadoAgua,
+  accion: AccionEstado,
+  contexto: ContextoTransicion,
+  servicio?: ServicioOperable,
+): ResultadoTransicion {
+  validarServicioOperable(servicio, accion);
+  return aplicarTransicion(estadoActual, accion, contexto);
+}
 
 // ─── Tabla de transiciones ───────────────────────────────────────────────────
 

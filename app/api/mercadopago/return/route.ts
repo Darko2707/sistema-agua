@@ -6,6 +6,7 @@ import { residenteRepo, pagoRepo, circuitoRepo } from '@/src/infrastructure/db/r
 import { ProcesarPagoMpHandler } from '@/src/application/pagos/commands/procesar-pago-mp.handler';
 import { logger } from '@/lib/logger';
 import { schedulePushDispatch } from '@/lib/push-dispatcher';
+import { isServiceCargoReference, processServiceCargoPayment } from '@/src/infrastructure/mercadopago/service-cargo-payment';
 
 const procesarPagoMpHandler = new ProcesarPagoMpHandler({ residenteRepo, pagoRepo, circuitoRepo });
 
@@ -21,6 +22,11 @@ export async function GET(request: Request) {
   }
 
   try {
+    if (isServiceCargoReference(externalReference)) {
+      await processServiceCargoPayment({ reference: externalReference, paymentId });
+      fallbackUrl.searchParams.set('payment', 'success');
+      return Response.redirect(fallbackUrl);
+    }
     const verified = await fetchVerifiedMercadoPagoPayment({
       externalReference,
       paymentId,

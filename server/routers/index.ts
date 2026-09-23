@@ -8,6 +8,7 @@ import { reportesRouter } from './reportes'
 import { operacionRouter } from './operacion'
 import { suscripcionesRouter } from './suscripciones'
 import { serviciosRouter } from './servicios'
+import { fraccionamientosRouter } from './fraccionamientos'
 
 export const appRouter = router({
   pagos:     pagosRouter,
@@ -19,6 +20,7 @@ export const appRouter = router({
   operacion: operacionRouter,
   suscripciones: suscripcionesRouter,
   servicios: serviciosRouter,
+  fraccionamientos: fraccionamientosRouter,
 })
 
 export type AppRouter = typeof appRouter

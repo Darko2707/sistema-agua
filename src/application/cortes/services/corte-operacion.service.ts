@@ -2,8 +2,9 @@ import { TRPCError } from '@trpc/server';
 
 import {
   ACCIONES,
-  aplicarTransicion,
+  aplicarTransicionServicio,
   type EstadoAgua,
+  type ServicioOperable,
 } from '@/src/domain/agua/state-machine';
 import type { PushNotificationInput } from '@/src/application/ports/push-notification';
 
@@ -11,6 +12,10 @@ export type PerfilCorteBloqueado = {
   id: string;
   userId: string;
   estadoAgua: EstadoAgua;
+  fraccionamientoId?: string | null;
+  circuitoId?: string | null;
+  fraccionamientoServicioId?: string | null;
+  servicio?: ServicioOperable;
 };
 
 export type CorteOperacionData = {
@@ -22,6 +27,15 @@ export type CorteOperacionData = {
   fechaCorte: Date | null;
   fechaReconexion: Date | null;
   reconectadoPor: string | null;
+};
+
+export type OrdenTrabajoData = {
+  id: string;
+  perfilId: string;
+  tipo: 'corte' | 'reconexion';
+  estado: 'pendiente' | 'asignada' | 'en_progreso' | 'completada' | 'cancelada';
+  trabajadorId: string | null;
+  corteId: string | null;
 };
 
 export interface CorteOperacionTransaction {
@@ -53,6 +67,33 @@ export interface CorteOperacionTransaction {
     perfilId: string;
   }): Promise<void>;
   insertPushNotification(input: PushNotificationInput): Promise<void>;
+  /** Optional during rollout; production adapters persist orders atomically. */
+  lockOrdenTrabajo?(input: {
+    ordenId: string;
+    perfilId: string;
+    tipo: 'corte' | 'reconexion';
+  }): Promise<OrdenTrabajoData | null>;
+  updateOrdenTrabajo?(input: {
+    ordenId: string;
+    estado: 'en_progreso' | 'completada';
+    actorId: string;
+    fecha: Date;
+    corteId?: string;
+  }): Promise<void>;
+  recordOrdenTrabajo?(input: {
+    fraccionamientoId: string;
+    circuitoId: string;
+    perfilId: string;
+    fraccionamientoServicioId: string;
+    tipo: 'corte' | 'reconexion';
+    trabajadorId: string;
+    creadoPor: string;
+    ejecutadoPor: string;
+    corteId: string;
+    motivo: string;
+    idempotencyKey: string;
+    fecha: Date;
+  }): Promise<void>;
 }
 
 export interface CorteOperacionDatabase {
@@ -68,7 +109,7 @@ function transicionOError(
   actorId: string,
 ) {
   try {
-    return aplicarTransicion(estado, accion, { fecha, actorId });
+    return aplicarTransicionServicio(estado, accion, { fecha, actorId });
   } catch (error) {
     throw new TRPCError({
       code: 'BAD_REQUEST',
@@ -88,10 +129,25 @@ export class CorteOperacionService {
     private readonly now: () => Date = () => new Date(),
   ) {}
 
-  async confirmarCorte(input: { perfilId: string; trabajadorId: string }): Promise<CorteOperacionData> {
+  async confirmarCorte(input: { perfilId: string; trabajadorId: string; ordenId?: string }): Promise<CorteOperacionData> {
     return this.database.transaction(async (tx) => {
       const perfil = await tx.lockPerfil(input.perfilId);
       if (!perfil) throw new TRPCError({ code: 'NOT_FOUND' });
+      if (perfil.servicio && !perfil.servicio.conCorteFisico) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: `El servicio "${perfil.servicio.clave}" no permite cortes físicos` });
+      }
+
+      if (input.ordenId && tx.lockOrdenTrabajo) {
+        const orden = await tx.lockOrdenTrabajo({ ordenId: input.ordenId, perfilId: input.perfilId, tipo: 'corte' });
+        if (!orden) throw new TRPCError({ code: 'NOT_FOUND', message: 'Orden de corte no encontrada' });
+        if (orden.estado === 'completada' || orden.estado === 'cancelada') {
+          throw new TRPCError({ code: 'CONFLICT', message: 'La orden de corte ya no está disponible' });
+        }
+        if (orden.trabajadorId && orden.trabajadorId !== input.trabajadorId) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'La orden está asignada a otra cuadrilla' });
+        }
+        await tx.updateOrdenTrabajo?.({ ordenId: orden.id, estado: 'en_progreso', actorId: input.trabajadorId, fecha: this.now() });
+      }
 
       const fecha = this.now();
       const resultado = transicionOError(
@@ -111,6 +167,30 @@ export class CorteOperacionService {
         motivo: efecto.motivo,
         fecha: efecto.fecha,
       });
+      if (input.ordenId && tx.updateOrdenTrabajo) {
+        await tx.updateOrdenTrabajo({
+          ordenId: input.ordenId,
+          estado: 'completada',
+          actorId: input.trabajadorId,
+          fecha: efecto.fecha,
+          corteId: corte.id,
+        });
+      } else if (tx.recordOrdenTrabajo && perfil.fraccionamientoId && perfil.circuitoId && perfil.fraccionamientoServicioId) {
+        await tx.recordOrdenTrabajo({
+          fraccionamientoId: perfil.fraccionamientoId,
+          circuitoId: perfil.circuitoId,
+          perfilId: input.perfilId,
+          fraccionamientoServicioId: perfil.fraccionamientoServicioId,
+          tipo: 'corte',
+          trabajadorId: input.trabajadorId,
+          creadoPor: input.trabajadorId,
+          ejecutadoPor: input.trabajadorId,
+          corteId: corte.id,
+          motivo: efecto.motivo,
+          idempotencyKey: `corte:${corte.id}`,
+          fecha: efecto.fecha,
+        });
+      }
       await tx.updateEstadoPerfil(input.perfilId, resultado.nuevoEstado);
       await tx.insertBitacora({
         perfilId: input.perfilId,
@@ -137,13 +217,28 @@ export class CorteOperacionService {
     });
   }
 
-  async confirmarReconexion(input: { perfilId: string; actorId: string }): Promise<{
+  async confirmarReconexion(input: { perfilId: string; actorId: string; ordenId?: string }): Promise<{
     ok: true;
     corteId: string | null;
   }> {
     return this.database.transaction(async (tx) => {
       const perfil = await tx.lockPerfil(input.perfilId);
       if (!perfil) throw new TRPCError({ code: 'NOT_FOUND' });
+      if (perfil.servicio && !perfil.servicio.conCorteFisico) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: `El servicio "${perfil.servicio.clave}" no permite reconexiones físicas` });
+      }
+
+      if (input.ordenId && tx.lockOrdenTrabajo) {
+        const orden = await tx.lockOrdenTrabajo({ ordenId: input.ordenId, perfilId: input.perfilId, tipo: 'reconexion' });
+        if (!orden) throw new TRPCError({ code: 'NOT_FOUND', message: 'Orden de reconexión no encontrada' });
+        if (orden.estado === 'completada' || orden.estado === 'cancelada') {
+          throw new TRPCError({ code: 'CONFLICT', message: 'La orden de reconexión ya no está disponible' });
+        }
+        if (orden.trabajadorId && orden.trabajadorId !== input.actorId) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'La orden está asignada a otra cuadrilla' });
+        }
+        await tx.updateOrdenTrabajo?.({ ordenId: orden.id, estado: 'en_progreso', actorId: input.actorId, fecha: this.now() });
+      }
 
       const fecha = this.now();
       const accion = perfil.estadoAgua === 'pendiente_reconexion'
@@ -167,6 +262,30 @@ export class CorteOperacionService {
         fecha: efecto.fecha,
         actorId: efecto.reconectadoPor ?? input.actorId,
       });
+      if (input.ordenId && tx.updateOrdenTrabajo) {
+        await tx.updateOrdenTrabajo({
+          ordenId: input.ordenId,
+          estado: 'completada',
+          actorId: input.actorId,
+          fecha: efecto.fecha,
+          corteId: corteActivo.id,
+        });
+      } else if (tx.recordOrdenTrabajo && perfil.fraccionamientoId && perfil.circuitoId && perfil.fraccionamientoServicioId) {
+        await tx.recordOrdenTrabajo({
+          fraccionamientoId: perfil.fraccionamientoId,
+          circuitoId: perfil.circuitoId,
+          perfilId: input.perfilId,
+          fraccionamientoServicioId: perfil.fraccionamientoServicioId,
+          tipo: 'reconexion',
+          trabajadorId: input.actorId,
+          creadoPor: input.actorId,
+          ejecutadoPor: input.actorId,
+          corteId: corteActivo.id,
+          motivo: 'reconexion_fisica',
+          idempotencyKey: `reconexion:${corteActivo.id}`,
+          fecha: efecto.fecha,
+        });
+      }
       await tx.updateEstadoPerfil(input.perfilId, resultado.nuevoEstado);
       await tx.insertBitacora({
         perfilId: input.perfilId,

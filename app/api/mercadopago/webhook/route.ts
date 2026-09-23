@@ -12,7 +12,11 @@ import {
 } from '@/src/infrastructure/mercadopago/payment-verification';
 import { logger } from '@/lib/logger';
 import { schedulePushDispatch } from '@/lib/push-dispatcher';
-import { isServiceCargoReference, processServiceCargoPayment } from '@/src/infrastructure/mercadopago/service-cargo-payment';
+import {
+  isServiceCargoReference,
+  processServiceCargoPayment,
+  ServiceCargoPaymentValidationError,
+} from '@/src/infrastructure/mercadopago/service-cargo-payment';
 
 const procesarPagoMpHandler = new ProcesarPagoMpHandler({ residenteRepo, pagoRepo, circuitoRepo });
 
@@ -83,7 +87,12 @@ export async function POST(request: Request) {
         return Response.json({ received: true, credited: true, alreadyProcessed: result.alreadyProcessed });
       } catch (error) {
         logger.warn('mp.webhook.cargo_servicio_invalido', { paymentId, error: error instanceof Error ? error.message : 'unknown' });
-        return Response.json({ received: true, credited: false });
+        if (error instanceof ServiceCargoPaymentValidationError) {
+          return Response.json({ received: true, credited: false });
+        }
+        // Errores de red, credenciales o base de datos deben devolver 500 para
+        // que Mercado Pago reintente y no se pierda un pago legítimo.
+        throw error;
       }
     }
 
