@@ -4,7 +4,6 @@ import { TRPCError } from '@trpc/server';
 import { db } from '@/db';
 import {
   auditoria,
-  circuitos,
   perfilesResidente,
   solicitudesCambioPerfil,
 } from '@/db/schema';

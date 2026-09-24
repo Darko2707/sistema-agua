@@ -1,11 +1,13 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EstadoAguaBadge } from '@/components/domain/EstadoAguaBadge';
-import { ROLES, type Circuito, type ResidenteCompleto } from '@/hooks/useAdmin';
+import { ROLES_ASIGNABLES, type Circuito, type ResidenteCompleto } from '@/hooks/useAdmin';
+import { Input } from '@/components/ui/input';
 
 const MESES_NOMBRE = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const MESES_CORTO  = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
@@ -42,12 +44,17 @@ type Props = {
   setFiltroEstado:            (v: string) => void;
   actualizando:               string | null;
   onCambiarRol:               (userId: string, rol: string) => void;
+  onAsignarCircuito:          (perfilId: string, circuitoId: string) => void;
   onRegistrarPagoRetroactivo: (
     perfilId: string,
     meses: MesAnio[],
     metodo: 'efectivo' | 'transferencia',
   ) => Promise<{ registrados: number; omitidos: string[] }>;
   onLimpiarFiltros:           () => void;
+  paginaMeta:                 { total: number; page: number; pageSize: number; totalPages: number };
+  busqueda:                   string;
+  onBusquedaChange:           (v: string) => void;
+  onPagina:                   (page: number) => void;
 };
 
 export function ResidentesTab({
@@ -59,8 +66,13 @@ export function ResidentesTab({
   setFiltroEstado,
   actualizando,
   onCambiarRol,
+  onAsignarCircuito,
   onRegistrarPagoRetroactivo,
   onLimpiarFiltros,
+  paginaMeta,
+  busqueda,
+  onBusquedaChange,
+  onPagina,
 }: Props) {
   const [modalResidente, setModalResidente] = useState<ResidenteCompleto | null>(null);
   const [mesesSel,       setMesesSel]       = useState<MesAnio[]>([]);
@@ -127,8 +139,25 @@ export function ResidentesTab({
     <>
       <Card>
         <CardHeader>
-          <CardTitle>Todos los residentes</CardTitle>
+          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle>Residentes</CardTitle>
+              <p className="text-sm text-muted-foreground">
+                {paginaMeta.total} registros · página {paginaMeta.page} de {Math.max(paginaMeta.totalPages, 1)}
+              </p>
+            </div>
+          </div>
           <div className="mt-2 flex flex-wrap gap-4">
+            <div className="relative min-w-[240px] flex-1">
+              <Search className="pointer-events-none absolute left-2.5 top-2 h-4 w-4 text-muted-foreground" />
+              <Input
+                value={busqueda}
+                onChange={(e) => onBusquedaChange(e.target.value)}
+                placeholder="Buscar nombre, correo, edificio o departamento"
+                className="pl-8"
+                aria-label="Buscar residentes"
+              />
+            </div>
             <div className="flex items-center gap-2">
               <label className="text-sm text-muted-foreground">Circuito:</label>
               <select
@@ -220,12 +249,22 @@ export function ResidentesTab({
                     Transferencia
                   </Button>
                   <select
+                    value={r.circuito?.id ?? ''}
+                    disabled={actualizando === r.id}
+                    aria-label={`Circuito de ${r.usuario?.name ?? 'residente'}`}
+                    onChange={(e) => onAsignarCircuito(r.id, e.target.value)}
+                    className="h-9 rounded-lg border bg-background px-2 text-sm md:w-40"
+                  >
+                    <option value="" disabled>Seleccionar circuito</option>
+                    {circuitos.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
+                  </select>
+                  <select
                     value={r.usuario?.role || 'residente'}
                     disabled={actualizando === usuarioId}
                     onChange={(e) => onCambiarRol(usuarioId, e.target.value)}
                     className="h-9 rounded-lg border bg-background px-2 text-sm md:w-40"
                   >
-                    {ROLES.map((role) => (
+                    {ROLES_ASIGNABLES.map((role) => (
                       <option key={role.value} value={role.value}>{role.label}</option>
                     ))}
                   </select>
@@ -237,6 +276,17 @@ export function ResidentesTab({
             );
           })}
         </CardContent>
+        {paginaMeta.totalPages > 1 && (
+          <div className="flex items-center justify-between border-t px-6 py-4">
+            <Button variant="outline" size="sm" disabled={paginaMeta.page <= 1} onClick={() => onPagina(paginaMeta.page - 1)}>
+              <ChevronLeft className="mr-1 h-4 w-4" /> Anterior
+            </Button>
+            <span className="text-sm text-muted-foreground">{paginaMeta.page} / {paginaMeta.totalPages}</span>
+            <Button variant="outline" size="sm" disabled={paginaMeta.page >= paginaMeta.totalPages} onClick={() => onPagina(paginaMeta.page + 1)}>
+              Siguiente <ChevronRight className="ml-1 h-4 w-4" />
+            </Button>
+          </div>
+        )}
       </Card>
 
       {/* ── Modal pagos retroactivos ── */}

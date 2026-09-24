@@ -40,7 +40,7 @@ function ResetPasswordContent() {
         'Si el correo corresponde a un residente activo, su representante ya puede generar el código.',
       );
     } catch (err: unknown) {
-      setRequestError(userFacingError(err, 'SIS4S-402'));
+      setRequestError(userFacingError(err, 'SISCO-402'));
     } finally {
       setRequestingCode(false);
     }
@@ -76,7 +76,7 @@ function ResetPasswordContent() {
       setConfirmPassword('');
       setCode('');
     } catch (err: unknown) {
-      setError(userFacingError(err, 'SIS4S-401'));
+      setError(userFacingError(err, 'SISCO-401'));
     }
     setLoading(false);
   }

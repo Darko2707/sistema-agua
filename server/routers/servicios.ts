@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-imports -- legacy router boundary; migrate queries to repositories incrementally. */
 import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';

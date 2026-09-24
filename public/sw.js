@@ -1,7 +1,7 @@
 /* global self */
 'use strict';
 
-const DEFAULT_TITLE = 'SIS4S Agua';
+const DEFAULT_TITLE = 'SISCO';
 const DEFAULT_BODY = 'Tienes una actualización en tu cuenta de agua.';
 const DEFAULT_PATH = '/residente';
 const ICON_PATH = '/logo1SIS4S.png';
@@ -46,7 +46,7 @@ self.addEventListener('push', (event) => {
   const title = cleanText(payload.title, DEFAULT_TITLE, 80);
   const body = cleanText(payload.body, DEFAULT_BODY, 180);
   const path = safeResidentPath(payload.url);
-  const tag = cleanText(payload.tag, 'sis4s-actualizacion', 80);
+  const tag = cleanText(payload.tag, 'sisco-actualizacion', 80);
 
   event.waitUntil(self.registration.showNotification(title, {
     body,

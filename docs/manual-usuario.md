@@ -1,6 +1,6 @@
-# Manual de usuario - SIS4S
+# Manual de usuario - SISCO
 
-Este manual explica como usar el Sistema Integral de Servicios 4 Soles para administrar residentes, pagos de agua, reportes, cortes, reconexiones y recibos.
+Este manual explica como usar SISCO, el Sistema Integral de Servicios para la Comunidad, para administrar residentes, pagos de agua, reportes, cortes, reconexiones y recibos.
 
 ## 1. Acceso al sistema
 

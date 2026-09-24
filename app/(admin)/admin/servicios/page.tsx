@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Loader2, RefreshCw, Settings2, Wallet } from 'lucide-react';
 
@@ -23,33 +23,26 @@ export default function ServiciosAdminPage() {
 
   const tenantsQuery = trpcReact.fraccionamientos.listar.useQuery();
   const catalogoQuery = trpcReact.servicios.catalogo.useQuery();
+  const tenants = tenantsQuery.data ?? [];
+  const tenantSeleccionado = tenantId || tenants[0]?.id || '';
+  const servicioSeleccionado = servicioId || catalogoQuery.data?.[0]?.id || '';
   const serviciosQuery = trpcReact.servicios.listarTenant.useQuery(
-    { fraccionamientoId: tenantId || '00000000-0000-0000-0000-000000000000' },
-    { enabled: Boolean(tenantId) },
+    { fraccionamientoId: tenantSeleccionado || '00000000-0000-0000-0000-000000000000' },
+    { enabled: Boolean(tenantSeleccionado) },
   );
   const configurarMutation = trpcReact.servicios.configurar.useMutation();
   const generarMutation = trpcReact.servicios.generarCargosMes.useMutation();
-
-  const tenants = tenantsQuery.data ?? [];
-
-  useEffect(() => {
-    if (!tenantId && tenants.length > 0) setTenantId(tenants[0].id);
-  }, [tenantId, tenants]);
-
-  useEffect(() => {
-    if (!servicioId && catalogoQuery.data && catalogoQuery.data.length > 0) setServicioId(catalogoQuery.data[0].id);
-  }, [servicioId, catalogoQuery.data]);
 
   function clearFeedback() { setError(null); setMensaje(null); }
 
   async function configurarServicio() {
     clearFeedback();
-    if (!tenantId || !servicioId) return setError('Selecciona un fraccionamiento y un servicio');
+    if (!tenantSeleccionado || !servicioSeleccionado) return setError('Selecciona un fraccionamiento y un servicio');
     const mensual = Number(montoMensual);
     const reconexion = Number(montoReconexion);
     if (!Number.isFinite(mensual) || mensual < 0 || !Number.isFinite(reconexion) || reconexion < 0) return setError('Los montos deben ser números mayores o iguales a cero');
     try {
-      await configurarMutation.mutateAsync({ fraccionamientoId: tenantId, servicioId, estado, montoMensual: mensual, montoReconexion: reconexion });
+      await configurarMutation.mutateAsync({ fraccionamientoId: tenantSeleccionado, servicioId: servicioSeleccionado, estado, montoMensual: mensual, montoReconexion: reconexion });
       await serviciosQuery.refetch();
       setMensaje('Configuración guardada');
     } catch (e: unknown) { setError(e instanceof Error ? e.message : 'No se pudo guardar la configuración'); }
@@ -57,10 +50,10 @@ export default function ServiciosAdminPage() {
 
   async function generarCargos() {
     clearFeedback();
-    if (!tenantId) return setError('Selecciona un fraccionamiento');
+    if (!tenantSeleccionado) return setError('Selecciona un fraccionamiento');
     const now = new Date();
     try {
-      const result = await generarMutation.mutateAsync({ fraccionamientoId: tenantId, mes: now.getUTCMonth() + 1, anio: now.getUTCFullYear() });
+      const result = await generarMutation.mutateAsync({ fraccionamientoId: tenantSeleccionado, mes: now.getUTCMonth() + 1, anio: now.getUTCFullYear() });
       setMensaje(`Se generaron ${result.generados} cargos nuevos`);
     } catch (e: unknown) { setError(e instanceof Error ? e.message : 'No se pudieron generar los cargos'); }
   }

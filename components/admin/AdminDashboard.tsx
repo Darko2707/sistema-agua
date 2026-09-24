@@ -41,8 +41,12 @@ export function AdminDashboard() {
     filtroEstado,   setFiltroEstado,
     error,
     residentesFiltrados,
+    paginaMeta,
+    busquedaResidentes, setBusquedaResidentes,
+    irPaginaResidentes,
     morosos,
     cambiarRol,
+    asignarResidenteCircuito,
     registrarPagoRetroactivo,
     salir,
   } = useAdmin();
@@ -187,11 +191,17 @@ export function AdminDashboard() {
             setFiltroEstado={setFiltroEstado}
             actualizando={actualizando}
             onCambiarRol={cambiarRol}
+            onAsignarCircuito={asignarResidenteCircuito}
             onRegistrarPagoRetroactivo={registrarPagoRetroactivo}
             onLimpiarFiltros={() => {
               setFiltroCircuito('todos');
               setFiltroEstado('todos');
+              setBusquedaResidentes('');
             }}
+            paginaMeta={paginaMeta}
+            busqueda={busquedaResidentes}
+            onBusquedaChange={setBusquedaResidentes}
+            onPagina={irPaginaResidentes}
           />
         )}
         {tab === 'pendientes' && (

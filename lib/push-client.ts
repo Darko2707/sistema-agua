@@ -257,7 +257,7 @@ export async function enablePushNotifications(): Promise<PushSubscription> {
   }
   if (environment.isIos && !environment.isStandalone) {
     throw new PushClientError(
-      'En iPhone o iPad primero debes agregar SIS4S a la pantalla de inicio.',
+      'En iPhone o iPad primero debes agregar SISCO a la pantalla de inicio.',
       'ios-install-required',
     );
   }

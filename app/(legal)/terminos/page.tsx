@@ -9,7 +9,7 @@ export default function TerminosPage() {
     <LegalPage title="Términos y condiciones" updated="5 de agosto de 2026">
       <h2 style={s.h2}>Servicio</h2>
       <p style={s.p}>
-        SIS4S es una herramienta administrativa para registrar cuotas de agua, pagos, folios, reportes, cortes y
+        SISCO es una herramienta administrativa para registrar cuotas de agua, pagos, folios, reportes, cortes y
         reconexiones de residentes autorizados del fraccionamiento.
       </p>
       <h2 style={s.h2}>Responsabilidades del usuario</h2>
@@ -33,7 +33,7 @@ export default function TerminosPage() {
       <h2 style={s.h2}>Notificaciones</h2>
       <p style={s.p}>
         Las notificaciones push son opcionales y se activan por dispositivo. Pueden informar confirmaciones de pago y
-        avisos relacionados con el servicio; el estado vigente siempre debe consultarse dentro de SIS4S.
+        avisos relacionados con el servicio; el estado vigente siempre debe consultarse dentro de SISCO.
       </p>
     </LegalPage>
   );

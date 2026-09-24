@@ -169,7 +169,7 @@ export function PagosTesorera() {
       );
     } catch (e: unknown) {
       await utils.pagos.listarResidentesParaPago.invalidate();
-      mostrar(userFacingError(e, 'SIS4S-202'), 'error');
+      mostrar(userFacingError(e, 'SISCO-202'), 'error');
     } finally {
       setRegistrando(null);
     }

@@ -131,7 +131,6 @@ export function mercadoPagoCheckoutMetadata(input: {
 const ALLOWED_ORIGINS = [
   process.env.NEXT_PUBLIC_APP_URL,
   process.env.BETTER_AUTH_URL,
-  'https://sistema-agua.vercel.app',
   // localhost allowed in dev only
   ...(process.env.NODE_ENV === 'development' ? ['http://localhost:3000'] : []),
 ].filter(Boolean).map(o => (o as string).replace(/\/$/, ''));
@@ -156,6 +155,7 @@ export async function POST(request: Request) {
       key: opaqueRateLimitKey('account', session.user.id),
       boundary: 'checkout_route',
       scope: 'checkout_account',
+      failOpen: false,
     });
     if (accountDecision && !accountDecision.success) {
       return rateLimitResponse(accountDecision);

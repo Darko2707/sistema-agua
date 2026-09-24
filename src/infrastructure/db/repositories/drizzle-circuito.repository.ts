@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { db } from '@/db';
-import { circuitos, fraccionamientoMetodosPago } from '@/db/schema';
+import { user, circuitos, fraccionamientoMetodosPago } from '@/db/schema';
 import type { CircuitoRepository, CircuitoData, MpFields } from '@/src/application/ports/circuito.repository';
 
 function toData(row: typeof circuitos.$inferSelect): CircuitoData {
@@ -123,5 +123,45 @@ export class DrizzleCircuitoRepository implements CircuitoRepository {
 
   async clearTesoreraByUserId(userId: string): Promise<void> {
     await db.update(circuitos).set({ tesoreraId: null }).where(eq(circuitos.tesoreraId, userId));
+  }
+
+  async assignPersonalWithUser(input: {
+    userId: string;
+    role: 'representante' | 'tesorera';
+    circuitoId: string | null;
+    fraccionamientoId: string | null;
+    encryptedAccessToken?: string;
+    collectorId?: string;
+  }): Promise<void> {
+    await db.transaction(async (tx) => {
+      const field = input.role === 'representante' ? 'representanteId' : 'tesoreraId';
+      await tx.update(circuitos).set({ [field]: null }).where(eq(circuitos[field], input.userId));
+
+      if (input.circuitoId) {
+        const [circuito] = await tx.select({ fraccionamientoId: circuitos.fraccionamientoId })
+          .from(circuitos).where(eq(circuitos.id, input.circuitoId)).limit(1);
+        if (!circuito?.fraccionamientoId || circuito.fraccionamientoId !== input.fraccionamientoId) {
+          throw new Error('El circuito no pertenece al fraccionamiento indicado');
+        }
+        await tx.update(circuitos).set({ [field]: input.userId }).where(eq(circuitos.id, input.circuitoId));
+
+        if (input.encryptedAccessToken || input.collectorId) {
+          await tx.insert(fraccionamientoMetodosPago).values({
+            fraccionamientoId: circuito.fraccionamientoId,
+            accessTokenCifrado: input.encryptedAccessToken ?? '',
+            collectorId: input.collectorId ?? null,
+          }).onConflictDoUpdate({
+            target: [fraccionamientoMetodosPago.fraccionamientoId, fraccionamientoMetodosPago.proveedor],
+            set: {
+              ...(input.encryptedAccessToken ? { accessTokenCifrado: input.encryptedAccessToken } : {}),
+              ...(input.collectorId ? { collectorId: input.collectorId } : {}),
+              actualizadoEn: new Date(),
+            },
+          });
+        }
+      }
+
+      await tx.update(user).set({ fraccionamientoId: input.fraccionamientoId }).where(eq(user.id, input.userId));
+    });
   }
 }

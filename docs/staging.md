@@ -73,7 +73,7 @@ VAPID_SUBJECT="mailto:correo-real@gmail.com"
 
 > **Importante:** Las credenciales de Mercado Pago para staging deben ser del modo
 > **sandbox** (`TEST-...`). Obtente en [developers.mercadopago.com](https://developers.mercadopago.com).
-> En SIS4S, el `Access Token` se asigna al circuito desde el panel de admin al
+> En SISCO, el `Access Token` se asigna al circuito desde el panel de admin al
 > crear/editar representante o tesorera. `MP_WEBHOOK_SECRET` es la clave secreta
 > de Webhooks de la app de Mercado Pago.
 

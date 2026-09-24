@@ -1,4 +1,5 @@
 import { router, publicProcedure, authenticatedProcedure, roleProcedure } from '../trpc';
+/* eslint-disable no-restricted-imports -- legacy router boundary; migrate queries to repositories incrementally. */
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import type { Ratelimit } from '@upstash/ratelimit';
@@ -29,7 +30,7 @@ import { profileChangeService } from '@/src/infrastructure/db/services/profile-c
 import { subscriptionService } from '@/src/infrastructure/db/services/subscription.service';
 import { db } from '@/db';
 import { and, eq, inArray } from 'drizzle-orm';
-import { asignacionesCircuito, auditoria, circuitos, fraccionamientos, fraccionamientoServicios, user } from '@/db/schema';
+import { asignacionesCircuito, auditoria, circuitos, fraccionamientos, fraccionamientoServicios, perfilesResidente, user } from '@/db/schema';
 
 const telefono10 = z.string().regex(/^\d{10}$/, 'El telefono debe contener exactamente 10 digitos');
 
@@ -53,6 +54,7 @@ async function limitOrThrow(
     key,
     boundary: 'trpc_procedure',
     scope,
+    failOpen: false,
   });
   if (result && !result.success) {
     throw new TRPCError({ code: 'TOO_MANY_REQUESTS', message });
@@ -75,9 +77,15 @@ export const usuariosRouter = router({
       path: ['nombrePropietario'],
     }))
     .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role !== 'residente') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Solo una cuenta de residente puede completar este registro' });
+      }
       const circuito = await circuitoRepo.findById(input.circuitoId);
       if (!circuito?.fraccionamientoId) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'El circuito no tiene fraccionamiento asignado' });
+      }
+      if (ctx.user.fraccionamientoId && ctx.user.fraccionamientoId !== circuito.fraccionamientoId) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'El circuito pertenece a otro fraccionamiento' });
       }
       await subscriptionService.requireOperational(circuito.fraccionamientoId);
       return crearPerfilHandler.execute({ userId: ctx.user.id, ...input });
@@ -256,6 +264,36 @@ export const usuariosRouter = router({
         fraccionamientoId: input?.fraccionamientoId,
         circuitoId: input?.circuitoId,
       });
+    }),
+
+  asignarResidenteCircuito: roleProcedure('admin', 'representante')
+    .input(z.object({ perfilId: z.string().uuid(), circuitoId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => {
+      const [perfil] = await db.select({
+        id: perfilesResidente.id,
+        fraccionamientoId: perfilesResidente.fraccionamientoId,
+        circuitoId: perfilesResidente.circuitoId,
+        role: user.role,
+      }).from(perfilesResidente)
+        .innerJoin(user, eq(user.id, perfilesResidente.userId))
+        .where(eq(perfilesResidente.id, input.perfilId)).limit(1);
+      if (!perfil) throw new TRPCError({ code: 'NOT_FOUND', message: 'Perfil de residente no encontrado' });
+      if (perfil.role !== 'residente') throw new TRPCError({ code: 'FORBIDDEN', message: 'Solo se pueden reasignar residentes' });
+      const [circuito] = await db.select({ id: circuitos.id, fraccionamientoId: circuitos.fraccionamientoId, activo: circuitos.activo })
+        .from(circuitos).where(eq(circuitos.id, input.circuitoId)).limit(1);
+      if (!circuito?.fraccionamientoId || !circuito.activo) throw new TRPCError({ code: 'BAD_REQUEST', message: 'El circuito no existe o está inactivo' });
+      if (!perfil.fraccionamientoId || perfil.fraccionamientoId !== circuito.fraccionamientoId) throw new TRPCError({ code: 'FORBIDDEN', message: 'No se permite mover residentes entre fraccionamientos' });
+      const tenantId = perfil.fraccionamientoId;
+      if (ctx.user.role === 'representante') {
+        const propio = await circuitoRepo.findByRepresentante(ctx.user.id);
+        if (!propio || propio.id !== circuito.id) throw new TRPCError({ code: 'FORBIDDEN', message: 'Solo puedes asignar residentes a tu circuito' });
+      }
+      await subscriptionService.requireOperational(tenantId);
+      await db.transaction(async (tx) => {
+        await tx.update(perfilesResidente).set({ circuitoId: circuito.id }).where(and(eq(perfilesResidente.id, perfil.id), eq(perfilesResidente.fraccionamientoId, tenantId)));
+        await tx.insert(auditoria).values({ actorId: ctx.user.id, accion: 'residente.circuito.asignado', entidad: 'perfiles_residente', entidadId: perfil.id, detalle: { circuitoAnteriorId: perfil.circuitoId, circuitoNuevoId: circuito.id, fraccionamientoId: tenantId } });
+      });
+      return { ok: true, circuitoId: circuito.id };
     }),
 
   cambiarRol: roleProcedure('admin')

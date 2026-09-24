@@ -1,6 +1,7 @@
 import { DIA_CORTE } from '@/src/domain/pagos/constants';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
 import { fechaNegocio } from '@/src/domain/shared/fecha-negocio';
+import { TRPCError } from '@trpc/server';
 import type { ResidenteRepository, ResidenteConRelaciones } from '../../ports/residente.repository';
 import type { CircuitoRepository } from '../../ports/circuito.repository';
 
@@ -56,8 +57,16 @@ export class ListarResidentesHandler {
     const pageSize = query.pageSize ?? 50;
 
     if (query.rol === 'admin') {
-      const result = query.fraccionamientoId && residenteRepo.findByTenantPaginated
-        ? await residenteRepo.findByTenantPaginated(query.fraccionamientoId, query.circuitoId, page, pageSize)
+      const circuito = query.circuitoId ? await circuitoRepo.findById(query.circuitoId) : null;
+      if (query.circuitoId && !circuito) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Circuito no encontrado' });
+      }
+      if (query.fraccionamientoId && circuito?.fraccionamientoId && circuito.fraccionamientoId !== query.fraccionamientoId) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'El circuito no pertenece al fraccionamiento seleccionado' });
+      }
+      const tenantId = query.fraccionamientoId ?? circuito?.fraccionamientoId ?? undefined;
+      const result = tenantId && residenteRepo.findByTenantPaginated
+        ? await residenteRepo.findByTenantPaginated(tenantId, query.circuitoId, page, pageSize)
         : await residenteRepo.findAllPaginated(page, pageSize);
       return {
         items:      result.items.map(p => mapPerfil(p, periodo, vencido)),

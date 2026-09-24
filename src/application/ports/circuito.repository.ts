@@ -30,4 +30,12 @@ export interface CircuitoRepository {
   updateTesoreraWithMp(id: string, tesoreraId: string, mp: MpFields): Promise<void>;
   clearRepresentanteByUserId(userId: string): Promise<void>;
   clearTesoreraByUserId(userId: string): Promise<void>;
+  assignPersonalWithUser?(input: {
+    userId: string;
+    role: 'representante' | 'tesorera';
+    circuitoId: string | null;
+    fraccionamientoId: string | null;
+    encryptedAccessToken?: string;
+    collectorId?: string;
+  }): Promise<void>;
 }

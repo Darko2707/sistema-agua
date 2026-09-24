@@ -295,7 +295,7 @@ export default function FoliosPage() {
           )}
 
           <div style={{ textAlign: 'center', fontSize: 11, color: C.textWarm3, lineHeight: 1.5, paddingBottom: 4 }}>
-            SIS4S · Sistema Integral de Servicios 4 Soles
+            SISCO · Sistema Integral de Servicios para la Comunidad
           </div>
         </div>
       </div>

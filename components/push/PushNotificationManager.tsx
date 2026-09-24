@@ -243,8 +243,8 @@ export function PushNotificationManager() {
         Icon: Bell,
         iconColor: COLORS.green,
         iconBackground: COLORS.cream,
-        title: 'Instala SIS4S en tu iPhone o iPad',
-        body: 'En tu navegador toca Compartir, elige “Agregar a pantalla de inicio” y abre SIS4S desde su nuevo icono. Después podrás activar los avisos.',
+        title: 'Instala SISCO en tu iPhone o iPad',
+        body: 'En tu navegador toca Compartir, elige “Agregar a pantalla de inicio” y abre SISCO desde su nuevo icono. Después podrás activar los avisos.',
       };
     }
     if (status === 'denied') {
@@ -262,7 +262,7 @@ export function PushNotificationManager() {
         iconColor: COLORS.danger,
         iconBackground: COLORS.dangerBg,
         title: 'Este navegador no admite avisos push',
-        body: 'Consulta el estado de tus pagos y del servicio directamente en SIS4S.',
+        body: 'Consulta el estado de tus pagos y del servicio directamente en SISCO.',
       };
     }
     return {

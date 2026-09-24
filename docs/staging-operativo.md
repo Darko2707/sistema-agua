@@ -89,7 +89,7 @@ En Mercado Pago Developers:
    - `https://tu-staging.vercel.app/api/mercadopago/webhook`
 3. Copia la clave secreta del webhook a `MP_WEBHOOK_SECRET`.
 4. Toma un `Access Token` sandbox (`TEST-...`).
-5. En SIS4S, entra como admin y asigna ese token al circuito al crear/editar
+5. En SISCO, entra como admin y asigna ese token al circuito al crear/editar
    representante o tesorera.
 
 Prueba minima:

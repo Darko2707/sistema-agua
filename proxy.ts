@@ -44,7 +44,7 @@ function pickLimiter(pathname: string): RouteLimiter | null {
   if (pathname === '/verificar' || pathname.startsWith('/verificar/')) {
     return { limiter: ticketLimiter, scope: 'tickets' };
   }
-  if (pathname === '/api/tickets' || pathname.startsWith('/api/tickets/')) {
+  if (pathname === '/api/tickets' || pathname.startsWith('/api/tickets/') || pathname === '/verificar' || pathname.startsWith('/verificar/')) {
     return { limiter: ticketLimiter, scope: 'tickets' };
   }
   if (pathname === '/api/reportes' || pathname.startsWith('/api/reportes/')) {
@@ -63,6 +63,7 @@ export async function proxy(req: NextRequest) {
     key: opaqueRateLimitKey('ip', ip),
     boundary: 'proxy',
     scope: selected.scope,
+    failOpen: selected.scope !== 'auth' && selected.scope !== 'checkout',
   });
 
   if (!decision) return NextResponse.next();
@@ -88,6 +89,7 @@ export const config = {
     '/api/mercadopago/checkout',
     '/api/reportes/:path*',
     '/api/tickets/:path*',
+    '/verificar/:path*',
     '/verificar/:path*',
   ],
 };

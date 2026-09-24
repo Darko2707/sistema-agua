@@ -167,7 +167,7 @@ function Chevron({ up, color = C.textWarm }: { up?: boolean; color?: string }) {
 // ── Water drop icon ────────────────────────────────────────────────────────────
 function LogoMark({ size = 28 }: { size?: number }) {
   return (
-    <Image src="/logo1SIS4S.png" alt="SIS4S" width={size} height={size} style={{ objectFit: 'contain' }} priority />
+    <Image src="/logo1SIS4S.png" alt="SISCO" width={size} height={size} style={{ objectFit: 'contain' }} priority />
   );
 }
 
@@ -356,7 +356,7 @@ export function ResidenteDashboard() {
                 <LogoMark size={34} />
               </div>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontFamily: FB, fontSize: 20, fontWeight: 800, color: C.greenDark, lineHeight: 1 }}>SIS4S</div>
+                <div style={{ fontFamily: FB, fontSize: 20, fontWeight: 800, color: C.greenDark, lineHeight: 1 }}>SISCO</div>
                 <div style={{ fontSize: 11, color: C.textWarm, marginTop: 3, fontWeight: 600, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>Ciudad de los 4 Soles</div>
               </div>
             </div>
@@ -753,7 +753,7 @@ export function ResidenteDashboard() {
           </div>
 
           <div style={{ textAlign: 'center', fontSize: 11, color: C.textWarm3, lineHeight: 1.5, paddingBottom: 4 }}>
-            SIS4S · Sistema Integral de Servicios 4 Soles
+            SISCO · Sistema Integral de Servicios para la Comunidad
           </div>
         </div>
       </div>

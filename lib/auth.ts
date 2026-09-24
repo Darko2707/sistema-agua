@@ -72,7 +72,11 @@ export const auth = betterAuth({
       },
     },
   },
-  // BETTER_AUTH_URL must be set to the HTTPS production URL (e.g. https://sistema-agua.vercel.app)
+  session: {
+    expiresIn: 60 * 60 * 24 * 7,
+    updateAge: 60 * 60 * 24,
+  },
+  // BETTER_AUTH_URL must be set to the HTTPS production URL for SISCO.
   // so that Better Auth generates correct email links and enforces Secure cookies automatically.
   advanced: {
     useSecureCookies: process.env.NODE_ENV === 'production',
@@ -84,7 +88,6 @@ export const auth = betterAuth({
     },
   },
   trustedOrigins: [
-    'https://sistema-agua.vercel.app',
     ...(process.env.NODE_ENV === 'development' ? ['http://localhost:3000'] : []),
     appUrl,
     authUrl,

@@ -3,8 +3,8 @@ import type { MetadataRoute } from 'next';
 export default function manifest(): MetadataRoute.Manifest {
   return {
     id: '/residente',
-    name: 'SIS4S - Sistema de Agua',
-    short_name: 'SIS4S Agua',
+    name: 'SISCO - Sistema Integral de Servicios para la Comunidad',
+    short_name: 'SISCO',
     description: 'Consulta pagos, recibos y el estado de tu servicio de agua.',
     start_url: '/residente',
     scope: '/',

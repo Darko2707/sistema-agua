@@ -9,7 +9,7 @@ export default function PrivacidadPage() {
     <LegalPage title="Politica de privacidad de datos" updated="5 de agosto de 2026">
       <h2 style={s.h2}>Datos que tratamos</h2>
       <p style={s.p}>
-        SIS4S usa datos de cuenta, contacto, vivienda, circuito, estado del servicio de agua, historial de pagos,
+        SISCO usa datos de cuenta, contacto, vivienda, circuito, estado del servicio de agua, historial de pagos,
         folios y comprobantes para administrar cuotas del fraccionamiento Ciudad de los 4 Soles.
       </p>
       <h2 style={s.h2}>Finalidades</h2>
@@ -20,7 +20,7 @@ export default function PrivacidadPage() {
       </ul>
       <h2 style={s.h2}>Pagos</h2>
       <p style={s.p}>
-        Los pagos con tarjeta se procesan mediante Mercado Pago. SIS4S conserva referencias, montos, comisiones,
+        Los pagos con tarjeta se procesan mediante Mercado Pago. SISCO conserva referencias, montos, comisiones,
         folios y estado de pago; los datos completos de tarjeta son tratados por el procesador de pagos.
       </p>
       <h2 style={s.h2}>Conservacion y seguridad</h2>

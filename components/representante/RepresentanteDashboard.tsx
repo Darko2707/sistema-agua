@@ -286,7 +286,7 @@ export function RepresentanteDashboard() {
             </span>
             <div>
               <div style={{ fontFamily: FS, fontSize: 15, fontWeight: 700, color: '#fff', lineHeight: 1.2 }}>
-                Representante — SIS4S
+                Representante — SISCO
               </div>
               {circuito?.nombre && (
                 <div style={{ fontSize: 11.5, color: '#9FC2AC', marginTop: 1 }}>
@@ -317,7 +317,7 @@ export function RepresentanteDashboard() {
                 <div style={{ padding: '10px 14px 9px', borderBottom: '1px solid #E4E1D5', marginBottom: 4 }}>
                   <div style={{ fontWeight: 700, fontSize: 14, color: '#1F2A22', fontFamily: FS, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombre}</div>
                   <div style={{ fontSize: 12, color: '#8A8879', marginTop: 2, fontFamily: FM }}>
-                    {circuito?.nombre ? `Circuito ${circuito.nombre}` : 'Representante — SIS4S'}
+                    {circuito?.nombre ? `Circuito ${circuito.nombre}` : 'Representante — SISCO'}
                   </div>
                 </div>
                 <button role="menuitem" onClick={() => { setMenuOpen(false); router.push('/residente'); }}

@@ -1,10 +1,10 @@
-# SIS4S — contrato de reglas para la generalización multi-tenant
+# SISCO — contrato de reglas para la generalización multi-tenant
 
 Versión: 1.0  
 Estado: baseline para diseño y migraciones  
 Fecha: 2026-09-16
 
-Este documento ejecuta el paso 1 de la generalización de SIS4S: fija las
+Este documento ejecuta el paso 1 de la generalización de SISCO: fija las
 reglas que deben permanecer estables antes de cambiar el esquema, las policies
 de tRPC o los procesos de cobro.
 

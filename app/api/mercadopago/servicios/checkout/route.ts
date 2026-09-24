@@ -18,7 +18,7 @@ const inputSchema = z.object({ cargoId: z.string().uuid() });
 export async function POST(request: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session?.user) return Response.json({ error: 'No autorizado' }, { status: 401 });
-  const limit = await consumeRateLimit({ limiter: checkoutAccountLimiter, key: `account:${session.user.id}`, boundary: 'service_checkout', scope: 'checkout_account' });
+  const limit = await consumeRateLimit({ limiter: checkoutAccountLimiter, key: `account:${session.user.id}`, boundary: 'service_checkout', scope: 'checkout_account', failOpen: false });
   if (limit && !limit.success) return rateLimitResponse(limit);
   const body = inputSchema.safeParse(await request.json().catch(() => null));
   if (!body.success) return Response.json({ error: 'Cargo invalido' }, { status: 400 });

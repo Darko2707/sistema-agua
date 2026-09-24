@@ -93,7 +93,7 @@ function payloadFor(item: ClaimedDelivery): PushPayload {
       };
     default:
       return {
-        title: 'Sistema de Agua',
+    title: 'SISCO',
         body: 'Tienes una actualizacion disponible dentro de la aplicacion.',
         url: '/residente',
         tag: item.dedupeKey ?? item.notificationId,

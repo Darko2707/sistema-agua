@@ -234,7 +234,7 @@ export function TrabajadorDashboard() {
                   <path d="M3 21h18M5 21V9l7-5 7 5v12M9 21v-6h6v6" />
                 </svg>
               </span>
-              <div style={{ fontFamily: FS, fontSize: 16, fontWeight: 700, color: '#fff', letterSpacing: '.02em' }}>Cuadrilla SIS4S</div>
+              <div style={{ fontFamily: FS, fontSize: 16, fontWeight: 700, color: '#fff', letterSpacing: '.02em' }}>Cuadrilla SISCO</div>
             </div>
 
             <div ref={menuRef} style={{ position: 'relative' }}>
@@ -257,7 +257,7 @@ export function TrabajadorDashboard() {
                 <div role="menu" style={{ position: 'absolute', right: 0, top: 50, width: 200, background: '#fff', borderRadius: 18, boxShadow: '0 16px 40px rgba(0,0,0,.22)', padding: 6, zIndex: 30 }}>
                   <div style={{ padding: '10px 14px 9px', borderBottom: '1px solid #E4E1D5', marginBottom: 4 }}>
                     <div style={{ fontWeight: 700, fontSize: 14, color: '#1F2A22', fontFamily: FS, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombre}</div>
-                    <div style={{ fontSize: 12, color: '#8A8879', marginTop: 2, fontFamily: FM }}>Cuadrilla SIS4S</div>
+                    <div style={{ fontSize: 12, color: '#8A8879', marginTop: 2, fontFamily: FM }}>Cuadrilla SISCO</div>
                   </div>
                   <button role="menuitem" onClick={() => { setMenuOpen(false); router.push('/residente'); }}
                     style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: 'none', border: 'none', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#1F2A22', fontFamily: FM, textAlign: 'left' }}>
@@ -350,7 +350,7 @@ export function TrabajadorDashboard() {
           )}
 
           <div style={{ textAlign: 'center', fontSize: 11, color: '#A6A399', marginTop: 6, lineHeight: 1.5, paddingBottom: 4 }}>
-            SIS4S · Panel de Cuadrilla
+            SISCO · Panel de Cuadrilla
           </div>
         </div>
       </div>

@@ -1,13 +1,13 @@
 import { router, roleProcedure, operationalRoleProcedure } from '../trpc';
 import { z } from 'zod';
 // eslint-disable-next-line no-restricted-imports -- complex financial aggregations not yet in a repo
-import { and, desc, eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 
 // eslint-disable-next-line no-restricted-imports -- complex financial aggregations not yet in a repo
 import { db } from '@/db';
 // eslint-disable-next-line no-restricted-imports -- complex financial aggregations not yet in a repo
-import { cortes, gastosCircuito, ingresosAdicionales, ordenesTrabajo } from '@/db/schema';
+import { gastosCircuito, ingresosAdicionales } from '@/db/schema';
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 

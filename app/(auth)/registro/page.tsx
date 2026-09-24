@@ -128,7 +128,7 @@ export default function RegistroPage() {
         if (perfilExistente) router.replace('/residente');
       } catch (err: unknown) {
         if (active) {
-          setError(userFacingError(err, 'SIS4S-100'));
+      setError(userFacingError(err, 'SISCO-100'));
         }
       } finally {
         if (active) setCheckingSession(false);
@@ -196,7 +196,7 @@ export default function RegistroPage() {
       await aceptarLegales();
       setPaso(2);
     } catch (err: unknown) {
-      setError(userFacingError(err, 'SIS4S-102'));
+      setError(userFacingError(err, 'SISCO-102'));
     } finally {
       setSubmitting(false);
     }
@@ -223,7 +223,7 @@ export default function RegistroPage() {
       });
       router.replace('/residente');
     } catch (err: unknown) {
-      setError(userFacingError(err, 'SIS4S-103'));
+      setError(userFacingError(err, 'SISCO-103'));
     } finally {
       setSubmitting(false);
     }
@@ -240,7 +240,7 @@ export default function RegistroPage() {
       setPaso(1);
       router.refresh();
     } catch (err: unknown) {
-      setError(userFacingError(err, 'SIS4S-104'));
+      setError(userFacingError(err, 'SISCO-104'));
     } finally {
       setSubmitting(false);
     }

@@ -73,6 +73,7 @@ export async function guardAuthAccountRequest(request: Request): Promise<Respons
     key: opaqueRateLimitKey('account', account),
     boundary: 'auth_route',
     scope: 'auth_account',
+    failOpen: false,
   });
 
   return decision && !decision.success ? rateLimitResponse(decision) : null;

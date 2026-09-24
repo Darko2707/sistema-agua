@@ -98,7 +98,7 @@ export function LegalPage({
     <div style={sections.page}>
       <article style={sections.shell}>
         <nav aria-label="Acceso principal" style={sections.topNav}>
-          <Link href="/" style={sections.link}>SIS4S</Link>
+          <Link href="/" style={sections.link}>SISCO</Link>
           <Link href="/login" style={sections.loginLink}>
             ← Volver al inicio de sesión
           </Link>

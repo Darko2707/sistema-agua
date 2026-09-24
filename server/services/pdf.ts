@@ -45,8 +45,8 @@ export async function generarTicketPDF(data: {
   const H = 842;
   const page = doc.addPage([W, H]);
 
-  const fraccionamiento = data.fraccionamiento ?? 'Sistema de Agua';
-  const emailContacto   = data.emailContacto   ?? 'contacto@sistema-agua.local';
+  const fraccionamiento = data.fraccionamiento ?? 'SISCO';
+  const emailContacto   = data.emailContacto   ?? 'contacto@sisco.local';
 
   // ── Logo ─────────────────────────────────────────────────────────────────────
   let logoImg: Awaited<ReturnType<typeof doc.embedPng>> | null = null;

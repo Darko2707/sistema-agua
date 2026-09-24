@@ -66,7 +66,7 @@ export function useCheckoutMP() {
       if (!res.ok) throw new Error(data.error || 'No se pudo iniciar el pago');
       window.location.href = data.url;
     } catch (err: unknown) {
-      setError(userFacingError(err, 'SIS4S-301'));
+      setError(userFacingError(err, 'SISCO-301'));
       setIsPending(false);
     }
   }

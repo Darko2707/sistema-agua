@@ -6,6 +6,7 @@ import type { PendientesCortQuery } from './pendientes-corte.query';
 type Deps = {
   residenteRepo: ResidenteRepository;
   circuitoRepo: CircuitoRepository;
+  findCircuitosAsignados?: (userId: string) => Promise<string[]>;
 };
 
 export class PendientesCorteHandler {
@@ -26,17 +27,30 @@ export class PendientesCorteHandler {
       return residenteRepo.findByCircuitoYEstado(circ.id, 'pendiente_corte');
     }
 
-    const perfilTrabajador = await residenteRepo.findByUserId(query.userId);
-    if (!perfilTrabajador) {
+    const circuitosAsignados = this.deps.findCircuitosAsignados
+      ? await this.deps.findCircuitosAsignados(query.userId)
+      : null;
+    if (circuitosAsignados === null) {
+      const perfilTrabajador = await residenteRepo.findByUserId(query.userId);
+      if (!perfilTrabajador) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Esta cuenta de cuadrilla no tiene un circuito asignado.' });
+      }
+      return residenteRepo.findByCircuitoYEstado(
+        perfilTrabajador.circuitoId,
+        query.tipo === 'reconexion' ? 'pendiente_reconexion' : 'pendiente_corte',
+      );
+    }
+    if (circuitosAsignados.length === 0) {
       throw new TRPCError({
         code:    'FORBIDDEN',
-        message: 'Esta cuenta de cuadrilla no tiene un circuito asignado. Asigna el rol a un residente del circuito desde el panel del representante.',
+        message: 'Esta cuenta de cuadrilla no tiene un circuito asignado ni una asignación operativa activa.',
       });
     }
-    return residenteRepo.findByCircuitoYEstado(
-      perfilTrabajador.circuitoId,
+    const rows = await Promise.all(circuitosAsignados.map((circuitoId) => residenteRepo.findByCircuitoYEstado(
+      circuitoId,
       query.tipo === 'reconexion' ? 'pendiente_reconexion' : 'pendiente_corte',
-    );
+    )));
+    return rows.flat();
   }
 }
 

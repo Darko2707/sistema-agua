@@ -55,7 +55,7 @@ export default function LoginPage() {
         password,
       });
       if (signInError) {
-        setError('SIS4S-401: No pudimos iniciar sesion. El correo o la contrasena no coinciden. Verifica los datos e intenta de nuevo.');
+        setError('SISCO-401: No pudimos iniciar sesion. El correo o la contrasena no coinciden. Verifica los datos e intenta de nuevo.');
         setLoading(false);
         return;
       }
@@ -64,7 +64,7 @@ export default function LoginPage() {
       const rol = (session?.data?.user as { role?: string })?.role ?? 'residente';
       router.replace(homePathForRole(rol));
     } catch (err: unknown) {
-      setError(userFacingError(err, 'SIS4S-400'));
+        setError(userFacingError(err, 'SISCO-400'));
       setLoading(false);
     }
   }

@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-imports -- legacy router boundary; migrate queries to repositories incrementally. */
 import { router, roleProcedure } from '../trpc';
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';

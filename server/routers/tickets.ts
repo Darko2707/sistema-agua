@@ -17,12 +17,6 @@ export const ticketsRouter = router({
             columns: {
               mes: true, anio: true, monto: true, estado: true, fechaPago: true, metodo: true,
             },
-            with: {
-              perfil: {
-                columns: { edificio: true, departamento: true },
-                with: { usuario: { columns: { name: true } } },
-              },
-            },
           },
         },
       });
@@ -38,11 +32,6 @@ export const ticketsRouter = router({
           estado:    ticket.pago.estado,
           fechaPago: ticket.pago.fechaPago,
           metodo:    ticket.pago.metodo,
-          perfil: ticket.pago.perfil ? {
-            edificio:     ticket.pago.perfil.edificio,
-            departamento: ticket.pago.perfil.departamento,
-            usuario:      { name: ticket.pago.perfil.usuario?.name ?? null },
-          } : null,
           } : null,
         cargoServicio: ticket.cargoServicio ? {
           id: ticket.cargoServicio.id,

@@ -23,6 +23,7 @@ export default function SolicitudesPerfilPage() {
     }
   }
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void cargar(); }, []);
 
   async function resolver(solicitudId: string, decision: 'aprobar' | 'rechazar') {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { trpcReact } from '@/lib/trpc-react';
 
@@ -53,10 +53,8 @@ export default function CircuitosPage() {
 
   const circuitos = circuitosQuery.data ?? [];
   const tenants = tenantsQuery.data ?? [];
-  useEffect(() => {
-    if (!tenantId && tenants.length > 0) setTenantId(tenants[0].id);
-  }, [tenantId, tenants]);
-  const circuitosVisibles = tenantId ? circuitos.filter(c => c.fraccionamientoId === tenantId) : circuitos;
+  const tenantSeleccionado = tenantId || tenants[0]?.id || '';
+  const circuitosVisibles = tenantSeleccionado ? circuitos.filter(c => c.fraccionamientoId === tenantSeleccionado) : circuitos;
   const representantes = useMemo(
     () => (personalQuery.data ?? []).filter(
       (u) => u.role === 'representante' || u.role === 'admin'
@@ -79,13 +77,13 @@ export default function CircuitosPage() {
 
   async function crearCircuito() {
     setError(null);
-    if (!tenantId || !nuevoNombre.trim()) {
+    if (!tenantSeleccionado || !nuevoNombre.trim()) {
       setError('Selecciona un fraccionamiento e indica el nombre del circuito');
       return;
     }
     try {
       await crearCircuitoMut.mutateAsync({
-        fraccionamientoId: tenantId,
+        fraccionamientoId: tenantSeleccionado,
         nombre: nuevoNombre.trim(),
         montoMensual: Number(nuevoMonto),
         montoReconexion: Number(nuevoReconexion),
@@ -185,10 +183,11 @@ export default function CircuitosPage() {
         <Card className="shadow-sm">
           <CardHeader><CardTitle>Crear circuito</CardTitle></CardHeader>
           <CardContent className="grid gap-3 md:grid-cols-5 md:items-end">
-            <div className="space-y-2 md:col-span-2"><Label htmlFor="fraccionamiento">Fraccionamiento</Label><select id="fraccionamiento" value={tenantId} onChange={e => setTenantId(e.target.value)} className="h-8 w-full rounded-lg border border-input bg-background px-2 text-sm">{tenants.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}</select></div>
+            <div className="space-y-2 md:col-span-2"><Label htmlFor="fraccionamiento">Fraccionamiento</Label><select id="fraccionamiento" value={tenantSeleccionado} onChange={e => setTenantId(e.target.value)} className="h-8 w-full rounded-lg border border-input bg-background px-2 text-sm">{tenants.map(t => <option key={t.id} value={t.id}>{t.nombre}</option>)}</select></div>
             <div className="space-y-2"><Label htmlFor="nombreCircuito">Nombre</Label><Input id="nombreCircuito" value={nuevoNombre} onChange={e => setNuevoNombre(e.target.value)} placeholder="Circuito 6" maxLength={120} /></div>
-            <div className="space-y-2"><Label htmlFor="montoCircuito">Cuota</Label><Input id="montoCircuito" type="number" min="0" step="0.01" value={nuevoMonto} onChange={e => setNuevoMonto(e.target.value)} /></div>
-            <Button onClick={crearCircuito} disabled={crearCircuitoMut.isPending || !tenantId}>Crear circuito</Button>
+            <div className="space-y-2"><Label htmlFor="montoCircuito">Cuota mensual</Label><Input id="montoCircuito" type="number" min="0" step="0.01" value={nuevoMonto} onChange={e => setNuevoMonto(e.target.value)} /></div>
+            <div className="space-y-2"><Label htmlFor="montoReconexionCircuito">Reconexion</Label><Input id="montoReconexionCircuito" type="number" min="0" step="0.01" value={nuevoReconexion} onChange={e => setNuevoReconexion(e.target.value)} /></div>
+            <Button onClick={crearCircuito} disabled={crearCircuitoMut.isPending || !tenantSeleccionado}>Crear circuito</Button>
           </CardContent>
         </Card>
 

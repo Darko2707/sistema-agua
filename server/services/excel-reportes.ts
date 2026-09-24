@@ -76,7 +76,7 @@ export async function generarReporteResidentesExcel(params: {
 }): Promise<Buffer> {
   const ExcelJS = (await import('exceljs')).default;
   const wb = new ExcelJS.Workbook();
-  wb.creator = 'SIS4S';
+  wb.creator = 'SISCO';
   wb.created = params.generadoEn;
 
   const ws = wb.addWorksheet('Residentes', { pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1 } });
@@ -271,7 +271,7 @@ export async function generarReporteFinancieroExcel(params: {
 }): Promise<Buffer> {
   const ExcelJS = (await import('exceljs')).default;
   const wb = new ExcelJS.Workbook();
-  wb.creator = 'SIS4S';
+  wb.creator = 'SISCO';
   wb.created = params.generadoEn;
 
   const mesNombre = MESES_ES[params.mes - 1];
@@ -564,7 +564,7 @@ export async function generarReporteFinancieroRangoExcel(params: {
 }): Promise<Buffer> {
   const ExcelJS  = (await import('exceljs')).default;
   const wb = new ExcelJS.Workbook();
-  wb.creator = 'SIS4S';
+  wb.creator = 'SISCO';
   wb.created = params.generadoEn;
 
   const periodoLabel = params.mesDesde === params.mesHasta && params.anioDesde === params.anioHasta

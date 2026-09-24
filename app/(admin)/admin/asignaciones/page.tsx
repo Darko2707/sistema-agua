@@ -19,7 +19,6 @@ const nombreRol: Record<RolOperativo, string> = {
 
 export default function AsignacionesPage() {
   const router = useRouter();
-  const utils = trpcReact.useUtils();
   const [fraccionamientoId, setFraccionamientoId] = useState('');
   const [circuitoId, setCircuitoId] = useState('');
   const [servicioId, setServicioId] = useState('');

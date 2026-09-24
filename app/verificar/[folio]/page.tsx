@@ -7,15 +7,7 @@ export default async function VerificarPage({ params }: { params: Promise<{ foli
     where: (t, { eq }) => eq(t.folio, folio),
     with: {
       cargoServicio: true,
-      pago: {
-        with: {
-          perfil: {
-            with: {
-              usuario: true, // esto es la tabla user
-            },
-          },
-        },
-      },
+      pago: true,
     },
   });
 
@@ -37,8 +29,7 @@ export default async function VerificarPage({ params }: { params: Promise<{ foli
 
   const pago = ticket.pago;
   const cargo = ticket.cargoServicio;
-  const perfil = pago?.perfil;
-  const residente = perfil?.usuario;
+  const residente = { name: 'Información protegida' };
   const periodoMes = pago?.mes ?? cargo?.mes ?? 1;
   const periodoAnio = pago?.anio ?? cargo?.anio;
   const monto = pago?.monto ?? cargo?.monto;
@@ -57,7 +48,7 @@ export default async function VerificarPage({ params }: { params: Promise<{ foli
             <span className="font-mono font-medium">{ticket.folio}</span>
           </div>
           <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">Residente</span>
+            <span className="text-muted-foreground">Titular</span>
             <span className="font-medium">{residente?.name ?? '—'}</span>
           </div>
           <div className="flex justify-between text-sm">

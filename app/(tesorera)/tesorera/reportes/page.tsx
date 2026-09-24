@@ -67,7 +67,7 @@ export default function TesoreraReportesPage() {
             </span>
             <div>
               <div style={{ fontFamily: FS, fontSize: 15, fontWeight: 700, color: '#fff', lineHeight: 1.2 }}>
-                Tesorera — SIS4S
+                Tesorera — SISCO
               </div>
               {circuitoQuery.data?.nombre && (
                 <div style={{ fontSize: 11.5, color: '#9FC2AC', marginTop: 1 }}>
@@ -98,7 +98,7 @@ export default function TesoreraReportesPage() {
                 <div style={{ padding: '10px 14px 9px', borderBottom: '1px solid #E4E1D5', marginBottom: 4 }}>
                   <div style={{ fontWeight: 700, fontSize: 14, color: '#1F2A22', fontFamily: FS, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombre}</div>
                   <div style={{ fontSize: 12, color: '#8A8879', marginTop: 2, fontFamily: FM }}>
-                    {circuitoQuery.data?.nombre ? `Circuito ${circuitoQuery.data.nombre}` : 'Tesorera — SIS4S'}
+                    {circuitoQuery.data?.nombre ? `Circuito ${circuitoQuery.data.nombre}` : 'Tesorera — SISCO'}
                   </div>
                 </div>
                 <button role="menuitem" onClick={() => { setMenuOpen(false); router.push('/residente'); }}

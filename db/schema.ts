@@ -1,5 +1,5 @@
 // db/schema.ts
-import { pgTable, uuid, text, integer, decimal, timestamp, boolean, pgEnum, uniqueIndex, index, jsonb, check } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, integer, decimal, timestamp, boolean, pgEnum, uniqueIndex, index, jsonb, check, foreignKey } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 
 export const rolEnum = pgEnum('rol', [
@@ -254,7 +254,7 @@ export const circuitos = pgTable('circuitos', {
 export const asignacionesCircuito = pgTable('asignaciones_circuito', {
   id: uuid('id').defaultRandom().primaryKey(),
   usuarioId: text('usuario_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
-  fraccionamientoId: uuid('fraccionamiento_id').notNull().references(() => fraccionamientos.id, { onDelete: 'restrict' }),
+  fraccionamientoId: uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
   circuitoId: uuid('circuito_id').notNull().references(() => circuitos.id, { onDelete: 'cascade' }),
   fraccionamientoServicioId: uuid('fraccionamiento_servicio_id').notNull().references(() => fraccionamientoServicios.id, { onDelete: 'restrict' }),
   rol: rolAsignacionCircuitoEnum('rol').notNull(),
@@ -265,6 +265,9 @@ export const asignacionesCircuito = pgTable('asignaciones_circuito', {
   uniqueIndex('uq_asignacion_circuito_persona').on(t.usuarioId, t.circuitoId, t.fraccionamientoServicioId, t.rol),
   index('idx_asignaciones_circuito_tenant').on(t.fraccionamientoId, t.circuitoId, t.activo),
   index('idx_asignaciones_circuito_usuario').on(t.usuarioId, t.activo),
+  foreignKey({ columns: [t.usuarioId, t.fraccionamientoId], foreignColumns: [user.id, user.fraccionamientoId], name: 'asignaciones_circuito_usuario_tenant_fk' }),
+  foreignKey({ columns: [t.circuitoId, t.fraccionamientoId], foreignColumns: [circuitos.id, circuitos.fraccionamientoId], name: 'asignaciones_circuito_circuito_tenant_fk' }),
+  foreignKey({ columns: [t.fraccionamientoServicioId, t.fraccionamientoId], foreignColumns: [fraccionamientoServicios.id, fraccionamientoServicios.fraccionamientoId], name: 'asignaciones_circuito_servicio_tenant_fk' }),
 ]);
 
 // Perfil extendido del residente — 1:1 con user
@@ -289,6 +292,7 @@ export const perfilesResidente = pgTable('perfiles_residente', {
   uniqueIndex('uq_perfiles_residente_ubicacion')
     .on(t.circuitoId, t.edificio, t.departamento),
   uniqueIndex('uq_perfiles_residente_tenant_id').on(t.id, t.fraccionamientoId),
+  foreignKey({ columns: [t.circuitoId, t.fraccionamientoId], foreignColumns: [circuitos.id, circuitos.fraccionamientoId], name: 'perfiles_circuito_mismo_fraccionamiento_fk' }),
   check('chk_perfiles_edificio_canonico', sql`${t.edificio} ~ '^[1-9][0-9]{0,5}$'`),
   check('chk_perfiles_departamento_canonico', sql`${t.departamento} ~ '^[1-9][0-9]{0,5}[A-Z]?$'`),
   index('idx_perfiles_circuito_estado').on(t.circuitoId, t.estadoAgua),

@@ -110,6 +110,7 @@ async function handler(req: Request): Promise<Response> {
         key: opaqueRateLimitKey('account', context.user.id),
         boundary: 'trpc_route',
         scope: 'trpc_account',
+        failOpen: false,
       });
       if (accountDecision && !accountDecision.success) return rateLimitResponse(accountDecision);
     }

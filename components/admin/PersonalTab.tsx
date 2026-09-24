@@ -1,7 +1,7 @@
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Shield } from 'lucide-react';
-import { ROLES, type Personal } from '@/hooks/useAdmin';
+import { ROLES_ASIGNABLES, ROLES, type Personal } from '@/hooks/useAdmin';
 
 type Props = {
   personal:              Personal[];
@@ -48,7 +48,7 @@ export function PersonalTab({
                 onChange={(e) => onCambiarRol(p.id, e.target.value)}
                 className="h-10 rounded-lg border bg-background px-3 md:w-72"
               >
-                {ROLES.map((r) => (
+                {ROLES_ASIGNABLES.map((r) => (
                   <option key={r.value} value={r.value}>{r.label}</option>
                 ))}
               </select>

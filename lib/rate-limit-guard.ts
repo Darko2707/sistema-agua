@@ -14,8 +14,16 @@ export async function consumeRateLimit(input: {
   key: string;
   boundary: string;
   scope: string;
+  /** Sensitive flows must block when the limiter is unavailable. */
+  failOpen?: boolean;
 }): Promise<RateLimitDecision | null> {
-  if (!input.limiter) return null;
+  const mustFailClosed = input.failOpen === false && process.env.NODE_ENV === 'production';
+  if (!input.limiter) {
+    if (mustFailClosed) {
+      return { success: false, limit: 0, remaining: 0, reset: Date.now() + 60_000 };
+    }
+    return null;
+  }
   try {
     return await input.limiter.limit(input.key);
   } catch (error) {
@@ -24,8 +32,16 @@ export async function consumeRateLimit(input: {
       boundary: input.boundary,
       scope: input.scope,
       error,
-      failOpen: true,
+      failOpen: !mustFailClosed,
     });
+    if (mustFailClosed) {
+      return {
+        success: false,
+        limit: 0,
+        remaining: 0,
+        reset: Date.now() + 60_000,
+      };
+    }
     return null;
   }
 }

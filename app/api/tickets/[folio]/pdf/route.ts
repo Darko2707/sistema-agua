@@ -79,7 +79,7 @@ export async function GET(
     if (!esDuenio && !esAdmin && !esRepresentante) return Response.json({ error: 'No autorizado' }, { status: 403 });
     pdfInput = {
       folio: ticket.folio,
-      fraccionamiento: process.env.NEXT_PUBLIC_FRACCIONAMIENTO_NOMBRE ?? 'SIS4S',
+      fraccionamiento: process.env.NEXT_PUBLIC_FRACCIONAMIENTO_NOMBRE ?? 'SISCO',
       circuito: ticket.pago.circuito?.nombre,
       nombre: ticket.pago.perfil.usuario?.name ?? 'Residente',
       edificio: ticket.pago.perfil.edificio,
@@ -126,7 +126,7 @@ export async function GET(
     if (!esDuenio && !esAdmin && !esRepresentante) return Response.json({ error: 'No autorizado' }, { status: 403 });
     pdfInput = {
       folio: ticket.folio,
-      fraccionamiento: process.env.NEXT_PUBLIC_FRACCIONAMIENTO_NOMBRE ?? 'SIS4S',
+      fraccionamiento: process.env.NEXT_PUBLIC_FRACCIONAMIENTO_NOMBRE ?? 'SISCO',
       circuito: cargo.circuitoNombre,
       nombre: cargo.nombre ?? 'Residente',
       edificio: cargo.edificio,

@@ -15,6 +15,9 @@ import {
   notificaciones,
   pagos,
   perfilesResidente,
+  asignacionesCircuito,
+  fraccionamientoServicios,
+  servicios,
 } from '@/db/schema';
 import { circuitoRepo, residenteRepo } from '@/src/infrastructure/db/repositories';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
@@ -55,8 +58,21 @@ async function assertPerfilVisible(userId: string, role: string, perfilId: strin
   }
 
   if (role === 'cuadrilla_cortes') {
-    const perfilTrabajador = await residenteRepo.findByUserId(userId);
-    if (!perfilTrabajador || perfil.circuitoId !== perfilTrabajador.circuitoId) {
+    if (!perfil.fraccionamientoId) throw new TRPCError({ code: 'FORBIDDEN' });
+    const [assignment] = await db.select({ id: asignacionesCircuito.id })
+      .from(asignacionesCircuito)
+      .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, asignacionesCircuito.fraccionamientoServicioId))
+      .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
+      .where(and(
+        eq(asignacionesCircuito.usuarioId, userId),
+        eq(asignacionesCircuito.fraccionamientoId, perfil.fraccionamientoId),
+        eq(asignacionesCircuito.circuitoId, perfil.circuitoId),
+        eq(asignacionesCircuito.rol, 'cuadrilla_cortes'),
+        eq(asignacionesCircuito.activo, true),
+        eq(fraccionamientoServicios.estado, 'activo'),
+        eq(servicios.clave, 'agua'),
+      )).limit(1);
+    if (!assignment) {
       throw new TRPCError({ code: 'FORBIDDEN' });
     }
     return;
@@ -209,7 +225,10 @@ export const operacionRouter = router({
       }
 
       const circuito = perfil.circuitoId ? await circuitoRepo.findById(perfil.circuitoId) : null;
-      const saldoPendiente = atrasados.length * Number(circuito?.montoMensual ?? 0);
+      const agua = residenteRepo.findWaterServiceConfig
+        ? await residenteRepo.findWaterServiceConfig(perfil.id)
+        : null;
+      const saldoPendiente = atrasados.length * Number(agua?.montoMensual ?? circuito?.montoMensual ?? 0);
       return {
         perfilId: perfil.id,
         periodoActual: periodo,

@@ -1,49 +1,18 @@
 import type { Metadata, Viewport } from 'next'
-import { Geist, Geist_Mono, Mulish, Bricolage_Grotesque, Manrope, Space_Grotesk } from 'next/font/google'
 import { Providers } from '@/components/providers'
 import './globals.css'
 
-const geistSans = Geist({
-  variable: '--font-geist-sans',
-  subsets: ['latin'],
-})
-
-const geistMono = Geist_Mono({
-  variable: '--font-geist-mono',
-  subsets: ['latin'],
-})
-
-const mulish = Mulish({
-  variable: '--font-mulish',
-  subsets: ['latin'],
-})
-
-const bricolage = Bricolage_Grotesque({
-  variable: '--font-bricolage',
-  subsets: ['latin'],
-})
-
-const manrope = Manrope({
-  variable: '--font-manrope',
-  subsets: ['latin'],
-})
-
-const spaceGrotesk = Space_Grotesk({
-  variable: '--font-space-grotesk',
-  subsets: ['latin'],
-})
-
 export const metadata: Metadata = {
   title: {
-    default: 'SIS4S - Sistema de Agua',
-    template: '%s | SIS4S',
+    default: 'SISCO - Sistema Integral de Servicios para la Comunidad',
+    template: '%s | SISCO',
   },
   description: 'Consulta pagos, recibos y el estado de tu servicio de agua.',
-  applicationName: 'SIS4S Agua',
+  applicationName: 'SISCO',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'SIS4S Agua',
+    title: 'SISCO',
   },
   icons: {
     apple: '/logo1SIS4S.png',
@@ -63,7 +32,7 @@ export default function RootLayout({
   return (
     <html
       lang="es"
-      className={`${geistSans.variable} ${geistMono.variable} ${mulish.variable} ${bricolage.variable} ${manrope.variable} ${spaceGrotesk.variable}`}
+      className="font-sans"
     >
       <body className="min-h-screen bg-slate-50 font-sans antialiased">
         <a
