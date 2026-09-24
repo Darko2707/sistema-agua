@@ -33,32 +33,42 @@ export class CrearPersonalHandler {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'Debes asignar un circuito al personal' });
     }
     const circuito = await circuitoRepo.findById(cmd.circuitoId);
-    if (!circuito?.fraccionamientoId) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'El circuito no tiene fraccionamiento asignado' });
+    if (!circuito?.fraccionamientoId || !circuito.activo) {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'El circuito no tiene fraccionamiento asignado o esta inactivo' });
     }
 
-    const userId = await userRepo.create({
-      nombre: cmd.nombre,
-      email: cmd.email,
-      password: cmd.password,
-      role: cmd.role,
-      fraccionamientoId: circuito.fraccionamientoId,
-    });
+    const mpAccessToken = cmd.mercadoPagoAccessToken
+      ? encryptToken(cmd.mercadoPagoAccessToken) : undefined;
+    const userId = userRepo.createWithCircuit
+      ? await userRepo.createWithCircuit({
+          nombre: cmd.nombre,
+          email: cmd.email,
+          password: cmd.password,
+          role: cmd.role,
+          fraccionamientoId: circuito.fraccionamientoId,
+          circuitoId: cmd.circuitoId,
+          encryptedAccessToken: mpAccessToken,
+          collectorId: cmd.mercadoPagoCollectorId,
+        })
+      : await userRepo.create({
+          nombre: cmd.nombre,
+          email: cmd.email,
+          password: cmd.password,
+          role: cmd.role,
+          fraccionamientoId: circuito.fraccionamientoId,
+        });
 
-    if (cmd.circuitoId) {
-      const mpAccessToken = cmd.mercadoPagoAccessToken
-        ? encryptToken(cmd.mercadoPagoAccessToken) : undefined;
-      if (cmd.role === 'representante') {
-        await circuitoRepo.updateRepresentanteWithMp(cmd.circuitoId, userId, {
-          encryptedAccessToken: mpAccessToken,
-          collectorId:          cmd.mercadoPagoCollectorId,
-        });
-      } else if (cmd.role === 'tesorera') {
-        await circuitoRepo.updateTesoreraWithMp(cmd.circuitoId, userId, {
-          encryptedAccessToken: mpAccessToken,
-          collectorId:          cmd.mercadoPagoCollectorId,
-        });
-      }
+    // Compatibility fallback for test/legacy repositories without the atomic method.
+    if (!userRepo.createWithCircuit && cmd.role === 'representante') {
+      await circuitoRepo.updateRepresentanteWithMp(cmd.circuitoId, userId, {
+        encryptedAccessToken: mpAccessToken,
+        collectorId: cmd.mercadoPagoCollectorId,
+      });
+    } else if (!userRepo.createWithCircuit && cmd.role === 'tesorera') {
+      await circuitoRepo.updateTesoreraWithMp(cmd.circuitoId, userId, {
+        encryptedAccessToken: mpAccessToken,
+        collectorId: cmd.mercadoPagoCollectorId,
+      });
     }
 
     logger.info(`admin.${cmd.role}.creado`, { actorId: cmd.actorId, userId });

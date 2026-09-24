@@ -86,6 +86,7 @@ export default function RegistroPage() {
   const [serverError, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
+  const [cuentaPendiente, setCuentaPendiente] = useState<CuentaForm | null>(null);
 
   const circuitosQuery = useCircuitos();
   const circuitos = circuitosQuery.data ?? [];
@@ -149,7 +150,13 @@ export default function RegistroPage() {
 
   async function handleCrearCuenta(data: CuentaForm) {
     setError('');
-    setSubmitting(true);
+    setCuentaPendiente({ ...data, email: data.email.trim().toLowerCase() });
+    setPaso(2);
+    return;
+  }
+  /*
+    Legacy account creation flow removed: account creation now happens after
+    the complete profile passes validation.
     try {
       // También cubre el caso excepcional en que otra pestaña inició sesión
       // después de la comprobación inicial.
@@ -200,13 +207,37 @@ export default function RegistroPage() {
     } finally {
       setSubmitting(false);
     }
-  }
+  */
 
   async function handleCompletarPerfil(data: PerfilForm) {
     setError('');
     setSubmitting(true);
     const departamento = `${normalizarNumero(data.deptoNumero)}${(data.deptoLetra ?? '').trim().toUpperCase()}`;
     try {
+      const currentSession = await authClient.getSession();
+      if (!currentSession.data?.user) {
+        if (!cuentaPendiente) {
+          setPaso(1);
+          throw new Error('La sesión de registro expiró. Vuelve a capturar tus datos de cuenta.');
+        }
+        const email = cuentaPendiente.email.trim().toLowerCase();
+        const { error: signUpError } = await authClient.signUp.email({
+          email,
+          password: cuentaPendiente.password,
+          name: normalizarNombrePersona(cuentaPendiente.nombre),
+        });
+        if (signUpError) {
+          throw new Error(signUpError.message ?? 'No se pudo crear la cuenta. El correo podría estar registrado.');
+        }
+        let sessionResult = await authClient.getSession();
+        if (!sessionResult.data?.user) {
+          const { error: signInError } = await authClient.signIn.email({ email, password: cuentaPendiente.password });
+          if (signInError) throw new Error('No se pudo iniciar sesión automáticamente. Intenta iniciar sesión para continuar.');
+          sessionResult = await authClient.getSession();
+        }
+        if (!sessionResult.data?.user) throw new Error('No pudimos confirmar la sesión de la cuenta.');
+        await aceptarLegales();
+      }
       await trpc.usuarios.crearPerfil.mutate({
         telefono: data.telefono,
         sexo: data.sexo,
@@ -221,6 +252,7 @@ export default function RegistroPage() {
           telefonoPropietario: data.telefonoPropietario,
         }),
       });
+      setCuentaPendiente(null);
       router.replace('/residente');
     } catch (err: unknown) {
       setError(userFacingError(err, 'SISCO-103'));
@@ -236,6 +268,7 @@ export default function RegistroPage() {
       const { error: signOutError } = await authClient.signOut();
       if (signOutError) throw new Error(signOutError.message ?? 'No se pudo cerrar la sesión.');
       cuenta.reset();
+      setCuentaPendiente(null);
       perfil.reset({ sexo: 'masculino', tenencia: 'propietario', deptoLetra: '' });
       setPaso(1);
       router.refresh();

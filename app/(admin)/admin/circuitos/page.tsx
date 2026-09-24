@@ -70,9 +70,7 @@ export default function CircuitosPage() {
   }, [personalQuery.data]);
 
   // ─── Mutations ───────────────────────────────────────────────────────────────
-  const actualizarMontosMut      = trpcReact.circuitos.actualizarMontos.useMutation();
-  const toggleActivoMut          = trpcReact.circuitos.toggleActivo.useMutation();
-  const asignarRepresentanteMut  = trpcReact.usuarios.asignarRepresentante.useMutation();
+  const actualizarConfiguracionMut = trpcReact.circuitos.actualizarConfiguracion.useMutation();
   const crearCircuitoMut          = trpcReact.circuitos.crear.useMutation();
 
   async function crearCircuito() {
@@ -116,15 +114,12 @@ export default function CircuitosPage() {
     setActualizando(true);
     setError(null);
     try {
-      await actualizarMontosMut.mutateAsync({
+      await actualizarConfiguracionMut.mutateAsync({
         circuitoId,
         montoMensual:    parseFloat(form.montoMensual),
         montoReconexion: parseFloat(form.montoReconexion),
-      });
-      await toggleActivoMut.mutateAsync({ circuitoId, activo: form.activo });
-      await asignarRepresentanteMut.mutateAsync({
-        circuitoId,
-        userId: form.representanteId || '',
+        activo: form.activo,
+        representanteId: form.representanteId || null,
       });
       void utils.circuitos.listar.invalidate();
       setEditando(null);

@@ -6,7 +6,7 @@ import { TRPCError } from '@trpc/server';
 import { circuitoRepo } from '@/src/infrastructure/db/repositories';
 import { subscriptionService } from '@/src/infrastructure/db/services/subscription.service';
 import { db } from '@/db';
-import { auditoria, circuitos, fraccionamientos } from '@/db/schema';
+import { auditoria, circuitos, fraccionamientos, user } from '@/db/schema';
 
 const circuitoOutputColumns = {
   id: true,
@@ -53,20 +53,61 @@ export const circuitosRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       await subscriptionService.requireOperational(input.fraccionamientoId);
-      const [created] = await db.insert(circuitos).values({
-        fraccionamientoId: input.fraccionamientoId,
-        nombre: input.nombre,
-        montoMensual: input.montoMensual.toFixed(2),
-        montoReconexion: input.montoReconexion.toFixed(2),
-      }).returning({ id: circuitos.id, nombre: circuitos.nombre });
-      await db.insert(auditoria).values({
-        actorId: ctx.user.id,
-        accion: 'circuito.creado',
-        entidad: 'circuitos',
-        entidadId: created.id,
-        detalle: { fraccionamientoId: input.fraccionamientoId, nombre: created.nombre },
+      const created = await db.transaction(async (tx) => {
+        const [row] = await tx.insert(circuitos).values({
+          fraccionamientoId: input.fraccionamientoId,
+          nombre: input.nombre,
+          montoMensual: input.montoMensual.toFixed(2),
+          montoReconexion: input.montoReconexion.toFixed(2),
+        }).returning({ id: circuitos.id, nombre: circuitos.nombre });
+        await tx.insert(auditoria).values({
+          actorId: ctx.user.id,
+          accion: 'circuito.creado',
+          entidad: 'circuitos',
+          entidadId: row.id,
+          detalle: { fraccionamientoId: input.fraccionamientoId, nombre: row.nombre },
+        });
+        return row;
       });
       return created;
+    }),
+
+  actualizarConfiguracion: roleProcedure('admin')
+    .input(z.object({
+      circuitoId: z.string().uuid(),
+      montoMensual: z.number().positive(),
+      montoReconexion: z.number().positive(),
+      activo: z.boolean(),
+      representanteId: z.string().min(1).nullable(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const circuito = await circuitoRepo.findById(input.circuitoId);
+      if (!circuito?.fraccionamientoId) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Circuito sin fraccionamiento' });
+      await subscriptionService.requireOperational(circuito.fraccionamientoId);
+      if (input.representanteId) {
+        const [representante] = await db.select({ id: user.id, role: user.role, fraccionamientoId: user.fraccionamientoId })
+          .from(user).where(eq(user.id, input.representanteId)).limit(1);
+        if (!representante || representante.role !== 'representante' || representante.fraccionamientoId !== circuito.fraccionamientoId) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'El representante no pertenece a este fraccionamiento' });
+        }
+      }
+      await db.transaction(async (tx) => {
+        await tx.update(circuitos).set({
+          montoMensual: input.montoMensual.toFixed(2),
+          montoReconexion: input.montoReconexion.toFixed(2),
+          activo: input.activo,
+          representanteId: input.representanteId,
+          updatedAt: new Date(),
+        }).where(eq(circuitos.id, input.circuitoId));
+        await tx.insert(auditoria).values({
+          actorId: ctx.user.id,
+          accion: 'circuito.configuracion.actualizada',
+          entidad: 'circuitos',
+          entidadId: input.circuitoId,
+          detalle: { fraccionamientoId: circuito.fraccionamientoId, ...input },
+        });
+      });
+      return { ok: true };
     }),
 
   toggleActivo: roleProcedure('admin')

@@ -10,6 +10,7 @@ import type {
   RepresentanteData,
   TesoreraData,
   CreatePersonalInput,
+  CreatePersonalWithCircuitInput,
   UpdatePersonalInput,
   CambiarRolInput,
   CambiarRolEnCircuitoInput,
@@ -50,6 +51,46 @@ export class DrizzleUserRepository implements UserRepository {
         id: nanoid(), accountId: input.email, providerId: 'credential',
         userId, password: hashed,
       });
+    });
+    return userId;
+  }
+
+  async createWithCircuit(input: CreatePersonalWithCircuitInput): Promise<string> {
+    const userId = nanoid();
+    const hashed = await hashAccountPassword(input.password);
+    await db.transaction(async (tx) => {
+      const [circuito] = await tx.select({ fraccionamientoId: circuitos.fraccionamientoId, activo: circuitos.activo })
+        .from(circuitos).where(eq(circuitos.id, input.circuitoId)).limit(1);
+      if (!circuito?.fraccionamientoId || !circuito.activo || circuito.fraccionamientoId !== input.fraccionamientoId) {
+        throw new Error('El circuito no existe, esta inactivo o no pertenece al fraccionamiento');
+      }
+      await tx.insert(user).values({
+        id: userId, name: input.nombre, email: input.email,
+        role: input.role,
+        fraccionamientoId: input.fraccionamientoId,
+      });
+      await tx.insert(account).values({
+        id: nanoid(), accountId: input.email, providerId: 'credential',
+        userId, password: hashed,
+      });
+      if (input.role === 'representante' || input.role === 'tesorera') {
+        const field = input.role === 'representante' ? 'representanteId' : 'tesoreraId';
+        await tx.update(circuitos).set({ [field]: userId }).where(eq(circuitos.id, input.circuitoId));
+        if (input.encryptedAccessToken || input.collectorId) {
+          await tx.insert(fraccionamientoMetodosPago).values({
+            fraccionamientoId: input.fraccionamientoId,
+            accessTokenCifrado: input.encryptedAccessToken ?? '',
+            collectorId: input.collectorId ?? null,
+          }).onConflictDoUpdate({
+            target: [fraccionamientoMetodosPago.fraccionamientoId, fraccionamientoMetodosPago.proveedor],
+            set: {
+              ...(input.encryptedAccessToken ? { accessTokenCifrado: input.encryptedAccessToken } : {}),
+              ...(input.collectorId ? { collectorId: input.collectorId } : {}),
+              actualizadoEn: new Date(),
+            },
+          });
+        }
+      }
     });
     return userId;
   }
