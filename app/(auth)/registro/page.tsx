@@ -8,6 +8,7 @@ import { authClient } from '@/lib/auth-client';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { trpc } from '@/lib/trpc-client';
+import { trpcReact } from '@/lib/trpc-react';
 import { homePathForRole } from '@/lib/role-home';
 import { useCircuitos } from '@/hooks/useCircuito';
 import { userFacingError } from '@/lib/user-facing-error';
@@ -90,6 +91,7 @@ export default function RegistroPage() {
 
   const circuitosQuery = useCircuitos();
   const circuitos = circuitosQuery.data ?? [];
+  const fraccionamientosQuery = trpcReact.fraccionamientos.listarPublicos.useQuery();
 
   const cuenta = useForm<CuentaForm>({ resolver: zodResolver(cuentaSchema), mode: 'onTouched' });
   const perfil = useForm<PerfilForm>({
@@ -103,9 +105,7 @@ export default function RegistroPage() {
   const esInquilino = tenencia === 'inquilino';
   const deptoNumero = useWatch({ control: perfil.control, name: 'deptoNumero' }) ?? '';
   const deptoLetra = useWatch({ control: perfil.control, name: 'deptoLetra' }) ?? '';
-  const fraccionamientos = Array.from(new Map(circuitos.map((c) => [c.fraccionamientoId, c.fraccionamientoNombre])).entries())
-    .filter(([id]) => Boolean(id))
-    .map(([id, nombre]) => ({ id: id as string, nombre: nombre ?? 'Fraccionamiento' }));
+  const fraccionamientos = fraccionamientosQuery.data ?? [];
   const circuitosDelFraccionamiento = circuitos.filter((c) => c.fraccionamientoId === fraccionamientoId);
 
   useEffect(() => {
@@ -421,7 +421,7 @@ export default function RegistroPage() {
               <select
                 id="fraccionamientoId"
                 className="auth-sel"
-                disabled={circuitosQuery.isLoading || circuitosQuery.isError}
+                disabled={fraccionamientosQuery.isLoading || fraccionamientosQuery.isError}
                 aria-required="true"
                 aria-describedby={perfil.formState.errors.fraccionamientoId ? 'tenant-err' : undefined}
                 aria-invalid={!!perfil.formState.errors.fraccionamientoId}
@@ -430,7 +430,7 @@ export default function RegistroPage() {
                   onChange: () => perfil.setValue('circuitoId', '', { shouldDirty: true, shouldValidate: true }),
                 })}
               >
-                <option value="">{circuitosQuery.isLoading ? 'Cargando fraccionamientos...' : 'Selecciona tu fraccionamiento'}</option>
+                <option value="">{fraccionamientosQuery.isLoading ? 'Cargando fraccionamientos...' : 'Selecciona tu fraccionamiento'}</option>
                 {fraccionamientos.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.nombre}</option>)}
               </select>
               <FieldError id="tenant-err" message={perfil.formState.errors.fraccionamientoId?.message} />
@@ -444,7 +444,7 @@ export default function RegistroPage() {
               <p id="circ-status" role={circuitosQuery.isError ? 'alert' : 'status'} style={{ fontSize: 12, color: circuitosQuery.isError ? C.danger : C.textWarm, marginTop: 4 }}>
                 {circuitosQuery.isError
                   ? 'No pudimos cargar los circuitos. Recarga la página para intentar nuevamente.'
-                  : !circuitosQuery.isLoading && circuitos.length === 0
+                    : !circuitosQuery.isLoading && fraccionamientoId && circuitosDelFraccionamiento.length === 0
                     ? 'No hay circuitos disponibles para registro.'
                     : ''}
               </p>

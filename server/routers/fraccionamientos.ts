@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 import { db } from '@/db';
 import { auditoria, fraccionamientos } from '@/db/schema';
-import { router, roleProcedure } from '../trpc';
+import { router, publicProcedure, roleProcedure } from '../trpc';
 
 /** Convierte el nombre visible en el identificador público del tenant. */
 export function slugifyFraccionamiento(nombre: string): string {
@@ -36,6 +36,12 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 export const fraccionamientosRouter = router({
+  listarPublicos: publicProcedure.query(async () => db
+    .select({ id: fraccionamientos.id, nombre: fraccionamientos.nombre })
+    .from(fraccionamientos)
+    .where(eq(fraccionamientos.activo, true))
+    .orderBy(fraccionamientos.nombre)),
+
   listar: roleProcedure('admin').query(async () => db
     .select({ id: fraccionamientos.id, nombre: fraccionamientos.nombre, slug: fraccionamientos.slug, activo: fraccionamientos.activo })
     .from(fraccionamientos)
