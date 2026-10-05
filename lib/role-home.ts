@@ -8,7 +8,10 @@ export function homePathForRole(role: string | null | undefined): string {
       return '/tesorera';
     case 'cuadrilla_cortes':
       return '/trabajador';
-    default:
+    case 'residente':
       return '/residente';
+    case 'operador_pozo':
+    default:
+      return '/acceso-no-configurado';
   }
 }

@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EstadoAguaBadge } from '@/components/domain/EstadoAguaBadge';
-import { ROLES_ASIGNABLES, type Circuito, type ResidenteCompleto } from '@/hooks/useAdmin';
+import { ROLES_ASIGNABLES, type ResidenteCompleto } from '@/hooks/useAdmin';
 import { Input } from '@/components/ui/input';
 
 const MESES_NOMBRE = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
@@ -37,14 +37,10 @@ type MesAnio = { mes: number; anio: number };
 
 type Props = {
   residentesFiltrados:        ResidenteCompleto[];
-  circuitos:                  Circuito[];
-  filtroCircuito:             string;
-  setFiltroCircuito:          (v: string) => void;
   filtroEstado:               string;
   setFiltroEstado:            (v: string) => void;
   actualizando:               string | null;
   onCambiarRol:               (userId: string, rol: string) => void;
-  onAsignarCircuito:          (perfilId: string, circuitoId: string) => void;
   onRegistrarPagoRetroactivo: (
     perfilId: string,
     meses: MesAnio[],
@@ -59,14 +55,10 @@ type Props = {
 
 export function ResidentesTab({
   residentesFiltrados,
-  circuitos,
-  filtroCircuito,
-  setFiltroCircuito,
   filtroEstado,
   setFiltroEstado,
   actualizando,
   onCambiarRol,
-  onAsignarCircuito,
   onRegistrarPagoRetroactivo,
   onLimpiarFiltros,
   paginaMeta,
@@ -159,20 +151,6 @@ export function ResidentesTab({
               />
             </div>
             <div className="flex items-center gap-2">
-              <label className="text-sm text-muted-foreground">Circuito:</label>
-              <select
-                value={filtroCircuito}
-                onChange={(e) => setFiltroCircuito(e.target.value)}
-                className="h-9 rounded-lg border bg-background px-3 text-sm"
-              >
-                <option value="todos">Todos</option>
-                {circuitos.map((c) => (
-                  <option key={c.id} value={c.id}>{c.nombre}</option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex items-center gap-2">
               <label className="text-sm text-muted-foreground">Estado:</label>
               <select
                 value={filtroEstado}
@@ -208,7 +186,7 @@ export function ResidentesTab({
                 <div className="flex-1">
                   <p className="font-medium">{r.usuario?.name || 'Sin nombre'}</p>
                   <p className="text-sm text-muted-foreground">
-                    {r.circuito?.nombre || 'Sin circuito'} · {r.edificio} · {r.departamento}
+                    Edif. {r.edificio} · Depto. {r.departamento}
                   </p>
                   <p className="text-xs text-muted-foreground">{r.usuario?.email || 'Sin email'}</p>
                   {r.tenencia === 'inquilino' && r.nombrePropietario && (
@@ -249,16 +227,6 @@ export function ResidentesTab({
                     Transferencia
                   </Button>
                   <select
-                    value={r.circuito?.id ?? ''}
-                    disabled={actualizando === r.id}
-                    aria-label={`Circuito de ${r.usuario?.name ?? 'residente'}`}
-                    onChange={(e) => onAsignarCircuito(r.id, e.target.value)}
-                    className="h-9 rounded-lg border bg-background px-2 text-sm md:w-40"
-                  >
-                    <option value="" disabled>Seleccionar circuito</option>
-                    {circuitos.map((c) => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-                  </select>
-                  <select
                     value={r.usuario?.role || 'residente'}
                     disabled={actualizando === usuarioId}
                     onChange={(e) => onCambiarRol(usuarioId, e.target.value)}
@@ -298,8 +266,7 @@ export function ResidentesTab({
           <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
             <h2 className="text-lg font-bold text-slate-800">Registrar pago por {metodoSel === 'efectivo' ? 'efectivo' : 'transferencia'}</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              {modalResidente.usuario?.name} · {modalResidente.circuito?.nombre} · Edif.{' '}
-              {modalResidente.edificio} · Depto. {modalResidente.departamento}
+              {modalResidente.usuario?.name} · Edif. {modalResidente.edificio} · Depto. {modalResidente.departamento}
             </p>
             <p className="mt-1 text-xs text-slate-400">
               Selecciona meses atrasados, el mes actual o meses adelantados para registrar el pago.

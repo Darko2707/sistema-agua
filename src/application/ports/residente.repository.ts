@@ -21,6 +21,7 @@ export type CircuitoRef = {
   nombre: string;
   montoMensual: string;
   montoReconexion: string;
+  diaCorte: number;
   representanteId: string | null;
   activo: boolean;
 };
@@ -72,7 +73,8 @@ export interface ResidenteRepository {
   findByCircuitoPaginated(circuitoId: string, page: number, pageSize: number): Promise<PaginatedResult<ResidenteConRelaciones>>;
   findByEstado(estado: EstadoAgua): Promise<ResidenteConRelaciones[]>;
   findByCircuitoYEstado(circuitoId: string, estado: EstadoAgua): Promise<ResidenteConRelaciones[]>;
+  findByFraccionamientoYEstado?(fraccionamientoId: string, estado: EstadoAgua): Promise<ResidenteConRelaciones[]>;
   create(data: Omit<ResidenteData, 'id' | 'creadoEn'>): Promise<ResidenteData>;
   updateEstado(id: string, estadoAgua: EstadoAgua): Promise<void>;
-  marcarMorososDelMes(mes: number, anio: number): Promise<number>;
+  marcarMorososDelMes(mes: number, anio: number, diaActual: number): Promise<number>;
 }

@@ -11,7 +11,7 @@ import {
   tickets,
   ordenesTrabajo,
 } from '@/db/schema';
-import { DIA_CORTE } from '@/src/domain/pagos/constants';
+import { getDiaCorte } from '@/src/domain/pagos/constants';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
 import { fechaNegocio } from '@/src/domain/shared/fecha-negocio';
 import type { UserRole } from '@/src/application/ports/user.repository';
@@ -85,9 +85,10 @@ export async function reversarPagoAtomico(input: ReversarPagoInput): Promise<Rev
     const periodo = PeriodoVO.vigente();
     const esMesActual = pago.mes === periodo.mes && pago.anio === periodo.anio;
     const diaNegocio = fechaNegocio().dia;
+    const diaCorte = getDiaCorte(pago.perfil.circuito ?? undefined);
     const nuevoEstado = pago.esReconexion && pago.perfil.estadoAgua === 'pendiente_reconexion'
       ? 'cortado' as const
-      : esMesActual && pago.perfil.estadoAgua === 'activo' && diaNegocio > DIA_CORTE
+      : esMesActual && pago.perfil.estadoAgua === 'activo' && diaNegocio > diaCorte
         ? 'pendiente_corte' as const
         : null;
 

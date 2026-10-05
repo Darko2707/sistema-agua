@@ -13,7 +13,6 @@ type Snapshot = {
   telefono: string;
   sexo: string;
   tenencia: string;
-  circuitoId: string;
   edificio: string;
   departamento: string;
   nombrePropietario: string | null;
@@ -25,7 +24,6 @@ function snapshot(perfil: typeof perfilesResidente.$inferSelect): Snapshot {
     telefono: perfil.telefono,
     sexo: perfil.sexo,
     tenencia: perfil.tenencia,
-    circuitoId: perfil.circuitoId,
     edificio: perfil.edificio,
     departamento: perfil.departamento,
     nombrePropietario: perfil.nombrePropietario,
@@ -40,7 +38,6 @@ function proposed(current: Snapshot, changes: PerfilCambios): Snapshot {
     telefono: changes.telefono ?? current.telefono,
     sexo: changes.sexo ?? current.sexo,
     tenencia: changes.tenencia ?? current.tenencia,
-    circuitoId: changes.circuitoId ?? current.circuitoId,
     edificio: changes.edificio ?? current.edificio,
     departamento: changes.departamento ?? current.departamento,
     nombrePropietario: changes.nombrePropietario !== undefined
@@ -89,13 +86,6 @@ export class ProfileChangeService {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'No hay cambios para solicitar' });
     }
 
-    const circuitoDestino = await db.query.circuitos.findFirst({
-      where: (c, { eq, and }) => and(eq(c.id, nuevos.circuitoId), eq(c.fraccionamientoId, input.tenantId), eq(c.activo, true)),
-    });
-    if (!circuitoDestino) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'El circuito destino no pertenece al fraccionamiento o esta inactivo' });
-    }
-
     try {
       const [request] = await db.transaction(async (tx) => {
         const [created] = await tx.insert(solicitudesCambioPerfil).values({
@@ -142,7 +132,6 @@ export class ProfileChangeService {
         valoresNuevos: solicitudesCambioPerfil.valoresNuevos,
         motivo: solicitudesCambioPerfil.motivo,
         solicitadoEn: solicitudesCambioPerfil.solicitadoEn,
-        perfilCircuitoId: perfilesResidente.circuitoId,
         perfilEdificio: perfilesResidente.edificio,
         perfilDepartamento: perfilesResidente.departamento,
       })
@@ -154,10 +143,7 @@ export class ProfileChangeService {
       ))
       .orderBy(desc(solicitudesCambioPerfil.solicitadoEn));
 
-    return rows.filter(row => {
-      const nuevos = row.valoresNuevos as Partial<Snapshot>;
-      return row.perfilCircuitoId === circuito.id || nuevos.circuitoId === circuito.id;
-    });
+    return rows;
   }
 
   async listMine(input: { actorId: string; tenantId: string }) {
@@ -198,7 +184,12 @@ export class ProfileChangeService {
     if (!perfil || perfil.fraccionamientoId !== request.fraccionamientoId) {
       throw new TRPCError({ code: 'CONFLICT', message: 'El perfil ya no tiene una pertenencia consistente' });
     }
-    const parsed = PerfilCambiosSchema.safeParse(request.valoresNuevos);
+    // Las solicitudes creadas antes de esta migración pueden conservar un
+    // circuitoId en su JSON. Es un dato legado: no debe impedir resolver una
+    // solicitud válida ni permitir mover al residente fuera del tenant.
+    const valoresSinCircuito = { ...(request.valoresNuevos as Record<string, unknown>) };
+    delete valoresSinCircuito.circuitoId;
+    const parsed = PerfilCambiosSchema.safeParse(valoresSinCircuito);
     if (!parsed.success) {
       throw new TRPCError({ code: 'CONFLICT', message: 'La solicitud contiene datos invalidos' });
     }
@@ -209,18 +200,11 @@ export class ProfileChangeService {
       where: (c, { eq }) => eq(c.id, perfil.circuitoId),
       columns: { id: true, representanteId: true, fraccionamientoId: true },
     });
-    const circuitoDestino = await db.query.circuitos.findFirst({
-      where: (c, { eq, and }) => and(eq(c.id, nuevos.circuitoId), eq(c.fraccionamientoId, request.fraccionamientoId), eq(c.activo, true)),
-      columns: { id: true, representanteId: true },
-    });
-    if (!circuitoActual || !circuitoDestino) {
-      throw new TRPCError({ code: 'CONFLICT', message: 'El circuito de la solicitud ya no es valido' });
+    if (!circuitoActual) {
+      throw new TRPCError({ code: 'CONFLICT', message: 'El fraccionamiento de la solicitud ya no es valido' });
     }
-    if (input.actorRole === 'representante' && (
-      circuitoActual.representanteId !== input.actorId ||
-      circuitoDestino.id !== circuitoActual.id
-    )) {
-      throw new TRPCError({ code: 'FORBIDDEN', message: 'Solo el representante del circuito puede aprobar cambios; los traslados requieren admin' });
+    if (input.actorRole === 'representante' && circuitoActual.representanteId !== input.actorId) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Solo el representante del fraccionamiento puede aprobar cambios' });
     }
 
     return db.transaction(async (tx) => {
@@ -239,7 +223,6 @@ export class ProfileChangeService {
           .from(perfilesResidente)
           .where(and(
             eq(perfilesResidente.fraccionamientoId, request.fraccionamientoId),
-            eq(perfilesResidente.circuitoId, nuevos.circuitoId),
             eq(perfilesResidente.edificio, nuevos.edificio),
             eq(perfilesResidente.departamento, nuevos.departamento),
             ne(perfilesResidente.id, perfil.id),
@@ -251,7 +234,6 @@ export class ProfileChangeService {
           telefono: nuevos.telefono,
           sexo: nuevos.sexo as 'masculino' | 'femenino' | 'otro',
           tenencia: nuevos.tenencia as 'propietario' | 'inquilino',
-          circuitoId: nuevos.circuitoId,
           edificio: nuevos.edificio,
           departamento: nuevos.departamento,
           nombrePropietario: nuevos.nombrePropietario,

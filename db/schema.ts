@@ -64,7 +64,7 @@ export const user = pgTable('user', {
   role:          rolEnum('role').notNull().default('residente'),
   // Nullable para el admin global y durante el onboarding del residente;
   // el perfil terminado debe fijar exactamente un fraccionamiento.
-  fraccionamientoId: uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
+  fraccionamientoId: uuid('fraccionamiento_id').notNull().references(() => fraccionamientos.id, { onDelete: 'restrict' }),
   createdAt:     timestamp('created_at').notNull().defaultNow(),
   updatedAt:     timestamp('updated_at').notNull().defaultNow(),
   deletedAt:     timestamp('deleted_at'),
@@ -116,13 +116,23 @@ export const verification = pgTable('verification', {
 // Estructura del fraccionamiento
 // ─────────────────────────────────────────────
 export const fraccionamientos = pgTable('fraccionamientos', {
-  id:        uuid('id').defaultRandom().primaryKey(),
-  nombre:    text('nombre').notNull(),
-  slug:      text('slug').notNull().unique(),
-  activo:    boolean('activo').notNull().default(true),
-  createdAt: timestamp('created_at').notNull().defaultNow(),
-  updatedAt: timestamp('updated_at').notNull().defaultNow(),
-});
+  id:                uuid('id').defaultRandom().primaryKey(),
+  nombre:            text('nombre').notNull(),
+  slug:              text('slug').notNull().unique(),
+  representanteId:   text('representante_id'),
+  tesoreraId:        text('tesorera_id'),
+  montoMensual:      decimal('monto_mensual', { precision: 10, scale: 2 }).notNull().default('50.00'),
+  montoReconexion:   decimal('monto_reconexion', { precision: 10, scale: 2 }).notNull().default('300.00'),
+  diaCorte:          integer('dia_corte').notNull().default(5),
+  activo:            boolean('activo').notNull().default(true),
+  createdAt:         timestamp('created_at').notNull().defaultNow(),
+  updatedAt:         timestamp('updated_at').notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex('uq_fraccionamientos_representante_unico').on(t.representanteId).where(sql`${t.representanteId} IS NOT NULL`),
+  uniqueIndex('uq_fraccionamientos_tesorera_unica').on(t.tesoreraId).where(sql`${t.tesoreraId} IS NOT NULL`),
+  index('idx_fraccionamientos_activos_dia_corte').on(t.diaCorte).where(sql`${t.activo} = true`),
+  check('chk_fraccionamientos_dia_corte', sql`${t.diaCorte} BETWEEN 1 AND 28`),
+]);
 
 export const suscripcionesFraccionamiento = pgTable('suscripciones_fraccionamiento', {
   id:                uuid('id').defaultRandom().primaryKey(),
@@ -209,7 +219,8 @@ export const passwordResetRequests = pgTable('password_reset_requests', {
 ]);
 
 // Codigos temporales que un representante entrega en persona para recuperar
-// una cuenta sin depender de correo/SMS. Se guarda solo el hash del codigo.
+// una cuenta sin depender de correo/SMS. Se guarda solo el HMAC del codigo,
+// calculado con un secreto exclusivo del flujo de recuperacion.
 export const passwordResetCodes = pgTable('password_reset_codes', {
   id:              uuid('id').defaultRandom().primaryKey(),
   userId:          text('user_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
@@ -237,16 +248,19 @@ export const circuitos = pgTable('circuitos', {
   tesoreraId:             text('tesorera_id').references(() => user.id),
   montoMensual:           decimal('monto_mensual', { precision: 10, scale: 2 }).notNull().default('50.00'),
   montoReconexion:        decimal('monto_reconexion', { precision: 10, scale: 2 }).notNull().default('300.00'),
+  diaCorte:               integer('dia_corte').notNull().default(5),
   mercadoPagoAccessToken: text('mercado_pago_access_token'),
   mercadoPagoCollectorId: text('mercado_pago_collector_id'),
   activo:                 boolean('activo').notNull().default(true),
   updatedAt:              timestamp('updated_at').notNull().defaultNow(),
 }, (t) => [
   index('idx_circuitos_fraccionamiento').on(t.fraccionamientoId),
+  index('idx_circuitos_activos_dia_corte').on(t.diaCorte).where(sql`${t.activo} = true`),
   uniqueIndex('uq_circuitos_representante_unico').on(t.representanteId).where(sql`${t.representanteId} IS NOT NULL`),
   uniqueIndex('uq_circuitos_tesorera_unica').on(t.tesoreraId).where(sql`${t.tesoreraId} IS NOT NULL`),
   uniqueIndex('uq_circuitos_tenant_nombre').on(t.fraccionamientoId, t.nombre),
   uniqueIndex('uq_circuitos_tenant_id').on(t.id, t.fraccionamientoId),
+  check('chk_circuitos_dia_corte', sql`${t.diaCorte} BETWEEN 1 AND 28`),
 ]);
 
 // Asignaciones explícitas para personal operativo. Un usuario puede tener
@@ -290,12 +304,13 @@ export const perfilesResidente = pgTable('perfiles_residente', {
   // Dashboard: listar residentes por circuito; filtrar pendientes de corte/reconexión
   // Defensa final ante altas simultaneas de la misma vivienda.
   uniqueIndex('uq_perfiles_residente_ubicacion')
-    .on(t.circuitoId, t.edificio, t.departamento),
+    .on(t.fraccionamientoId, t.edificio, t.departamento),
   uniqueIndex('uq_perfiles_residente_tenant_id').on(t.id, t.fraccionamientoId),
   foreignKey({ columns: [t.circuitoId, t.fraccionamientoId], foreignColumns: [circuitos.id, circuitos.fraccionamientoId], name: 'perfiles_circuito_mismo_fraccionamiento_fk' }),
   check('chk_perfiles_edificio_canonico', sql`${t.edificio} ~ '^[1-9][0-9]{0,5}$'`),
   check('chk_perfiles_departamento_canonico', sql`${t.departamento} ~ '^[1-9][0-9]{0,5}[A-Z]?$'`),
   index('idx_perfiles_circuito_estado').on(t.circuitoId, t.estadoAgua),
+  index('idx_perfiles_fraccionamiento_estado').on(t.fraccionamientoId, t.estadoAgua),
 ]);
 
 export const perfilesServicios = pgTable('perfiles_servicios', {
@@ -563,7 +578,6 @@ export const bitacoraCortes = pgTable('bitacora_cortes', {
 export const ordenesTrabajo = pgTable('ordenes_trabajo', {
   id: uuid('id').defaultRandom().primaryKey(),
   fraccionamientoId: uuid('fraccionamiento_id').notNull().references(() => fraccionamientos.id, { onDelete: 'restrict' }),
-  circuitoId: uuid('circuito_id').notNull().references(() => circuitos.id, { onDelete: 'restrict' }),
   perfilId: uuid('perfil_id').notNull().references(() => perfilesResidente.id, { onDelete: 'restrict' }),
   fraccionamientoServicioId: uuid('fraccionamiento_servicio_id').notNull().references(() => fraccionamientoServicios.id, { onDelete: 'restrict' }),
   tipo: tipoOrdenTrabajoEnum('tipo').notNull(),
@@ -587,7 +601,6 @@ export const ordenesTrabajo = pgTable('ordenes_trabajo', {
     .on(t.perfilId, t.fraccionamientoServicioId, t.tipo)
     .where(sql`${t.estado} IN ('pendiente', 'asignada', 'en_progreso')`),
   index('idx_ordenes_trabajo_tenant_estado').on(t.fraccionamientoId, t.estado, t.creadoEn),
-  index('idx_ordenes_trabajo_circuito_estado').on(t.circuitoId, t.estado, t.creadoEn),
   index('idx_ordenes_trabajo_trabajador_estado').on(t.trabajadorId, t.estado, t.creadoEn),
   index('idx_ordenes_trabajo_perfil').on(t.perfilId, t.creadoEn),
 ]);
@@ -772,10 +785,6 @@ export const ordenesTrabajoRelations = relations(ordenesTrabajo, ({ one }) => ({
   fraccionamiento: one(fraccionamientos, {
     fields: [ordenesTrabajo.fraccionamientoId],
     references: [fraccionamientos.id],
-  }),
-  circuito: one(circuitos, {
-    fields: [ordenesTrabajo.circuitoId],
-    references: [circuitos.id],
   }),
   perfil: one(perfilesResidente, {
     fields: [ordenesTrabajo.perfilId],

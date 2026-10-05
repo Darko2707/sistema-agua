@@ -28,7 +28,6 @@ export class DrizzleCorteOperacionDatabase implements CorteOperacionDatabase {
             userId: perfilesResidente.userId,
             estadoAgua: perfilesResidente.estadoAgua,
             fraccionamientoId: perfilesResidente.fraccionamientoId,
-            circuitoId: perfilesResidente.circuitoId,
           })
           .from(perfilesResidente)
           .where(eq(perfilesResidente.id, perfilId))
@@ -168,7 +167,6 @@ export class DrizzleCorteOperacionDatabase implements CorteOperacionDatabase {
           .insert(ordenesTrabajo)
           .values({
             fraccionamientoId: input.fraccionamientoId,
-            circuitoId: input.circuitoId,
             perfilId: input.perfilId,
             fraccionamientoServicioId: input.fraccionamientoServicioId,
             tipo: input.tipo,

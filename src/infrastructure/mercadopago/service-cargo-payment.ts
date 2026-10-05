@@ -15,6 +15,7 @@ import {
 } from '@/db/schema';
 import { createMercadoPagoClients } from '@/lib/mercadopago';
 import { decryptTokenSafe } from '@/lib/crypto';
+import { generarFolioServicio } from '@/src/domain/pagos/folio.vo';
 import { findMercadoPagoPaymentIntent } from './payment-intent';
 
 export const SERVICE_CARGO_REFERENCE = /^serv_[0-9a-f-]{36}$/;
@@ -133,9 +134,11 @@ export async function processServiceCargoPayment(input: { reference: string; pay
 
     // Bloquea el cargo antes de comprobar su estado y acreditarlo.
     await tx.execute(sql`SELECT id FROM cargos_servicios WHERE id = ${cargoId} FOR UPDATE`);
+    let folio: string;
     if (row.servicio === 'agua') {
       const [existingWaterPayment] = await tx.select({
         id: pagos.id,
+        folio: pagos.folio,
         mercadoPagoPaymentId: pagos.mercadoPagoPaymentId,
       }).from(pagos).where(and(
         eq(pagos.perfilId, row.cargo.perfilId),
@@ -146,17 +149,19 @@ export async function processServiceCargoPayment(input: { reference: string; pay
       )).limit(1);
       if (existingWaterPayment) {
         if (existingWaterPayment.mercadoPagoPaymentId === input.paymentId) {
+          const folio = existingWaterPayment.folio ?? generarFolioServicio();
           await tx.update(cargosServicios).set({
             estado: 'pagado',
             metodo: 'mercado_pago',
             mercadoPagoPaymentId: input.paymentId,
-            folio: `SRV-${input.paymentId}`,
+            folio,
             pagadoEn: new Date(),
           }).where(and(eq(cargosServicios.id, cargoId), eq(cargosServicios.estado, 'pendiente')));
           return { alreadyProcessed: true };
         }
         throw new ServiceCargoPaymentValidationError('El periodo de agua ya fue pagado con otro paymentId');
       }
+      folio = generarFolioServicio();
       const [waterPayment] = await tx.insert(pagos).values({
         fraccionamientoId: row.cargo.fraccionamientoId,
         perfilId: row.cargo.perfilId,
@@ -175,7 +180,7 @@ export async function processServiceCargoPayment(input: { reference: string; pay
         mercadoPagoCollectorId: collectorEsperado,
         estado: 'pagado',
         metodo: 'mercado_pago',
-        folio: `SRV-${input.paymentId}`,
+        folio,
         esReconexion: false,
         fechaPago: new Date(),
       }).returning({ id: pagos.id, folio: pagos.folio });
@@ -187,12 +192,14 @@ export async function processServiceCargoPayment(input: { reference: string; pay
         folio: waterPayment.folio!,
         pdfUrl: null,
       });
+    } else {
+      folio = generarFolioServicio();
     }
     const [updated] = await tx.update(cargosServicios).set({
       estado: 'pagado',
       metodo: 'mercado_pago',
       mercadoPagoPaymentId: input.paymentId,
-      folio: `SRV-${input.paymentId}`,
+      folio,
       pagadoEn: new Date(),
     }).where(and(eq(cargosServicios.id, cargoId), eq(cargosServicios.estado, 'pendiente'))).returning({ id: cargosServicios.id });
     if (!updated) {
@@ -214,7 +221,7 @@ export async function processServiceCargoPayment(input: { reference: string; pay
         pagoId: null,
         cargoServicioId: cargoId,
         tipo: 'servicio',
-        folio: `SRV-${input.paymentId}`,
+        folio,
         pdfUrl: null,
       });
     }

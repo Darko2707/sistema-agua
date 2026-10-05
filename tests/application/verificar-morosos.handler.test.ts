@@ -2,7 +2,6 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { VerificarMorososHandler } from '@/src/application/cron/verificar-morosos.handler';
 import type { ResidenteRepository } from '@/src/application/ports/residente.repository';
 import type { PagoRepository } from '@/src/application/ports/pago.repository';
-import { DIA_CORTE } from '@/src/domain/pagos/constants';
 
 vi.mock('@/lib/logger', () => ({
   logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() },
@@ -19,7 +18,7 @@ function makeDeps() {
     findByCircuitoYEstado: vi.fn(),
     create:                vi.fn(),
     updateEstado:          vi.fn(),
-    marcarMorososDelMes:   vi.fn<() => Promise<number>>().mockResolvedValue(0),
+    marcarMorososDelMes:   vi.fn<(mes: number, anio: number, dia: number) => Promise<number>>().mockResolvedValue(0),
   } as unknown as ResidenteRepository;
 
   const pagoRepo = {
@@ -61,22 +60,21 @@ describe('VerificarMorososHandler', () => {
       expect(vi.mocked(pagoRepo.findPagadosByMes)).not.toHaveBeenCalled();
     });
 
-    it(`omite en el límite exacto DIA_CORTE=${DIA_CORTE} (dia <= DIA_CORTE)`, async () => {
+    it('procesa diariamente los circuitos cuyo corte ya venció', async () => {
       vi.useFakeTimers();
-      setDay(2025, 6, DIA_CORTE);
+      setDay(2025, 6, 5);
       const { residenteRepo, pagoRepo } = makeDeps();
       const handler = new VerificarMorososHandler({ residenteRepo, pagoRepo });
 
       const result = await handler.execute();
 
       expect(result.procesados).toBe(0);
-      expect(vi.mocked(residenteRepo.marcarMorososDelMes)).not.toHaveBeenCalled();
-      expect(result.mensaje).toContain(`${DIA_CORTE + 1}`);
+      expect(vi.mocked(residenteRepo.marcarMorososDelMes)).toHaveBeenCalledWith(6, 2025, 5);
     });
 
-    it(`procesa el primer día habilitado DIA_CORTE+1=${DIA_CORTE + 1}`, async () => {
+    it('procesa también el día 6', async () => {
       vi.useFakeTimers();
-      setDay(2025, 6, DIA_CORTE + 1);
+      setDay(2025, 6, 6);
       const { residenteRepo, pagoRepo } = makeDeps();
       const handler = new VerificarMorososHandler({ residenteRepo, pagoRepo });
       vi.mocked(residenteRepo.marcarMorososDelMes).mockResolvedValue(4);
@@ -113,7 +111,7 @@ describe('VerificarMorososHandler', () => {
 
       await handler.execute();
 
-      expect(vi.mocked(residenteRepo.marcarMorososDelMes)).toHaveBeenCalledWith(11, 2025);
+      expect(vi.mocked(residenteRepo.marcarMorososDelMes)).toHaveBeenCalledWith(11, 2025, 15);
       expect(vi.mocked(pagoRepo.findPagadosByMes)).toHaveBeenCalledWith(11, 2025);
     });
 
@@ -125,7 +123,7 @@ describe('VerificarMorososHandler', () => {
 
       await handler.execute();
 
-      expect(vi.mocked(residenteRepo.marcarMorososDelMes)).toHaveBeenCalledWith(1, 2026);
+      expect(vi.mocked(residenteRepo.marcarMorososDelMes)).toHaveBeenCalledWith(1, 2026, 15);
       expect(vi.mocked(pagoRepo.findPagadosByMes)).toHaveBeenCalledWith(1, 2026);
     });
 
@@ -200,7 +198,7 @@ describe('VerificarMorososHandler', () => {
 
       const result = await handler.execute();
 
-      expect(result.mensaje).toContain(`${DIA_CORTE + 1}`);
+      expect(result.mensaje).toContain('primer día');
     });
 
     it('mensaje de proceso incluye el conteo de morosos marcados', async () => {

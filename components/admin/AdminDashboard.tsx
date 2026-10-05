@@ -32,12 +32,10 @@ export function AdminDashboard() {
     tab, setTab,
     resumen,
     personal,
-    circuitos,
     pendientesCorte,
     pendientesReconexion,
     cargando,
     actualizando,
-    filtroCircuito, setFiltroCircuito,
     filtroEstado,   setFiltroEstado,
     error,
     residentesFiltrados,
@@ -46,7 +44,6 @@ export function AdminDashboard() {
     irPaginaResidentes,
     morosos,
     cambiarRol,
-    asignarResidenteCircuito,
     registrarPagoRetroactivo,
     salir,
   } = useAdmin();
@@ -140,9 +137,6 @@ export function AdminDashboard() {
               {t}
             </Button>
           ))}
-          <Button variant="outline" onClick={() => router.push('/admin/circuitos')}>
-            Circuitos
-          </Button>
           <Button variant="outline" onClick={() => router.push('/admin/fraccionamientos')}>
             <Building2 className="mr-2 h-4 w-4" />
             Fraccionamientos
@@ -184,17 +178,12 @@ export function AdminDashboard() {
         {tab === 'residentes' && (
           <ResidentesTab
             residentesFiltrados={residentesFiltrados}
-            circuitos={circuitos}
-            filtroCircuito={filtroCircuito}
-            setFiltroCircuito={setFiltroCircuito}
             filtroEstado={filtroEstado}
             setFiltroEstado={setFiltroEstado}
             actualizando={actualizando}
             onCambiarRol={cambiarRol}
-            onAsignarCircuito={asignarResidenteCircuito}
             onRegistrarPagoRetroactivo={registrarPagoRetroactivo}
             onLimpiarFiltros={() => {
-              setFiltroCircuito('todos');
               setFiltroEstado('todos');
               setBusquedaResidentes('');
             }}

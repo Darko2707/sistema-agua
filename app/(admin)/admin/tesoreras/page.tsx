@@ -19,18 +19,17 @@ type Tesorera = {
   circuito: {
     id: string;
     nombre: string | null;
-    mercadoPagoCollectorId: string | null;
   } | null;
 };
 
 type FormState = {
-  circuitoId:             string;
+  circuitoId: string;
   mercadoPagoAccessToken: string;
   mercadoPagoCollectorId: string;
 };
 
 const emptyForm: FormState = {
-  circuitoId:             '',
+  circuitoId: '',
   mercadoPagoAccessToken: '',
   mercadoPagoCollectorId: '',
 };
@@ -61,9 +60,9 @@ export default function AdminTesorerasPage() {
   function abrirEditar(tes: Tesorera) {
     setEditando(tes);
     setForm({
-      circuitoId:             tes.circuito?.id ?? '',
+      circuitoId: tes.circuito?.id ?? '',
       mercadoPagoAccessToken: '',
-      mercadoPagoCollectorId: tes.circuito?.mercadoPagoCollectorId ?? '',
+      mercadoPagoCollectorId: '',
     });
     setError(null);
     setMensaje(null);
@@ -77,12 +76,14 @@ export default function AdminTesorerasPage() {
   async function guardar() {
     if (!editando) return;
     setError(null);
+    if (form.mercadoPagoAccessToken.trim() || form.mercadoPagoCollectorId.trim()) {
+      setError('Configura Mercado Pago desde Fraccionamientos; las tesoreras no pueden modificar credenciales.');
+      return;
+    }
     try {
       await actualizarMut.mutateAsync({
         id:         editando.id,
         circuitoId: form.circuitoId || null,
-        ...(form.mercadoPagoAccessToken ? { mercadoPagoAccessToken: form.mercadoPagoAccessToken } : {}),
-        ...(form.mercadoPagoCollectorId ? { mercadoPagoCollectorId: form.mercadoPagoCollectorId } : {}),
       });
       setMensaje('Configuración guardada correctamente');
       setEditando(null);
@@ -101,7 +102,7 @@ export default function AdminTesorerasPage() {
           <div>
             <h1 className="text-3xl font-bold">Tesorera/o</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Asigna circuitos y configura Mercado Pago para cada tesorero/a.
+              Asigna circuitos para cada tesorero/a.
             </p>
           </div>
           <Button variant="outline" onClick={() => router.push('/admin')}>
@@ -141,7 +142,6 @@ export default function AdminTesorerasPage() {
                     <TableHead>Nombre</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Circuito</TableHead>
-                    <TableHead>Mercado Pago</TableHead>
                     <TableHead className="w-28 text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>

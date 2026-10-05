@@ -9,10 +9,12 @@ function createDeps() {
     findByUserId: vi.fn(),
     findByEstado: vi.fn(),
     findByCircuitoYEstado: vi.fn(),
+    findByFraccionamientoYEstado: vi.fn(),
   } as unknown as ResidenteRepository & {
     findByUserId: ReturnType<typeof vi.fn>;
     findByEstado: ReturnType<typeof vi.fn>;
     findByCircuitoYEstado: ReturnType<typeof vi.fn>;
+    findByFraccionamientoYEstado: ReturnType<typeof vi.fn>;
   };
 
   const circuitoRepo = {
@@ -21,23 +23,17 @@ function createDeps() {
     findByRepresentante: ReturnType<typeof vi.fn>;
   };
 
-  return { residenteRepo, circuitoRepo };
+  const findFraccionamientosAsignados = vi.fn();
+
+  return { residenteRepo, circuitoRepo, findFraccionamientosAsignados };
 }
 
 describe('PendientesCorteHandler', () => {
-  it('limita los pendientes de cuadrilla al circuito de su propio perfil', async () => {
-    const { residenteRepo, circuitoRepo } = createDeps();
-    residenteRepo.findByUserId.mockResolvedValue({
-      id: 'perfil-trabajador',
-      userId: 'trab-1',
-      circuitoId: 'circuito-1',
-      edificio: '1',
-      departamento: '101',
-      estadoAgua: 'activo',
-      creadoEn: new Date(),
-    });
-    residenteRepo.findByCircuitoYEstado.mockResolvedValue([{ id: 'perfil-corte' }]);
-    const handler = new PendientesCorteHandler({ residenteRepo, circuitoRepo });
+  it('limita los pendientes de cuadrilla a sus asignaciones operativas explicitas', async () => {
+    const { residenteRepo, circuitoRepo, findFraccionamientosAsignados } = createDeps();
+    findFraccionamientosAsignados.mockResolvedValue(['fraccionamiento-1']);
+    residenteRepo.findByFraccionamientoYEstado.mockResolvedValue([{ id: 'perfil-corte' }]);
+    const handler = new PendientesCorteHandler({ residenteRepo, circuitoRepo, findFraccionamientosAsignados });
 
     const result = await handler.execute({
       rol: 'cuadrilla_cortes',
@@ -46,33 +42,28 @@ describe('PendientesCorteHandler', () => {
     });
 
     expect(result).toEqual([{ id: 'perfil-corte' }]);
+    expect(findFraccionamientosAsignados).toHaveBeenCalledWith('trab-1');
+    expect(residenteRepo.findByUserId).not.toHaveBeenCalled();
     expect(residenteRepo.findByEstado).not.toHaveBeenCalled();
-    expect(residenteRepo.findByCircuitoYEstado).toHaveBeenCalledWith('circuito-1', 'pendiente_corte');
+    expect(residenteRepo.findByFraccionamientoYEstado).toHaveBeenCalledWith('fraccionamiento-1', 'pendiente_corte');
   });
 
-  it('limita reconexiones de cuadrilla al mismo circuito', async () => {
-    const { residenteRepo, circuitoRepo } = createDeps();
-    residenteRepo.findByUserId.mockResolvedValue({
-      id: 'perfil-trabajador',
-      userId: 'trab-1',
-      circuitoId: 'circuito-2',
-      edificio: '1',
-      departamento: '101',
-      estadoAgua: 'activo',
-      creadoEn: new Date(),
-    });
-    residenteRepo.findByCircuitoYEstado.mockResolvedValue([]);
-    const handler = new PendientesCorteHandler({ residenteRepo, circuitoRepo });
+  it('limita reconexiones de cuadrilla a la asignacion explicita', async () => {
+    const { residenteRepo, circuitoRepo, findFraccionamientosAsignados } = createDeps();
+    findFraccionamientosAsignados.mockResolvedValue(['fraccionamiento-2']);
+    residenteRepo.findByFraccionamientoYEstado.mockResolvedValue([]);
+    const handler = new PendientesCorteHandler({ residenteRepo, circuitoRepo, findFraccionamientosAsignados });
 
     await handler.execute({ rol: 'cuadrilla_cortes', userId: 'trab-1', tipo: 'reconexion' });
 
     expect(residenteRepo.findByEstado).not.toHaveBeenCalled();
-    expect(residenteRepo.findByCircuitoYEstado).toHaveBeenCalledWith('circuito-2', 'pendiente_reconexion');
+    expect(residenteRepo.findByUserId).not.toHaveBeenCalled();
+    expect(residenteRepo.findByFraccionamientoYEstado).toHaveBeenCalledWith('fraccionamiento-2', 'pendiente_reconexion');
   });
-  it('falla con mensaje claro si la cuadrilla no tiene perfil/circuito', async () => {
-    const { residenteRepo, circuitoRepo } = createDeps();
-    residenteRepo.findByUserId.mockResolvedValue(null);
-    const handler = new PendientesCorteHandler({ residenteRepo, circuitoRepo });
+  it('falla cerrado si la cuadrilla no tiene una asignacion operativa activa', async () => {
+    const { residenteRepo, circuitoRepo, findFraccionamientosAsignados } = createDeps();
+    findFraccionamientosAsignados.mockResolvedValue([]);
+    const handler = new PendientesCorteHandler({ residenteRepo, circuitoRepo, findFraccionamientosAsignados });
 
     await expect(handler.execute({
       rol: 'cuadrilla_cortes',
@@ -80,8 +71,9 @@ describe('PendientesCorteHandler', () => {
       tipo: 'corte',
     })).rejects.toMatchObject({
       code:    'FORBIDDEN',
-      message: expect.stringContaining('no tiene un circuito asignado'),
+      message: expect.stringContaining('asignaci'),
     });
-    expect(residenteRepo.findByCircuitoYEstado).not.toHaveBeenCalled();
+    expect(residenteRepo.findByUserId).not.toHaveBeenCalled();
+    expect(residenteRepo.findByFraccionamientoYEstado).not.toHaveBeenCalled();
   });
 });

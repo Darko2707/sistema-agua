@@ -3,6 +3,8 @@ import { sql } from 'drizzle-orm';
 
 const REQUIRED_ENV = [
   'DATABASE_URL',
+  'BETTER_AUTH_SECRET',
+  'REPRESENTATIVE_RESET_CODE_SECRET',
   'MP_WEBHOOK_SECRET',
   'MP_ENCRYPTION_KEY',
   'CRON_SECRET',
@@ -26,10 +28,11 @@ async function checkDatabase(): Promise<CheckResult> {
 }
 
 function checkEnv(): CheckResult & { missingCount: number } {
-  const missing = REQUIRED_ENV.filter((key) => !process.env[key]);
-  return missing.length === 0
+  const missingCount = REQUIRED_ENV.filter((key) => !process.env[key]?.trim()).length
+    + (process.env.BETTER_AUTH_URL?.trim() || process.env.NEXT_PUBLIC_APP_URL?.trim() ? 0 : 1);
+  return missingCount === 0
     ? { status: 'ok', missingCount: 0 }
-    : { status: 'error', missingCount: missing.length, detail: 'missing required env vars' };
+    : { status: 'error', missingCount, detail: 'missing required env vars' };
 }
 
 export async function GET() {

@@ -6,6 +6,7 @@ import {
   VerificarAccesoService,
   CircuitoInhabilitadoError,
   PerfilIncompletoError,
+  RolNoConfiguradoError,
 } from '@/src/application/acceso/verificar-acceso.service';
 import { subscriptionService } from '@/src/infrastructure/db/services/subscription.service';
 
@@ -36,6 +37,9 @@ export function mapDomainError(err: unknown): never {
     throw new TRPCError({ code: 'FORBIDDEN', message: err.message });
   }
   if (err instanceof PerfilIncompletoError) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: err.message });
+  }
+  if (err instanceof RolNoConfiguradoError) {
     throw new TRPCError({ code: 'FORBIDDEN', message: err.message });
   }
 

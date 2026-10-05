@@ -63,20 +63,9 @@ export async function GET(req: Request) {
 
   try {
 
-  let circuito = await db.query.circuitos.findFirst({
+  const circuito = await db.query.circuitos.findFirst({
     where: (c, { eq, and }) => and(eq(c.tesoreraId, session.user.id), eq(c.fraccionamientoId, dbUser.fraccionamientoId!)),
   });
-  if (!circuito) {
-    const perfil = await db.query.perfilesResidente.findFirst({
-      where: (p, { eq, and }) => and(eq(p.userId, session.user.id), eq(p.fraccionamientoId, dbUser.fraccionamientoId!)),
-    });
-    if (perfil?.circuitoId) {
-      circuito = await db.query.circuitos.findFirst({
-        where: (c, { eq, and }) => and(eq(c.id, perfil.circuitoId!), eq(c.fraccionamientoId, dbUser.fraccionamientoId!)),
-      });
-      if (circuito?.tesoreraId && circuito.tesoreraId !== session.user.id) circuito = undefined;
-    }
-  }
   if (!circuito) return new Response('Sin circuito asignado', { status: 404 });
 
   const url    = new URL(req.url);

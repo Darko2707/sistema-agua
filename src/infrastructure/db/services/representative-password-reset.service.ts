@@ -1,6 +1,6 @@
-import { createHash, randomInt } from 'node:crypto';
+import { createHmac, randomInt, timingSafeEqual } from 'node:crypto';
 import { TRPCError } from '@trpc/server';
-import { and, desc, eq, gt, isNotNull, isNull, or, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import {
   account,
@@ -19,31 +19,50 @@ export const REPRESENTATIVE_RESET_CODE_TTL_MS = 10 * 60 * 1000;
 export const REPRESENTATIVE_RESET_CODE_MAX_ATTEMPTS = 5;
 
 const INVALID_CODE_MESSAGE = 'Codigo invalido o expirado';
-const REPRESENTATIVE_RESET_ELIGIBLE_ROLES = new Set([
-  'residente',
-  'tesorera',
-  'cuadrilla_cortes',
-]);
+const RESET_CODE_SECRET_ENV = 'REPRESENTATIVE_RESET_CODE_SECRET';
+const RESET_CODE_SECRET_MIN_BYTES = 32;
+// A deterministic secret is acceptable only inside isolated tests. Production
+// and local runtimes must provide their own secret so reset-code hashes cannot
+// be brute-forced from a leaked database independently of the application.
+const TEST_RESET_CODE_SECRET = 'sisco-representative-reset-tests-only-v1';
 
 function eligibleResidentAccountCondition() {
-  return or(
-    eq(users.role, 'residente'),
-    eq(users.role, 'tesorera'),
-    eq(users.role, 'cuadrilla_cortes'),
-  );
+  return eq(users.role, 'residente');
 }
 
 function isEligibleResidentAccountRole(role: string): boolean {
-  return REPRESENTATIVE_RESET_ELIGIBLE_ROLES.has(role);
+  return role === 'residente';
+}
+
+function resetCodeSecret(): string {
+  const configured = process.env[RESET_CODE_SECRET_ENV]?.trim();
+  if (configured && Buffer.byteLength(configured, 'utf8') >= RESET_CODE_SECRET_MIN_BYTES) {
+    return configured;
+  }
+
+  if (process.env.NODE_ENV === 'test') return TEST_RESET_CODE_SECRET;
+
+  const reason = configured
+    ? `debe contener al menos ${RESET_CODE_SECRET_MIN_BYTES} bytes`
+    : 'no esta configurado';
+  throw new Error(`${RESET_CODE_SECRET_ENV} ${reason}`);
 }
 
 export function hashRepresentativeResetCode(code: string): string {
   if (!isRepresentativeResetCodeValid(code)) {
     throw new TypeError('El codigo de recuperacion debe contener exactamente 6 digitos');
   }
-  return createHash('sha256')
-    .update(code)
+  return createHmac('sha256', resetCodeSecret())
+    .update(`representative-password-reset\0${code}`)
     .digest('hex');
+}
+
+function resetCodeHashesMatch(left: string, right: string): boolean {
+  const leftBytes = Buffer.from(left, 'hex');
+  const rightBytes = Buffer.from(right, 'hex');
+  return leftBytes.length === 32
+    && rightBytes.length === 32
+    && timingSafeEqual(leftBytes, rightBytes);
 }
 
 export function representativeResetCodeExpiresAt(now = new Date()): Date {
@@ -325,7 +344,7 @@ export class RepresentativePasswordResetService {
     // Scrypt es deliberadamente condicional al hash barato preliminar y nunca
     // se ejecuta manteniendo locks. La lectura bajo FOR UPDATE sigue siendo la
     // autoridad para attempts, expiracion y consumo.
-    const hashedPassword = preliminaryChallenge.codeHash === submittedCodeHash
+    const hashedPassword = resetCodeHashesMatch(preliminaryChallenge.codeHash, submittedCodeHash)
       ? await hashAccountPassword(input.newPassword)
       : null;
     const now = new Date();
@@ -381,7 +400,7 @@ export class RepresentativePasswordResetService {
         return false;
       }
 
-      if (challenge.codeHash !== submittedCodeHash) {
+      if (!resetCodeHashesMatch(challenge.codeHash, submittedCodeHash)) {
         const nextAttempts = challenge.attempts + 1;
         await tx
           .update(passwordResetCodes)

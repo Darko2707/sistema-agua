@@ -15,6 +15,7 @@ const circuitoOutputColumns = {
   tesoreraId: true,
   montoMensual: true,
   montoReconexion: true,
+  diaCorte: true,
   mercadoPagoCollectorId: true,
   activo: true,
 } as const;
@@ -30,6 +31,7 @@ export const circuitosRouter = router({
       tesoreraId: circuitos.tesoreraId,
       montoMensual: circuitos.montoMensual,
       montoReconexion: circuitos.montoReconexion,
+      diaCorte: circuitos.diaCorte,
       mercadoPagoCollectorId: circuitos.mercadoPagoCollectorId,
       activo: circuitos.activo,
     }).from(circuitos)
@@ -41,6 +43,18 @@ export const circuitosRouter = router({
     .input(z.object({ fraccionamientoId: z.string().uuid() }))
     .query(async ({ input }) => db.query.circuitos.findMany({
       where: (c, { eq }) => eq(c.fraccionamientoId, input.fraccionamientoId),
+      columns: {
+        id: true,
+        nombre: true,
+        fraccionamientoId: true,
+        representanteId: true,
+        tesoreraId: true,
+        montoMensual: true,
+        montoReconexion: true,
+        diaCorte: true,
+        activo: true,
+        updatedAt: true,
+      },
       orderBy: (c, { asc }) => [asc(c.nombre)],
     })),
 
@@ -50,6 +64,7 @@ export const circuitosRouter = router({
       nombre: z.string().trim().min(1).max(120),
       montoMensual: z.number().min(0),
       montoReconexion: z.number().min(0),
+      diaCorte: z.number().int().min(1).max(28).default(5),
     }))
     .mutation(async ({ ctx, input }) => {
       await subscriptionService.requireOperational(input.fraccionamientoId);
@@ -59,6 +74,7 @@ export const circuitosRouter = router({
           nombre: input.nombre,
           montoMensual: input.montoMensual.toFixed(2),
           montoReconexion: input.montoReconexion.toFixed(2),
+          diaCorte: input.diaCorte,
         }).returning({ id: circuitos.id, nombre: circuitos.nombre });
         await tx.insert(auditoria).values({
           actorId: ctx.user.id,
@@ -77,6 +93,7 @@ export const circuitosRouter = router({
       circuitoId: z.string().uuid(),
       montoMensual: z.number().positive(),
       montoReconexion: z.number().positive(),
+      diaCorte: z.number().int().min(1).max(28),
       activo: z.boolean(),
       representanteId: z.string().min(1).nullable(),
     }))
@@ -95,6 +112,7 @@ export const circuitosRouter = router({
         await tx.update(circuitos).set({
           montoMensual: input.montoMensual.toFixed(2),
           montoReconexion: input.montoReconexion.toFixed(2),
+          diaCorte: input.diaCorte,
           activo: input.activo,
           representanteId: input.representanteId,
           updatedAt: new Date(),

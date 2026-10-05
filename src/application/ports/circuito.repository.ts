@@ -6,6 +6,7 @@ export type CircuitoData = {
   tesoreraId: string | null;
   montoMensual: string;
   montoReconexion: string;
+  diaCorte: number;
   mercadoPagoAccessToken: string | null;
   mercadoPagoCollectorId: string | null;
   activo: boolean;

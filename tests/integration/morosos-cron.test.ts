@@ -151,7 +151,7 @@ async function safeMarcar(mes: number, anio: number): Promise<number> {
       notInArray(perfilesResidente.id, FIXTURE_PERF_IDS),
     ));
 
-  const count = await residenteRepo.marcarMorososDelMes(mes, anio);
+  const count = await residenteRepo.marcarMorososDelMes(mes, anio, 6);
 
   if (colateral.length) {
     await db.update(perfilesResidente)

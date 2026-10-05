@@ -1,33 +1,21 @@
 import { sql } from 'drizzle-orm';
 
 import { db } from '@/db';
-import { DIA_CORTE } from '@/src/domain/pagos/constants';
-import { fechaNegocio } from '@/src/domain/shared/fecha-negocio';
+import { fechaNegocio, sumarDiasFechaNegocio } from '@/src/domain/shared/fecha-negocio';
 
-// Vercel agenda este trabajo a las 15:00 UTC del dia 4. La fecha de negocio
-// siempre se calcula en Mexico para no adelantar el periodo en cambios de mes.
+// Vercel agenda este trabajo diariamente. La fecha de negocio siempre se
+// calcula en México para respetar el día configurado de cada circuito.
 export async function encolarProximosCorte(fecha = new Date()) {
   const periodo = fechaNegocio(fecha);
-  const diaAviso = DIA_CORTE - 1;
-
-  if (periodo.dia !== diaAviso) {
-    return {
-      omitido: true,
-      motivo: `El aviso se genera el dia ${diaAviso}`,
-      ...periodo,
-      candidatos: 0,
-      encoladas: 0,
-    };
-  }
-
-  const periodKey = `${periodo.anio}-${String(periodo.mes).padStart(2, '0')}`;
-  // El marcado de morosos corre a las 09:00 UTC del dia siguiente al limite.
-  // Caducamos media hora antes para que ningun retry deje de ser "previo".
+  const periodoCobro = sumarDiasFechaNegocio(periodo, 1);
+  const periodKey = `${periodoCobro.anio}-${String(periodoCobro.mes).padStart(2, '0')}`;
+  // El marcado de morosos corre a las 16:00 UTC. Caducamos media hora antes
+  // para que ningún retry deje de ser un aviso previo.
   const expiresAt = new Date(Date.UTC(
-    periodo.anio,
-    periodo.mes - 1,
-    DIA_CORTE + 1,
-    8,
+    periodoCobro.anio,
+    periodoCobro.mes - 1,
+    periodoCobro.dia,
+    15,
     30,
   ));
 
@@ -39,6 +27,7 @@ export async function encolarProximosCorte(fecha = new Date()) {
       FROM perfiles_residente AS perfil
       INNER JOIN circuitos AS circuito ON circuito.id = perfil.circuito_id
       WHERE circuito.activo = true
+        AND circuito.dia_corte = ${periodoCobro.dia}
         AND perfil.estado_agua = 'activo'
         AND EXISTS (
           SELECT 1
@@ -58,8 +47,8 @@ export async function encolarProximosCorte(fecha = new Date()) {
           SELECT 1
           FROM pagos AS pago
           WHERE pago.perfil_id = perfil.id
-            AND pago.mes = ${periodo.mes}
-            AND pago.anio = ${periodo.anio}
+            AND pago.mes = ${periodoCobro.mes}
+            AND pago.anio = ${periodoCobro.anio}
             AND pago.estado = 'pagado'
         )
       FOR UPDATE OF perfil SKIP LOCKED
@@ -89,6 +78,7 @@ export async function encolarProximosCorte(fecha = new Date()) {
   return {
     omitido: false,
     ...periodo,
+    periodoCobro,
     candidatos: Number(stats.candidatos),
     encoladas: Number(stats.encoladas),
   };

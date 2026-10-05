@@ -51,20 +51,9 @@ function montoDisponibleCircuito(pago: {
 }
 
 async function resolverCircuito(userId: string, tenantId: string) {
-  let circuito = await db.query.circuitos.findFirst({
+  const circuito = await db.query.circuitos.findFirst({
     where: (c, { eq, and }) => and(eq(c.tesoreraId, userId), eq(c.fraccionamientoId, tenantId)),
   });
-  if (!circuito) {
-    const perfil = await db.query.perfilesResidente.findFirst({
-      where: (p, { eq, and }) => and(eq(p.userId, userId), eq(p.fraccionamientoId, tenantId)),
-    });
-    if (perfil?.circuitoId) {
-      circuito = await db.query.circuitos.findFirst({
-        where: (c, { eq, and }) => and(eq(c.id, perfil.circuitoId!), eq(c.fraccionamientoId, tenantId)),
-      });
-      if (circuito?.tesoreraId && circuito.tesoreraId !== userId) return null;
-    }
-  }
   return circuito ?? null;
 }
 

@@ -7,7 +7,13 @@ import { TRPCError } from '@trpc/server';
 // eslint-disable-next-line no-restricted-imports -- complex financial aggregations not yet in a repo
 import { db } from '@/db';
 // eslint-disable-next-line no-restricted-imports -- complex financial aggregations not yet in a repo
-import { gastosCircuito, ingresosAdicionales } from '@/db/schema';
+import {
+  asignacionesCircuito,
+  fraccionamientoServicios,
+  gastosCircuito,
+  ingresosAdicionales,
+  servicios,
+} from '@/db/schema';
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 
@@ -50,30 +56,13 @@ function ultimos12Meses(): { mes: number; anio: number }[] {
 }
 
 async function getCircuitoDelTesorera(userId: string, tenantId: string) {
-  // Ruta principal: circuito con tesoreraId asignado
-  const byId = await db.query.circuitos.findFirst({
+  const circuito = await db.query.circuitos.findFirst({
     where: (c, { eq, and }) => and(eq(c.tesoreraId, userId), eq(c.fraccionamientoId, tenantId)),
   });
-  if (byId) return byId;
-
-  // Fallback solo de lectura para datos previos al fix de tesoreraId. No se
-  // reasigna el circuito desde una query: esa correccion debe hacerla admin.
-  const perfil = await db.query.perfilesResidente.findFirst({
-    where: (p, { eq, and }) => and(eq(p.userId, userId), eq(p.fraccionamientoId, tenantId)),
-  });
-  if (!perfil?.circuitoId) {
+  if (!circuito) {
     throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes un circuito asignado.' });
   }
-  const byPerfil = await db.query.circuitos.findFirst({
-    where: (c, { eq, and }) => and(eq(c.id, perfil.circuitoId!), eq(c.fraccionamientoId, tenantId)),
-  });
-  if (!byPerfil) {
-    throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes un circuito asignado.' });
-  }
-  if (byPerfil.tesoreraId && byPerfil.tesoreraId !== userId) {
-    throw new TRPCError({ code: 'FORBIDDEN', message: 'Este circuito ya tiene otra tesorera asignada.' });
-  }
-  return byPerfil;
+  return circuito;
 }
 
 // ─── router ────────────────────────────────────────────────────────────────
@@ -251,7 +240,6 @@ export const reportesRouter = router({
   reporteOrdenesTrabajo: roleProcedure('admin', 'representante', 'cuadrilla_cortes')
     .input(z.object({
       fraccionamientoId: z.string().uuid().optional(),
-      circuitoId: z.string().uuid().optional(),
       tipo: z.enum(['corte', 'reconexion']).optional(),
       estado: z.enum(['pendiente', 'asignada', 'en_progreso', 'completada', 'cancelada']).optional(),
       desde: z.string().datetime({ offset: true }).optional(),
@@ -263,33 +251,41 @@ export const reportesRouter = router({
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Cuenta sin fraccionamiento' });
       }
 
-      let circuitoId = input.circuitoId;
       if (ctx.user.role === 'representante') {
-        const circuito = await db.query.circuitos.findFirst({
-          where: (c, { and, eq }) => and(eq(c.representanteId, ctx.user.id), eq(c.fraccionamientoId, tenantId!)),
+        const fraccionamiento = await db.query.fraccionamientos.findFirst({
+          where: (f, { and, eq }) => and(eq(f.representanteId, ctx.user.id), eq(f.id, tenantId!)),
         });
-        if (!circuito) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes un circuito asignado' });
-        if (circuitoId && circuitoId !== circuito.id) throw new TRPCError({ code: 'FORBIDDEN' });
-        circuitoId = circuito.id;
+        if (!fraccionamiento) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes un fraccionamiento asignado' });
       } else if (ctx.user.role === 'cuadrilla_cortes') {
-        const perfil = await db.query.perfilesResidente.findFirst({
-          where: (p, { and, eq }) => and(eq(p.userId, ctx.user.id), eq(p.fraccionamientoId, tenantId!)),
-        });
-        if (!perfil) throw new TRPCError({ code: 'FORBIDDEN', message: 'Cuadrilla sin circuito asignado' });
-        if (circuitoId && circuitoId !== perfil.circuitoId) throw new TRPCError({ code: 'FORBIDDEN' });
-        circuitoId = perfil.circuitoId;
+        const asignaciones = await db.select({ id: asignacionesCircuito.id })
+          .from(asignacionesCircuito)
+          .innerJoin(
+            fraccionamientoServicios,
+            eq(fraccionamientoServicios.id, asignacionesCircuito.fraccionamientoServicioId),
+          )
+          .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
+          .where(and(
+            eq(asignacionesCircuito.usuarioId, ctx.user.id),
+            eq(asignacionesCircuito.fraccionamientoId, tenantId!),
+            eq(asignacionesCircuito.rol, 'cuadrilla_cortes'),
+            eq(asignacionesCircuito.activo, true),
+            eq(fraccionamientoServicios.estado, 'activo'),
+            eq(servicios.clave, 'agua'),
+          ));
+        if (asignaciones.length === 0) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'Cuadrilla sin asignación operativa activa' });
+        }
       }
 
       const rows = await db.query.ordenesTrabajo.findMany({
         where: (o, { and, eq, gte, lte }) => and(
           tenantId ? eq(o.fraccionamientoId, tenantId) : undefined,
-          circuitoId ? eq(o.circuitoId, circuitoId) : undefined,
           input.tipo ? eq(o.tipo, input.tipo) : undefined,
           input.estado ? eq(o.estado, input.estado) : undefined,
           input.desde ? gte(o.creadoEn, new Date(input.desde)) : undefined,
           input.hasta ? lte(o.creadoEn, new Date(input.hasta)) : undefined,
         ),
-        with: { perfil: { with: { usuario: true } }, circuito: true, trabajador: true },
+        with: { perfil: { with: { usuario: true } }, fraccionamiento: true, trabajador: true },
         orderBy: (o, { desc }) => [desc(o.creadoEn)],
       });
 
@@ -310,7 +306,7 @@ export const reportesRouter = router({
           departamento: row.perfil.departamento,
           estadoAgua: row.perfil.estadoAgua,
         },
-        circuito: { id: row.circuito.id, nombre: row.circuito.nombre },
+        fraccionamiento: { id: row.fraccionamiento.id, nombre: row.fraccionamiento.nombre },
         trabajador: row.trabajador ? { id: row.trabajador.id, nombre: row.trabajador.name } : null,
       }));
     }),
@@ -363,7 +359,6 @@ export const reportesRouter = router({
         }),
         db.query.ordenesTrabajo.findMany({
           where: (o, { eq, and }) => and(
-            eq(o.circuitoId, circuito.id),
             eq(o.fraccionamientoId, ctx.user.fraccionamientoId!),
           ),
           columns: { tipo: true, estado: true },

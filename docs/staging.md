@@ -12,9 +12,12 @@ la rama `staging` del repo y en la rama `staging` de Neon.
 
 | Entorno    | Rama Neon    | Propósito                          |
 |------------|------------- |------------------------------------|
-| Production | `main`       | Datos reales, no tocar directamente |
-| Staging    | `staging`    | Espejo de producción con datos falsos |
+| Production | `production` | Datos reales, no tocar directamente |
+| Staging    | `staging`    | Copia aislada para pruebas; acceso restringido |
 | PR preview | `preview/pr-<N>` | Se crea y destruye con el PR   |
+
+> La rama `staging` actual se creo como copia de `production` y contiene datos
+> reales. Tratala como informacion sensible: acceso limitado y sin pagos reales.
 
 ### Crear rama staging en Neon
 
@@ -25,7 +28,7 @@ npm install -g neonctl
 # Autentica
 neonctl auth
 
-# Crea la rama desde main (snapshot del estado actual)
+# Crea la rama desde production (snapshot del estado actual)
 neonctl branches create --name staging --project-id <PROJECT_ID>
 
 # Obtén la cadena de conexión
@@ -66,6 +69,7 @@ MP_ENCRYPTION_KEY="<64 caracteres hex, 32 bytes>"
 # (Redis, Resend, Sentry DSN, etc.)
 CRON_SECRET="<otro secreto aleatorio>"
 BETTER_AUTH_SECRET="<otro secreto aleatorio>"
+REPRESENTATIVE_RESET_CODE_SECRET="<secreto aleatorio independiente, minimo 32 bytes>"
 NEXT_PUBLIC_VAPID_PUBLIC_KEY="<clave publica de staging>"
 VAPID_PRIVATE_KEY="<clave privada de staging>"
 VAPID_SUBJECT="mailto:correo-real@gmail.com"

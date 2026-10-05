@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 // Assignment lookup is kept inline until the operational repository exposes tenant-scoped methods.
 // eslint-disable-next-line no-restricted-imports
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNotNull } from 'drizzle-orm';
 
 import { schedulePushDispatch } from '@/lib/push-dispatcher';
 import { ConfirmarCorteHandler } from '@/src/application/cortes/commands/confirmar-corte.handler';
@@ -22,8 +22,8 @@ const corteOperacionService = new CorteOperacionService(new DrizzleCorteOperacio
 const confirmarCorteHandler = new ConfirmarCorteHandler({ corteOperacionService });
 const confirmarReconexionHandler = new ConfirmarReconexionHandler({ corteOperacionService });
 
-async function findCircuitosAsignados(userId: string): Promise<string[]> {
-  const rows = await db.selectDistinct({ circuitoId: asignacionesCircuito.circuitoId })
+async function findFraccionamientosAsignados(userId: string): Promise<string[]> {
+  const rows = await db.selectDistinct({ fraccionamientoId: asignacionesCircuito.fraccionamientoId })
     .from(asignacionesCircuito)
     .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, asignacionesCircuito.fraccionamientoServicioId))
     .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
@@ -31,13 +31,14 @@ async function findCircuitosAsignados(userId: string): Promise<string[]> {
       eq(asignacionesCircuito.usuarioId, userId),
       eq(asignacionesCircuito.rol, 'cuadrilla_cortes'),
       eq(asignacionesCircuito.activo, true),
+      isNotNull(asignacionesCircuito.fraccionamientoId),
       eq(fraccionamientoServicios.estado, 'activo'),
       eq(servicios.clave, 'agua'),
     ));
-  return rows.map((row) => row.circuitoId);
+  return rows.map((row) => row.fraccionamientoId!);
 }
 
-const pendientesCorteHandler = new PendientesCorteHandler({ residenteRepo, circuitoRepo, findCircuitosAsignados });
+const pendientesCorteHandler = new PendientesCorteHandler({ residenteRepo, circuitoRepo, findFraccionamientosAsignados });
 
 async function assertPerfilDeCuadrilla(userId: string, perfilId: string, tenantId?: string | null): Promise<void> {
   const perfilObjetivo = await residenteRepo.findById(perfilId);
@@ -57,7 +58,6 @@ async function assertPerfilDeCuadrilla(userId: string, perfilId: string, tenantI
     .where(and(
       eq(asignacionesCircuito.usuarioId, userId),
       eq(asignacionesCircuito.fraccionamientoId, perfilObjetivo.fraccionamientoId),
-      eq(asignacionesCircuito.circuitoId, perfilObjetivo.circuitoId),
       eq(asignacionesCircuito.rol, 'cuadrilla_cortes'),
       eq(asignacionesCircuito.activo, true),
       eq(fraccionamientoServicios.estado, 'activo'),
@@ -109,8 +109,8 @@ export const cortesRouter = router({
   listarCortados: roleProcedure('cuadrilla_cortes', 'admin')
     .query(async ({ ctx }) => {
       if (ctx.user.role === 'admin') return residenteRepo.findByEstado('cortado');
-      const circuitosAsignados = await findCircuitosAsignados(ctx.user.id);
-      const rows = await Promise.all(circuitosAsignados.map((circuitoId) => residenteRepo.findByCircuitoYEstado(circuitoId, 'cortado')));
+      const fraccionamientosAsignados = await findFraccionamientosAsignados(ctx.user.id);
+      const rows = await Promise.all(fraccionamientosAsignados.map((fraccionamientoId) => residenteRepo.findByFraccionamientoYEstado!(fraccionamientoId, 'cortado')));
       return rows.flat();
     }),
 

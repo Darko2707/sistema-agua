@@ -51,6 +51,8 @@ export type ResidenteCompleto = {
 
 export type PaginaMeta = { total: number; page: number; pageSize: number; totalPages: number };
 
+// Conservado para formularios administrativos que todavía se migrarán en
+// tareas posteriores; el panel de residentes ya no lo usa.
 export type Circuito = {
   id:               string;
   nombre:           string;
@@ -69,12 +71,10 @@ export function useAdmin() {
   const [personal, setPersonal]                 = useState<Personal[]>([]);
   const [residentes, setResidentes]             = useState<ResidenteCompleto[]>([]);
   const [paginaMeta, setPaginaMeta]             = useState<PaginaMeta>({ total: 0, page: 1, pageSize: 50, totalPages: 0 });
-  const [circuitos, setCircuitos]               = useState<Circuito[]>([]);
   const [pendientesCorte, setPendientesCorte]   = useState<ResidenteCompleto[]>([]);
   const [pendientesReconexion, setPendientesReconexion] = useState<ResidenteCompleto[]>([]);
   const [cargando, setCargando]                 = useState(true);
   const [actualizando, setActualizando]         = useState<string | null>(null);
-  const [filtroCircuito, setFiltroCircuito]     = useState('todos');
   const [filtroEstado, setFiltroEstado]         = useState('todos');
   const [paginaResidentes, setPaginaResidentes] = useState(1);
   const [busquedaResidentes, setBusquedaResidentes] = useState('');
@@ -82,11 +82,10 @@ export function useAdmin() {
 
   async function cargarDatos(page = paginaResidentes) {
     try {
-      const [resumenData, personalData, residentesData, circuitosData, cortesData, reconexionesData] = await Promise.all([
+      const [resumenData, personalData, residentesData, cortesData, reconexionesData] = await Promise.all([
         trpc.pagos.resumenMes.query(),
         trpc.usuarios.listarPersonal.query(),
         trpc.usuarios.listarResidentes.query({ page, pageSize: 50 }),
-        trpc.usuarios.listarCircuitos.query(),
         trpc.cortes.pendientesDeCorte.query(),
         trpc.cortes.pendientesDeReconexion.query(),
       ]);
@@ -96,7 +95,6 @@ export function useAdmin() {
       setResidentes(rd.items);
       setPaginaMeta({ total: rd.total, page: rd.page, pageSize: rd.pageSize, totalPages: rd.totalPages });
       setPaginaResidentes(rd.page);
-      setCircuitos(circuitosData as Circuito[]);
       setPendientesCorte(cortesData as ResidenteCompleto[]);
       setPendientesReconexion(reconexionesData as ResidenteCompleto[]);
     } catch (e: unknown) {
@@ -119,7 +117,7 @@ export function useAdmin() {
     try {
       await trpc.usuarios.cambiarRol.mutate({
         userId,
-        rol: rol as 'representante' | 'tesorera' | 'cuadrilla_cortes' | 'operador_pozo' | 'residente',
+        rol: rol as 'representante' | 'tesorera' | 'cuadrilla_cortes' | 'residente',
       });
       await cargarDatos();
     } catch (err: unknown) {
@@ -139,18 +137,6 @@ export function useAdmin() {
     } finally {
       setCargando(false);
     }
-  }
-
-  async function asignarResidenteCircuito(perfilId: string, circuitoId: string) {
-    setActualizando(perfilId);
-    setError(null);
-    try {
-      await trpc.usuarios.asignarResidenteCircuito.mutate({ perfilId, circuitoId });
-      await cargarDatos();
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error al asignar circuito');
-    }
-    setActualizando(null);
   }
 
   async function asignarRepresentante(circuitoId: string, userId: string) {
@@ -180,12 +166,11 @@ export function useAdmin() {
   }
 
   const residentesFiltrados = residentes.filter((r) => {
-    const porCircuito = filtroCircuito === 'todos' || r.circuito?.id === filtroCircuito;
     const porEstado   = filtroEstado   === 'todos' || r.estadoAgua   === filtroEstado;
     const termino = busquedaResidentes.trim().toLowerCase();
     const texto = [r.usuario?.name, r.usuario?.email, r.edificio, r.departamento, r.circuito?.nombre]
       .filter(Boolean).join(' ').toLowerCase();
-    return porCircuito && porEstado && (!termino || texto.includes(termino));
+    return porEstado && (!termino || texto.includes(termino));
   });
 
   const morosos = resumen ? resumen.totalDeptos - resumen.pagados : 0;
@@ -194,12 +179,10 @@ export function useAdmin() {
     tab, setTab,
     resumen,
     personal,
-    circuitos,
     pendientesCorte,
     pendientesReconexion,
     cargando,
     actualizando,
-    filtroCircuito, setFiltroCircuito,
     filtroEstado,   setFiltroEstado,
     error,
     residentesFiltrados,
@@ -210,7 +193,6 @@ export function useAdmin() {
     busquedaResidentes, setBusquedaResidentes,
     cargarDatos,
     cambiarRol,
-    asignarResidenteCircuito,
     asignarRepresentante,
     registrarPagoRetroactivo,
     salir,

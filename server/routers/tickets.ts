@@ -11,11 +11,27 @@ export const ticketsRouter = router({
     .query(async ({ input }) => {
       const ticket = await db.query.tickets.findFirst({
         where: (t, { eq }) => eq(t.folio, input.folio),
+        columns: {
+          folio: true,
+          tipo: true,
+          emitidoEn: true,
+        },
         with: {
-          cargoServicio: true,
+          cargoServicio: {
+            columns: {
+              mes: true,
+              anio: true,
+              monto: true,
+              estado: true,
+            },
+          },
           pago: {
             columns: {
-              mes: true, anio: true, monto: true, estado: true, fechaPago: true, metodo: true,
+              mes: true,
+              anio: true,
+              monto: true,
+              estado: true,
+              fechaPago: true,
             },
           },
         },
@@ -31,16 +47,12 @@ export const ticketsRouter = router({
           monto:     ticket.pago.monto,
           estado:    ticket.pago.estado,
           fechaPago: ticket.pago.fechaPago,
-          metodo:    ticket.pago.metodo,
           } : null,
         cargoServicio: ticket.cargoServicio ? {
-          id: ticket.cargoServicio.id,
           mes: ticket.cargoServicio.mes,
           anio: ticket.cargoServicio.anio,
           monto: ticket.cargoServicio.monto,
           estado: ticket.cargoServicio.estado,
-          metodo: ticket.cargoServicio.metodo,
-          folio: ticket.cargoServicio.folio,
         } : null,
       };
     }),

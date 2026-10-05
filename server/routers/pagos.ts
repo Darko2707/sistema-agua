@@ -26,7 +26,7 @@ import { subscriptionService } from '@/src/infrastructure/db/services/subscripti
 import { logger } from '@/lib/logger';
 import { schedulePushDispatch } from '@/lib/push-dispatcher';
 
-const resolverCircuitoTesoreraService = new ResolverCircuitoTesoreraService({ circuitoRepo, residenteRepo });
+const resolverCircuitoTesoreraService = new ResolverCircuitoTesoreraService({ circuitoRepo });
 
 const registrarPagoManualHandler = new RegistrarPagoManualHandler({ residenteRepo, pagoRepo, circuitoRepo });
 const historialPagosHandler = new HistorialPagosHandler({ pagoRepo, residenteRepo });

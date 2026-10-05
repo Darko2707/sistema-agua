@@ -8,13 +8,16 @@
     "start": "next start",
     "lint": "eslint",
     "db:migrate": "dotenv -e .env.local -- drizzle-kit migrate",
+    "db:migrate:staging": "dotenv -e .env.staging -- drizzle-kit migrate",
     "db:generate": "dotenv -e .env.local -- drizzle-kit generate",
+    "db:generate:staging": "dotenv -e .env.staging -- drizzle-kit generate",
     "db:studio": "dotenv -e .env.local -- drizzle-kit studio",
+    "db:studio:staging": "dotenv -e .env.staging -- drizzle-kit studio",
     "db:seed": "dotenv -e .env.local -- tsx db/seed.ts",
     "worker": "tsx workers/push.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:integration": "vitest run --config vitest.integration.config.mts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui"
   },
@@ -45,7 +48,7 @@
     "lucide-react": "^1.18.0",
     "mercadopago": "^3.1.0",
     "nanoid": "^5.1.16",
-    "next": "^16.3.0",
+    "next": "^16.3.6",
     "pdf-lib": "^1.17.1",
     "radix-ui": "^1.5.0",
     "react": "19.2.4",
@@ -66,13 +69,21 @@
     "@types/react-dom": "^19",
     "@types/web-push": "^3.6.4",
     "dotenv-cli": "^11.0.0",
-    "drizzle-kit": "^0.31.10",
+    "drizzle-kit": "^0.31.11",
     "esbuild": "^0.28.1",
     "eslint": "^9",
-    "eslint-config-next": "^16.3.0",
+    "eslint-config-next": "^16.3.6",
     "tailwindcss": "^4",
     "tsx": "^4.22.4",
     "typescript": "^5",
-    "vitest": "4.1.9"
+    "vitest": "4.1.11"
+  },
+  "overrides": {
+    "@esbuild-kit/core-utils": {
+      "esbuild": "0.25.12"
+    },
+    "exceljs": {
+      "uuid": "11.1.1"
+    }
   }
 }

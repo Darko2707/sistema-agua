@@ -6,7 +6,7 @@ import type { CircuitoRepository } from '@/src/application/ports/circuito.reposi
 
 const mockCircuitoActivo = {
   id: 'circ-001', nombre: 'Circuito A', representanteId: 'rep-001', tesoreraId: null,
-  montoMensual: '50.00', montoReconexion: '300.00',
+  montoMensual: '50.00', montoReconexion: '300.00', diaCorte: 5,
   mercadoPagoAccessToken: null, mercadoPagoCollectorId: null, activo: true,
 };
 

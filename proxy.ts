@@ -38,13 +38,19 @@ function pickLimiter(pathname: string): RouteLimiter | null {
   if (AUTH_SENSITIVE.has(pathname)) {
     return { limiter: authLimiter, scope: 'auth' };
   }
-  if (pathname === '/api/mercadopago/checkout') {
+  if (
+    pathname === '/api/mercadopago/checkout'
+    || pathname === '/api/mercadopago/servicios/checkout'
+    || pathname === '/api/mercadopago/return'
+  ) {
     return { limiter: checkoutLimiter, scope: 'checkout' };
   }
-  if (pathname === '/verificar' || pathname.startsWith('/verificar/')) {
-    return { limiter: ticketLimiter, scope: 'tickets' };
-  }
-  if (pathname === '/api/tickets' || pathname.startsWith('/api/tickets/') || pathname === '/verificar' || pathname.startsWith('/verificar/')) {
+  if (
+    pathname === '/api/tickets'
+    || pathname.startsWith('/api/tickets/')
+    || pathname === '/verificar'
+    || pathname.startsWith('/verificar/')
+  ) {
     return { limiter: ticketLimiter, scope: 'tickets' };
   }
   if (pathname === '/api/reportes' || pathname.startsWith('/api/reportes/')) {
@@ -53,7 +59,45 @@ function pickLimiter(pathname: string): RouteLimiter | null {
   return null;
 }
 
+function maintenanceEnabled(): boolean {
+  return process.env.MAINTENANCE_MODE?.trim().toLowerCase() === 'true';
+}
+
+function isMaintenanceBypass(pathname: string): boolean {
+  return pathname === '/mantenimiento'
+    || pathname === '/api/health'
+    || pathname === '/api/mercadopago/webhook'
+    || pathname === '/api/cron'
+    || pathname.startsWith('/api/cron/');
+}
+
+function maintenanceResponse(req: NextRequest): NextResponse | null {
+  const pathname = req.nextUrl.pathname;
+  if (!maintenanceEnabled() || isMaintenanceBypass(pathname)) return null;
+
+  if (pathname === '/api' || pathname.startsWith('/api/')) {
+    return NextResponse.json(
+      { error: 'Servicio temporalmente en mantenimiento' },
+      {
+        status: 503,
+        headers: {
+          'Cache-Control': 'private, no-store',
+          'Retry-After': '300',
+        },
+      },
+    );
+  }
+
+  const url = req.nextUrl.clone();
+  url.pathname = '/mantenimiento';
+  url.search = '';
+  return NextResponse.redirect(url, 307);
+}
+
 export async function proxy(req: NextRequest) {
+  const unavailable = maintenanceResponse(req);
+  if (unavailable) return unavailable;
+
   const selected = pickLimiter(req.nextUrl.pathname);
   if (!selected) return NextResponse.next();
 
@@ -77,19 +121,7 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    '/api/auth/sign-in/:path*',
-    '/api/auth/sign-up/:path*',
-    '/api/auth/request-password-reset',
-    '/api/auth/forget-password',
-    '/api/auth/reset-password',
-    '/api/auth/change-password',
-    '/api/auth/change-email',
-    '/api/auth/delete-user',
-    '/api/mercadopago/checkout',
-    '/api/reportes/:path*',
-    '/api/tickets/:path*',
-    '/verificar/:path*',
-    '/verificar/:path*',
-  ],
+  // Se evalúan las rutas dinámicas para poder activar mantenimiento sin un
+  // despliegue adicional. Los assets estáticos nunca atraviesan el Proxy.
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|manifest.webmanifest|sw.js|icons/).*)'],
 };

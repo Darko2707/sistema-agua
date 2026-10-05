@@ -55,7 +55,6 @@ async function enqueueReconnectionOrder(
   await tx.execute(sql`
     INSERT INTO ordenes_trabajo (
       fraccionamiento_id,
-      circuito_id,
       perfil_id,
       fraccionamiento_servicio_id,
       tipo,
@@ -65,7 +64,6 @@ async function enqueueReconnectionOrder(
     )
     SELECT
       perfil.fraccionamiento_id,
-      perfil.circuito_id,
       perfil.id,
       perfil_servicio.fraccionamiento_servicio_id,
       'reconexion',

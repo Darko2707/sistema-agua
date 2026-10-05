@@ -5,9 +5,17 @@ export default async function VerificarPage({ params }: { params: Promise<{ foli
   const { folio } = await params;
   const ticket = await db.query.tickets.findFirst({
     where: (t, { eq }) => eq(t.folio, folio),
+    columns: {
+      folio: true,
+      emitidoEn: true,
+    },
     with: {
-      cargoServicio: true,
-      pago: true,
+      cargoServicio: {
+        columns: { mes: true, anio: true, monto: true },
+      },
+      pago: {
+        columns: { mes: true, anio: true, monto: true },
+      },
     },
   });
 

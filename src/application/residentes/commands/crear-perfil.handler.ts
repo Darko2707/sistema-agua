@@ -6,7 +6,7 @@ import {
   normalizarVivienda,
   ViviendaInvalidaError,
 } from '@/src/domain/residente/vivienda';
-import { DIA_CORTE } from '@/src/domain/pagos/constants';
+import { getDiaCorte } from '@/src/domain/pagos/constants';
 import { fechaNegocio } from '@/src/domain/shared/fecha-negocio';
 
 const VIVIENDA_UNIQUE_CONSTRAINT = 'uq_perfiles_residente_ubicacion';
@@ -83,7 +83,9 @@ export class CrearPerfilHandler {
 
     // Si el alta ocurre después del corte mensual, el residente ya debe
     // aparecer en la lista operativa de cortes sin esperar al siguiente cron.
-    const estadoInicial = fechaNegocio().dia > DIA_CORTE ? 'pendiente_corte' : 'activo';
+    const estadoInicial = fechaNegocio().dia > getDiaCorte(circuito)
+      ? 'pendiente_corte'
+      : 'activo';
     try {
       const perfil = await residenteRepo.create({
         userId:              cmd.userId,

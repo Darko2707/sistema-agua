@@ -50,16 +50,48 @@ export async function GET(
 
   const ticket = await db.query.tickets.findFirst({
     where: (ticketTable, { eq: equals }) => equals(ticketTable.folio, folio),
+    columns: {
+      folio: true,
+      pdfUrl: true,
+    },
     with: {
       pago: {
+        columns: {
+          mes: true,
+          anio: true,
+          monto: true,
+          montoBase: true,
+          iva: true,
+          comisionMercadoPago: true,
+          retencionIsr: true,
+          retencionIva: true,
+          esReconexion: true,
+        },
         with: {
-          circuito: true,
+          circuito: {
+            columns: {
+              nombre: true,
+              representanteId: true,
+            },
+          },
           perfil: {
-            with: { usuario: true },
+            columns: {
+              userId: true,
+              edificio: true,
+              departamento: true,
+            },
+            with: {
+              usuario: { columns: { name: true } },
+            },
           },
         },
       },
-      cargoServicio: true,
+      cargoServicio: {
+        columns: {
+          id: true,
+          estado: true,
+        },
+      },
     },
   });
 
@@ -69,6 +101,7 @@ export async function GET(
 
   const usuario = await db.query.user.findFirst({
     where: (userTable, { eq: equals }) => equals(userTable.id, session.user.id),
+    columns: { role: true },
   });
   const role = usuario?.role ?? 'residente';
   let pdfInput: Parameters<typeof generarTicketPDF>[0];

@@ -37,6 +37,7 @@ const circuitoActivo: CircuitoData = {
   tesoreraId: null,
   montoMensual: '100.00',
   montoReconexion: '300.00',
+  diaCorte: 10,
   mercadoPagoAccessToken: null,
   mercadoPagoCollectorId: null,
   activo: true,
@@ -171,6 +172,21 @@ describe('CrearPerfilHandler', () => {
       userId: 'user-new',
       estadoInicial: 'pendiente_corte',
     });
+  });
+
+  it('respeta el día de corte particular del circuito', async () => {
+    fechaNegocioMock.value = { dia: 6, mes: 8, anio: 2026 };
+    const { handler, residenteRepo, circuitoRepo } = makeHandler();
+    vi.mocked(circuitoRepo.findById).mockResolvedValue({
+      ...circuitoActivo,
+      diaCorte: 5,
+    });
+
+    await handler.execute(command);
+
+    expect(residenteRepo.create).toHaveBeenCalledWith(expect.objectContaining({
+      estadoAgua: 'pendiente_corte',
+    }));
   });
 
   it('rechaza un circuito inactivo sin consultar ni crear un perfil', async () => {

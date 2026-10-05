@@ -1,6 +1,7 @@
 ﻿import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
+import { homePathForRole } from '@/lib/role-home';
 import { userRepo } from '@/src/infrastructure/db/repositories';
 import type { UserRole } from '@/src/application/ports/user.repository';
 
@@ -16,7 +17,7 @@ export async function requireSession(opts?: { roles?: UserRole[] }) {
   if (!currentUser) redirect('/login');
 
   if (opts?.roles && !opts.roles.includes(currentUser.role)) {
-    redirect('/');
+    redirect(homePathForRole(currentUser.role));
   }
 
   return {

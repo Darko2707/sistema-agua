@@ -10,7 +10,6 @@ import { useRouter } from 'next/navigation';
 import { trpc } from '@/lib/trpc-client';
 import { trpcReact } from '@/lib/trpc-react';
 import { homePathForRole } from '@/lib/role-home';
-import { useCircuitos } from '@/hooks/useCircuito';
 import { userFacingError } from '@/lib/user-facing-error';
 import {
   esNombrePersonaValido,
@@ -41,7 +40,6 @@ const perfilSchema = z.object({
   sexo: z.enum(['masculino', 'femenino', 'otro']),
   tenencia: z.enum(['propietario', 'inquilino']),
   fraccionamientoId: z.string().trim().min(1, 'Selecciona tu fraccionamiento'),
-  circuitoId: z.string().trim().min(1, 'Selecciona tu circuito'),
   edificio: z.string().trim()
     .regex(/^\d{1,6}$/, 'Usa un número de hasta 6 dígitos')
     .refine(value => /[1-9]/.test(value), 'Debe ser mayor que cero'),
@@ -89,24 +87,20 @@ export default function RegistroPage() {
   const [checkingSession, setCheckingSession] = useState(true);
   const [cuentaPendiente, setCuentaPendiente] = useState<CuentaForm | null>(null);
 
-  const circuitosQuery = useCircuitos();
-  const circuitos = circuitosQuery.data ?? [];
   const fraccionamientosQuery = trpcReact.fraccionamientos.listarPublicos.useQuery();
 
   const cuenta = useForm<CuentaForm>({ resolver: zodResolver(cuentaSchema), mode: 'onTouched' });
   const perfil = useForm<PerfilForm>({
     resolver: zodResolver(perfilSchema),
     mode: 'onTouched',
-    defaultValues: { sexo: 'masculino', tenencia: 'propietario', fraccionamientoId: '', circuitoId: '', deptoLetra: '' },
+    defaultValues: { sexo: 'masculino', tenencia: 'propietario', fraccionamientoId: '', deptoLetra: '' },
   });
 
   const tenencia = useWatch({ control: perfil.control, name: 'tenencia' });
-  const fraccionamientoId = useWatch({ control: perfil.control, name: 'fraccionamientoId' }) ?? '';
   const esInquilino = tenencia === 'inquilino';
   const deptoNumero = useWatch({ control: perfil.control, name: 'deptoNumero' }) ?? '';
   const deptoLetra = useWatch({ control: perfil.control, name: 'deptoLetra' }) ?? '';
   const fraccionamientos = fraccionamientosQuery.data ?? [];
-  const circuitosDelFraccionamiento = circuitos.filter((c) => c.fraccionamientoId === fraccionamientoId);
 
   useEffect(() => {
     let active = true;
@@ -116,7 +110,7 @@ export default function RegistroPage() {
         const sessionResult = await authClient.getSession();
         if (!active || !sessionResult.data?.user) return;
 
-        const role = (sessionResult.data.user as { role?: string }).role ?? 'residente';
+        const role = (sessionResult.data.user as { role?: string }).role;
         if (role !== 'residente') {
           router.replace(homePathForRole(role));
           return;
@@ -162,7 +156,7 @@ export default function RegistroPage() {
       // después de la comprobación inicial.
       const currentSession = await authClient.getSession();
       if (currentSession.data?.user) {
-        const role = (currentSession.data.user as { role?: string }).role ?? 'residente';
+        const role = (currentSession.data.user as { role?: string }).role;
         if (role !== 'residente') {
           router.replace(homePathForRole(role));
           return;
@@ -242,7 +236,7 @@ export default function RegistroPage() {
         telefono: data.telefono,
         sexo: data.sexo,
         tenencia: data.tenencia,
-        circuitoId: data.circuitoId.trim(),
+        fraccionamientoId: data.fraccionamientoId.trim(),
         edificio: normalizarNumero(data.edificio),
         departamento,
         ...(data.tenencia === 'inquilino' && {
@@ -426,29 +420,12 @@ export default function RegistroPage() {
                 aria-describedby={perfil.formState.errors.fraccionamientoId ? 'tenant-err' : undefined}
                 aria-invalid={!!perfil.formState.errors.fraccionamientoId}
                 style={selectBase}
-                {...perfil.register('fraccionamientoId', {
-                  onChange: () => perfil.setValue('circuitoId', '', { shouldDirty: true, shouldValidate: true }),
-                })}
+                {...perfil.register('fraccionamientoId')}
               >
                 <option value="">{fraccionamientosQuery.isLoading ? 'Cargando fraccionamientos...' : 'Selecciona tu fraccionamiento'}</option>
                 {fraccionamientos.map((tenant) => <option key={tenant.id} value={tenant.id}>{tenant.nombre}</option>)}
               </select>
               <FieldError id="tenant-err" message={perfil.formState.errors.fraccionamientoId?.message} />
-            </div>
-            <div>
-              <label htmlFor="circuitoId" style={labelBase}>Circuito</label>
-              <select id="circuitoId" className="auth-sel" disabled={!fraccionamientoId || circuitosQuery.isLoading || circuitosQuery.isError} aria-required="true" aria-describedby={perfil.formState.errors.circuitoId ? 'circ-status circ-err' : 'circ-status'} aria-invalid={!!perfil.formState.errors.circuitoId || circuitosQuery.isError} style={{ ...selectBase, opacity: !fraccionamientoId || circuitosQuery.isLoading || circuitosQuery.isError ? 0.7 : 1 }} {...perfil.register('circuitoId')}>
-                <option value="">{!fraccionamientoId ? 'Primero selecciona un fraccionamiento' : circuitosQuery.isLoading ? 'Cargando circuitos...' : 'Selecciona tu circuito'}</option>
-                {circuitosDelFraccionamiento.map(c => <option key={c.id} value={c.id}>{c.nombre}</option>)}
-              </select>
-              <p id="circ-status" role={circuitosQuery.isError ? 'alert' : 'status'} style={{ fontSize: 12, color: circuitosQuery.isError ? C.danger : C.textWarm, marginTop: 4 }}>
-                {circuitosQuery.isError
-                  ? 'No pudimos cargar los circuitos. Recarga la página para intentar nuevamente.'
-                    : !circuitosQuery.isLoading && fraccionamientoId && circuitosDelFraccionamiento.length === 0
-                    ? 'No hay circuitos disponibles para registro.'
-                    : ''}
-              </p>
-              <FieldError id="circ-err" message={perfil.formState.errors.circuitoId?.message} />
             </div>
           </div>
           {esInquilino && (
@@ -508,10 +485,10 @@ export default function RegistroPage() {
             </div>
           </div>
           <div role="note" style={{ borderRadius: 14, border: `1px solid ${C.amberBdr}`, background: C.amberBg, padding: '10px 14px', fontSize: 12.5, lineHeight: 1.45, color: C.amber, fontWeight: 700 }}>
-            Solo puede existir un registro por circuito, edificio y departamento. Verifica estos datos antes de finalizar.
+            Solo puede existir un registro por fraccionamiento, edificio y departamento. Verifica estos datos antes de finalizar.
           </div>
           {serverError && <div role="alert" aria-live="assertive" style={{ background: C.dangerBg, border: '1px solid #F3BFBF', borderRadius: 14, padding: '10px 14px', fontSize: 13, color: C.danger, fontWeight: 700 }}>{serverError}</div>}
-          <button className="auth-primary" type="submit" disabled={submitting || circuitosQuery.isLoading || circuitosQuery.isError || circuitos.length === 0} aria-busy={submitting} style={{ ...buttonGold, opacity: submitting || circuitosQuery.isLoading || circuitosQuery.isError || circuitos.length === 0 ? 0.65 : 1, marginTop: 2 }}>{submitting ? 'Guardando...' : 'Finalizar registro'}</button>
+          <button className="auth-primary" type="submit" disabled={submitting || fraccionamientosQuery.isLoading || fraccionamientosQuery.isError || fraccionamientos.length === 0} aria-busy={submitting} style={{ ...buttonGold, opacity: submitting || fraccionamientosQuery.isLoading || fraccionamientosQuery.isError || fraccionamientos.length === 0 ? 0.65 : 1, marginTop: 2 }}>{submitting ? 'Guardando...' : 'Finalizar registro'}</button>
           <div style={{ textAlign: 'center' }}>
             <button type="button" className="auth-link" disabled={submitting} style={{ ...linkButton, color: '#C98A0E', opacity: submitting ? 0.65 : 1 }} onClick={handleUsarOtraCuenta}>
               Cerrar sesión y usar otra cuenta

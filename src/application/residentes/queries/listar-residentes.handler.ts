@@ -1,4 +1,4 @@
-import { DIA_CORTE } from '@/src/domain/pagos/constants';
+import { getDiaCorte } from '@/src/domain/pagos/constants';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
 import { fechaNegocio } from '@/src/domain/shared/fecha-negocio';
 import { TRPCError } from '@trpc/server';
@@ -19,7 +19,7 @@ type Deps = {
   circuitoRepo: CircuitoRepository;
 };
 
-function mapPerfil(p: ResidenteConRelaciones, periodo: ReturnType<typeof PeriodoVO.vigente>, vencido: boolean) {
+function mapPerfil(p: ResidenteConRelaciones, periodo: ReturnType<typeof PeriodoVO.vigente>, diaActual: number) {
   const pagoEsteMes = p.pagos?.some(
     pg => pg.mes === periodo.mes && pg.anio === periodo.anio && pg.estado === 'pagado',
   ) ?? false;
@@ -40,7 +40,7 @@ function mapPerfil(p: ResidenteConRelaciones, periodo: ReturnType<typeof Periodo
     },
     circuito:    p.circuito,
     pagoEsteMes,
-    esMoroso:    vencido && !pagoEsteMes,
+    esMoroso:    diaActual > getDiaCorte(p.circuito ?? undefined) && !pagoEsteMes,
     corteActivo: p.cortes?.some(c => c.activo) ?? false,
   };
 }
@@ -51,7 +51,7 @@ export class ListarResidentesHandler {
   async execute(query: ListarResidentesQuery) {
     const { residenteRepo, circuitoRepo } = this.deps;
     const periodo = PeriodoVO.vigente();
-    const vencido = fechaNegocio().dia > DIA_CORTE;
+    const diaActual = fechaNegocio().dia;
 
     const page     = query.page     ?? 1;
     const pageSize = query.pageSize ?? 50;
@@ -69,7 +69,7 @@ export class ListarResidentesHandler {
         ? await residenteRepo.findByTenantPaginated(tenantId, query.circuitoId, page, pageSize)
         : await residenteRepo.findAllPaginated(page, pageSize);
       return {
-        items:      result.items.map(p => mapPerfil(p, periodo, vencido)),
+        items:      result.items.map(p => mapPerfil(p, periodo, diaActual)),
         total:      result.total,
         page:       result.page,
         pageSize:   result.pageSize,
@@ -84,7 +84,7 @@ export class ListarResidentesHandler {
 
     const result = await residenteRepo.findByCircuitoPaginated(miCircuito.id, page, pageSize);
     return {
-      items:      result.items.map(p => mapPerfil(p, periodo, vencido)),
+      items:      result.items.map(p => mapPerfil(p, periodo, diaActual)),
       total:      result.total,
       page:       result.page,
       pageSize:   result.pageSize,

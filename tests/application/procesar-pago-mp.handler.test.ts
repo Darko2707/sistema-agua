@@ -27,7 +27,7 @@ const PERFIL = {
 
 const CIRCUITO = {
   id: 'circ-001', nombre: 'Circuito A', representanteId: 'rep-001', tesoreraId: null,
-  montoMensual: '100.00', montoReconexion: '300.00',
+  montoMensual: '100.00', montoReconexion: '300.00', diaCorte: 5,
   mercadoPagoAccessToken: null, mercadoPagoCollectorId: 'col-circuito', activo: true,
 };
 

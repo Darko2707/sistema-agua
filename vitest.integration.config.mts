@@ -1,5 +1,7 @@
+import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
-import path from 'path';
+
+const projectRoot = fileURLToPath(new URL('.', import.meta.url));
 
 export default defineConfig({
   // Integration tests must never inherit .env.local (or any other Vite env file).
@@ -7,15 +9,15 @@ export default defineConfig({
   envDir: false,
   test: {
     environment: 'node',
-    setupFiles:  ['tests/integration/setup.ts'],
-    include:     ['tests/integration/**/*.test.ts'],
+    setupFiles: ['tests/integration/setup.ts'],
+    include: ['tests/integration/**/*.test.ts'],
     testTimeout: 30_000,
     hookTimeout: 30_000,
-    // Run sequentially — each test mutates shared DB fixtures
-    pool:            'forks',
+    // Run sequentially because each test mutates shared database fixtures.
+    pool: 'forks',
     fileParallelism: false,
   },
   resolve: {
-    alias: { '@': path.resolve(__dirname, '.') },
+    alias: { '@': projectRoot },
   },
 });

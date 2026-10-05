@@ -17,6 +17,7 @@ const circuitoSafeColumns = {
   nombre: true,
   montoMensual: true,
   montoReconexion: true,
+  diaCorte: true,
   representanteId: true,
   activo: true,
 } as const;
@@ -200,6 +201,15 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
     return rows.map(r => toConRelaciones(r as WithRelaciones));
   }
 
+  async findByFraccionamientoYEstado(fraccionamientoId: string, estado: EstadoAgua): Promise<ResidenteConRelaciones[]> {
+    const rows = await db.query.perfilesResidente.findMany({
+      where: (p, { eq, and }) => and(eq(p.fraccionamientoId, fraccionamientoId), eq(p.estadoAgua, estado)),
+      with: { usuario: true, circuito: { columns: circuitoSafeColumns } },
+      orderBy: (p, { desc }) => [desc(p.creadoEn)],
+    });
+    return rows.map(r => toConRelaciones(r as WithRelaciones));
+  }
+
   async create(data: Omit<ResidenteData, 'id' | 'creadoEn'>): Promise<ResidenteData> {
     const row = await db.transaction(async (tx) => {
       const [circuito] = await tx
@@ -280,7 +290,7 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
       .where(eq(perfilesResidente.id, id));
   }
 
-  async marcarMorososDelMes(mes: number, anio: number): Promise<number> {
+  async marcarMorososDelMes(mes: number, anio: number, diaActual: number): Promise<number> {
     // Pagos y operaciones de corte bloquean la misma fila de perfil. SKIP
     // LOCKED evita marcar con un snapshot viejo a quien esta pagando; las
     // siguientes ejecuciones idempotentes recogen filas omitidas.
@@ -288,7 +298,10 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
       WITH candidatos AS MATERIALIZED (
         SELECT perfil.id
         FROM perfiles_residente AS perfil
+        INNER JOIN circuitos AS circuito ON circuito.id = perfil.circuito_id
         WHERE perfil.estado_agua = 'activo'
+          AND circuito.activo = true
+          AND circuito.dia_corte < ${diaActual}
           AND EXISTS (
             SELECT 1
             FROM perfiles_servicios AS perfil_servicio
@@ -317,15 +330,14 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
       SET estado_agua = 'pendiente_corte'
       FROM candidatos
       WHERE perfil.id = candidatos.id
-      RETURNING perfil.id, perfil.fraccionamiento_id, perfil.circuito_id
+      RETURNING perfil.id, perfil.fraccionamiento_id
       ), ordenadas AS (
       INSERT INTO ordenes_trabajo (
-        fraccionamiento_id, circuito_id, perfil_id, fraccionamiento_servicio_id,
+        fraccionamiento_id, perfil_id, fraccionamiento_servicio_id,
         tipo, estado, motivo, idempotency_key
       )
       SELECT
         marcado.fraccionamiento_id,
-        marcado.circuito_id,
         marcado.id,
         perfil_servicio.fraccionamiento_servicio_id,
         'corte',

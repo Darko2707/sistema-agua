@@ -12,7 +12,7 @@ import { Label } from '@/components/ui/label';
 
 type RolOperativo = 'cuadrilla_cortes' | 'operador_pozo';
 
-const nombreRol: Record<RolOperativo, string> = {
+const nombreRol: Record<string, string> = {
   cuadrilla_cortes: 'Cuadrilla de cortes',
   operador_pozo: 'Operador de pozo',
 };
@@ -20,7 +20,6 @@ const nombreRol: Record<RolOperativo, string> = {
 export default function AsignacionesPage() {
   const router = useRouter();
   const [fraccionamientoId, setFraccionamientoId] = useState('');
-  const [circuitoId, setCircuitoId] = useState('');
   const [servicioId, setServicioId] = useState('');
   const [usuarioId, setUsuarioId] = useState('');
   const [rol, setRol] = useState<RolOperativo>('cuadrilla_cortes');
@@ -28,10 +27,6 @@ export default function AsignacionesPage() {
 
   const tenantsQuery = trpcReact.fraccionamientos.listar.useQuery();
   const tenants = tenantsQuery.data ?? [];
-  const circuitosQuery = trpcReact.circuitos.listarPorFraccionamiento.useQuery(
-    { fraccionamientoId },
-    { enabled: Boolean(fraccionamientoId) },
-  );
   const serviciosQuery = trpcReact.servicios.listarTenant.useQuery(
     { fraccionamientoId },
     { enabled: Boolean(fraccionamientoId) },
@@ -41,19 +36,18 @@ export default function AsignacionesPage() {
     { enabled: Boolean(fraccionamientoId) },
   );
   const asignacionesQuery = trpcReact.usuarios.listarPersonalPorCircuito.useQuery(
-    { fraccionamientoId, circuitoId },
-    { enabled: Boolean(fraccionamientoId && circuitoId) },
+    { fraccionamientoId },
+    { enabled: Boolean(fraccionamientoId) },
   );
 
   const asignarMutation = trpcReact.usuarios.asignarPersonalOperativo.useMutation();
   const quitarMutation = trpcReact.usuarios.quitarAsignacionPersonal.useMutation();
 
-  const circuitos = circuitosQuery.data ?? [];
   const servicios = (serviciosQuery.data ?? []).filter((item) => item.estado === 'activo');
   const candidatos = useMemo(() => {
     const vistos = new Set<string>();
     return (personalQuery.data ?? []).filter((item) => {
-      if (item.rol !== 'cuadrilla_cortes' && item.rol !== 'operador_pozo') return false;
+      if (item.rol !== 'cuadrilla_cortes') return false;
       if (vistos.has(item.id)) return false;
       vistos.add(item.id);
       return true;
@@ -63,34 +57,27 @@ export default function AsignacionesPage() {
 
   function cambiarFraccionamiento(value: string) {
     setFraccionamientoId(value);
-    setCircuitoId('');
     setServicioId('');
     setUsuarioId('');
-    setMensaje(null);
-  }
-
-  function cambiarCircuito(value: string) {
-    setCircuitoId(value);
     setMensaje(null);
   }
 
   async function asignar() {
     setMensaje(null);
     const usuario = candidatos.find((item) => item.id === usuarioId);
-    const rolSeleccionado = usuario?.rol === 'cuadrilla_cortes' || usuario?.rol === 'operador_pozo'
+    const rolSeleccionado = usuario?.rol === 'cuadrilla_cortes'
       ? usuario.rol
       : rol;
-    if (!fraccionamientoId || !circuitoId || !servicioId || !usuarioId) {
-      setMensaje('Selecciona fraccionamiento, circuito, servicio y personal.');
+    if (!fraccionamientoId || !servicioId || !usuarioId) {
+      setMensaje('Selecciona fraccionamiento, servicio y personal.');
       return;
     }
     try {
       await asignarMutation.mutateAsync({
         fraccionamientoId,
-        circuitoId,
         fraccionamientoServicioId: servicioId,
         usuarioId,
-        rol: rolSeleccionado,
+        rol: rolSeleccionado as RolOperativo,
       });
       await asignacionesQuery.refetch();
       setUsuarioId('');
@@ -125,7 +112,7 @@ export default function AsignacionesPage() {
               <Users className="h-8 w-8" />
               <div>
                 <h1 className="text-3xl font-bold">Personal operativo</h1>
-                <p className="mt-1 text-indigo-100">Asignaciones por fraccionamiento, circuito y servicio</p>
+                <p className="mt-1 text-indigo-100">Asignaciones por fraccionamiento y servicio</p>
               </div>
             </div>
             <Button variant="secondary" size="sm" onClick={() => router.push('/admin')} className="bg-white/10 text-white hover:bg-white/20 border-none">
@@ -140,19 +127,17 @@ export default function AsignacionesPage() {
           <CardHeader><CardTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5" /> Nueva asignación</CardTitle></CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-5 md:items-end">
             <div className="space-y-2"><Label htmlFor="tenant">Fraccionamiento</Label><select id="tenant" value={fraccionamientoId} onChange={(event) => cambiarFraccionamiento(event.target.value)} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"><option value="">Selecciona...</option>{tenants.map((item) => <option key={item.id} value={item.id}>{item.nombre}</option>)}</select></div>
-            <div className="space-y-2"><Label htmlFor="circuito">Circuito</Label><select id="circuito" value={circuitoId} onChange={(event) => cambiarCircuito(event.target.value)} disabled={!fraccionamientoId} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"><option value="">Selecciona...</option>{circuitos.map((item) => <option key={item.id} value={item.id}>{item.nombre}</option>)}</select></div>
             <div className="space-y-2"><Label htmlFor="servicio">Servicio</Label><select id="servicio" value={servicioId} onChange={(event) => setServicioId(event.target.value)} disabled={!fraccionamientoId} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"><option value="">Selecciona...</option>{servicios.map((item) => <option key={item.id} value={item.id}>{item.nombre} ({item.clave})</option>)}</select></div>
             <div className="space-y-2"><Label htmlFor="rol">Rol</Label><select id="rol" value={rol} onChange={(event) => setRol(event.target.value as RolOperativo)} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"><option value="cuadrilla_cortes">Cuadrilla de cortes</option><option value="operador_pozo">Operador de pozo</option></select></div>
             <div className="space-y-2 md:col-span-2 md:col-start-1"><Label htmlFor="usuario">Personal</Label><select id="usuario" value={usuarioId} onChange={(event) => setUsuarioId(event.target.value)} disabled={!fraccionamientoId} className="h-9 w-full rounded-md border border-input bg-background px-2 text-sm"><option value="">Selecciona...</option>{candidatos.filter((item) => item.rol === rol).map((item) => <option key={item.id} value={item.id}>{item.nombre} · {item.email}</option>)}</select></div>
-            <Button onClick={asignar} disabled={asignarMutation.isPending || !fraccionamientoId || !circuitoId || !servicioId || !usuarioId} className="md:col-span-2">{asignarMutation.isPending ? 'Guardando...' : 'Asignar personal'}</Button>
+            <Button onClick={asignar} disabled={asignarMutation.isPending || !fraccionamientoId || !servicioId || !usuarioId} className="md:col-span-2">{asignarMutation.isPending ? 'Guardando...' : 'Asignar personal'}</Button>
           </CardContent>
         </Card>
 
         <Card>
-          <CardHeader><CardTitle>Asignaciones activas del circuito</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Asignaciones activas del fraccionamiento</CardTitle></CardHeader>
           <CardContent>
-            {!circuitoId && <p className="text-sm text-muted-foreground">Selecciona un circuito para consultar sus asignaciones.</p>}
-            {circuitoId && asignaciones.length === 0 && <p className="text-sm text-muted-foreground">No hay personal operativo asignado.</p>}
+            {fraccionamientoId && asignaciones.length === 0 && <p className="text-sm text-muted-foreground">No hay personal operativo asignado.</p>}
             <div className="space-y-3">{asignaciones.map((item) => <div key={item.asignacionId} className="flex flex-col gap-3 rounded-xl border p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-medium">{item.nombre}</p><p className="text-sm text-muted-foreground">{item.email}</p><div className="mt-2 flex gap-2"><Badge>{item.rol === 'cuadrilla_cortes' || item.rol === 'operador_pozo' ? nombreRol[item.rol] : item.rol}</Badge><Badge variant="outline">Servicio asignado</Badge></div></div><Button variant="outline" size="sm" onClick={() => item.asignacionId && quitar(item.asignacionId)} disabled={quitarMutation.isPending || !item.asignacionId}><UserMinus className="mr-2 h-4 w-4" />Retirar</Button></div>)}</div>
           </CardContent>
         </Card>

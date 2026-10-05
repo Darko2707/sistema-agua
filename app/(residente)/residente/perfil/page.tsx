@@ -62,7 +62,7 @@ export default function PerfilResidentePage() {
   return (
     <main className="mx-auto max-w-2xl space-y-6 p-6">
       <h1 className="text-2xl font-semibold">Solicitar cambio de perfil</h1>
-      <p className="text-sm text-muted-foreground">Los cambios requieren aprobación del representante de tu circuito.</p>
+      <p className="text-sm text-muted-foreground">Los cambios requieren aprobación del representante de tu fraccionamiento.</p>
       {mensaje && <p role="status" className="text-green-700">{mensaje}</p>}
       {error && <p role="alert" className="text-red-700">{error}</p>}
       <form onSubmit={enviar} className="grid gap-4 rounded-lg border p-4">

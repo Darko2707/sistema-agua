@@ -193,25 +193,23 @@ describe('RepresentativePasswordResetService request lifecycle', () => {
     expect(mocks.insertValues).toHaveLength(0);
   });
 
-  it('permite generar codigo para una cuenta operativa que tambien tiene perfil residente', async () => {
-    mocks.selectLimitResults.push([{ ...resident, residenteRole: 'tesorera' }]);
-    mocks.claimResults.push([{ id: 'request-tesorera' }]);
+  it.each([
+    'tesorera',
+    'cuadrilla_cortes',
+    'operador_pozo',
+    'representante',
+    'admin',
+  ])('rechaza generar codigo para una cuenta con rol operativo: %s', async (residenteRole) => {
+    mocks.selectLimitResults.push([{ ...resident, residenteRole }]);
     const service = new RepresentativePasswordResetService();
 
     await expect(service.generateForResident({
       representanteId: 'representante-1',
       perfilId: resident.perfilId,
-    })).resolves.toMatchObject({
-      residente: {
-        email: resident.residenteEmail,
-      },
-    });
+    })).rejects.toMatchObject({ code: 'FORBIDDEN' });
 
-    expect(mocks.insertValues.filter(value => 'codeHash' in value)).toHaveLength(1);
-    expect(mocks.insertValues).toContainEqual(expect.objectContaining({
-      accion: 'password_reset.codigo_generado',
-      detalle: expect.objectContaining({ requestId: 'request-tesorera' }),
-    }));
+    expect(mocks.claimResults).toHaveLength(0);
+    expect(mocks.insertValues).toHaveLength(0);
   });
 
   it('una nueva solicitud conserva el codigo vigente hasta que el representante genera el nuevo', async () => {

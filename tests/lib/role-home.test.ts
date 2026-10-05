@@ -9,11 +9,12 @@ describe('homePathForRole', () => {
     ['tesorera', '/tesorera'],
     ['cuadrilla_cortes', '/trabajador'],
     ['residente', '/residente'],
+    ['operador_pozo', '/acceso-no-configurado'],
   ])('dirige el rol %s a %s', (role, expected) => {
     expect(homePathForRole(role)).toBe(expected);
   });
 
-  it.each([undefined, null, '', 'desconocido'])('usa residente como ruta segura para %j', (role) => {
-    expect(homePathForRole(role)).toBe('/residente');
+  it.each([undefined, null, '', 'desconocido'])('deniega por defecto un rol ausente o desconocido: %j', (role) => {
+    expect(homePathForRole(role)).toBe('/acceso-no-configurado');
   });
 });

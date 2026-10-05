@@ -31,6 +31,7 @@ import { config, proxy } from '@/proxy';
 
 const ORIGINAL_VERCEL = process.env.VERCEL;
 const ORIGINAL_SECRET = process.env.BETTER_AUTH_SECRET;
+const ORIGINAL_MAINTENANCE = process.env.MAINTENANCE_MODE;
 
 describe('Proxy rate limits', () => {
   beforeEach(() => {
@@ -38,6 +39,7 @@ describe('Proxy rate limits', () => {
     resetOperationalAlertThrottleForTests();
     process.env.VERCEL = '1';
     process.env.BETTER_AUTH_SECRET = 'test-rate-limit-secret';
+    delete process.env.MAINTENANCE_MODE;
   });
 
   afterEach(() => {
@@ -45,6 +47,8 @@ describe('Proxy rate limits', () => {
     else process.env.VERCEL = ORIGINAL_VERCEL;
     if (ORIGINAL_SECRET === undefined) delete process.env.BETTER_AUTH_SECRET;
     else process.env.BETTER_AUTH_SECRET = ORIGINAL_SECRET;
+    if (ORIGINAL_MAINTENANCE === undefined) delete process.env.MAINTENANCE_MODE;
+    else process.env.MAINTENANCE_MODE = ORIGINAL_MAINTENANCE;
   });
 
   it.each([
@@ -55,6 +59,16 @@ describe('Proxy rate limits', () => {
     },
     {
       url: 'https://example.test/api/mercadopago/checkout',
+      scope: 'checkout',
+      limit: mocks.checkoutLimit,
+    },
+    {
+      url: 'https://example.test/api/mercadopago/servicios/checkout',
+      scope: 'checkout',
+      limit: mocks.checkoutLimit,
+    },
+    {
+      url: 'https://example.test/api/mercadopago/return',
       scope: 'checkout',
       limit: mocks.checkoutLimit,
     },
@@ -140,5 +154,49 @@ describe('Proxy rate limits', () => {
     expect(matchers).not.toContain('get-session');
     expect(matchers).not.toContain('callback');
     expect(matchers).not.toContain('sign-out');
+  });
+
+  it('devuelve 503 para API de usuario durante mantenimiento', async () => {
+    process.env.MAINTENANCE_MODE = 'true';
+
+    const response = await proxy(new NextRequest('https://example.test/api/trpc/usuarios.listar'));
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get('retry-after')).toBe('300');
+    expect(response.headers.get('cache-control')).toContain('no-store');
+    await expect(response.json()).resolves.toEqual({
+      error: 'Servicio temporalmente en mantenimiento',
+    });
+  });
+
+  it('redirige paginas a mantenimiento y evita un ciclo de redireccion', async () => {
+    process.env.MAINTENANCE_MODE = 'TRUE';
+
+    const redirected = await proxy(new NextRequest('https://example.test/admin?tab=usuarios'));
+    const maintenance = await proxy(new NextRequest('https://example.test/mantenimiento'));
+
+    expect(redirected.status).toBe(307);
+    expect(redirected.headers.get('location')).toBe('https://example.test/mantenimiento');
+    expect(maintenance.status).toBe(200);
+  });
+
+  it.each([
+    '/api/health',
+    '/api/mercadopago/webhook',
+    '/api/cron/cortes',
+  ])('mantiene disponible %s durante mantenimiento', async (pathname) => {
+    process.env.MAINTENANCE_MODE = 'true';
+
+    const response = await proxy(new NextRequest(`https://example.test${pathname}`));
+
+    expect(response.status).toBe(200);
+  });
+
+  it('excluye recursos estaticos del matcher general', () => {
+    const [matcher] = config.matcher;
+    expect(config.matcher).toHaveLength(1);
+    expect(matcher).toContain('_next/static');
+    expect(matcher).toContain('_next/image');
+    expect(matcher).toContain('sw.js');
   });
 });

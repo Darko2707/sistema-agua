@@ -1,10 +1,11 @@
 /* eslint-disable no-restricted-imports -- legacy router boundary; migrate queries to repositories incrementally. */
-import { eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { db } from '@/db';
-import { auditoria, fraccionamientos } from '@/db/schema';
+import { auditoria, circuitos, fraccionamientoMetodosPago, fraccionamientos } from '@/db/schema';
+import { encryptToken } from '@/lib/crypto';
 import { router, publicProcedure, roleProcedure } from '../trpc';
 
 /** Convierte el nombre visible en el identificador público del tenant. */
@@ -36,21 +37,43 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 export const fraccionamientosRouter = router({
+  // During the transition, only expose tenants that have an active legacy
+  // circuit equivalent. This prevents registrations without operations.
   listarPublicos: publicProcedure.query(async () => db
     .select({ id: fraccionamientos.id, nombre: fraccionamientos.nombre })
     .from(fraccionamientos)
-    .where(eq(fraccionamientos.activo, true))
+    .innerJoin(circuitos, eq(circuitos.fraccionamientoId, fraccionamientos.id))
+    .where(and(eq(fraccionamientos.activo, true), eq(circuitos.activo, true)))
     .orderBy(fraccionamientos.nombre)),
 
   listar: roleProcedure('admin').query(async () => db
-    .select({ id: fraccionamientos.id, nombre: fraccionamientos.nombre, slug: fraccionamientos.slug, activo: fraccionamientos.activo })
+    .select({
+      id: fraccionamientos.id,
+      nombre: fraccionamientos.nombre,
+      slug: fraccionamientos.slug,
+      activo: fraccionamientos.activo,
+      representanteId: fraccionamientos.representanteId,
+      tesoreraId: fraccionamientos.tesoreraId,
+      montoMensual: fraccionamientos.montoMensual,
+      montoReconexion: fraccionamientos.montoReconexion,
+      diaCorte: fraccionamientos.diaCorte,
+      mercadoPagoConfigurado: sql<boolean>`coalesce(${fraccionamientoMetodosPago.accessTokenCifrado} <> '' AND ${fraccionamientoMetodosPago.collectorId} IS NOT NULL, false)`,
+    })
     .from(fraccionamientos)
+    .leftJoin(fraccionamientoMetodosPago, and(
+      eq(fraccionamientoMetodosPago.fraccionamientoId, fraccionamientos.id),
+      eq(fraccionamientoMetodosPago.proveedor, 'mercado_pago'),
+      eq(fraccionamientoMetodosPago.activo, true),
+    ))
     .where(eq(fraccionamientos.activo, true))
     .orderBy(fraccionamientos.nombre)),
 
   crear: roleProcedure('admin')
     .input(z.object({
       nombre: z.string().trim().min(2, 'El nombre debe tener al menos 2 caracteres').max(160),
+      montoMensual: z.number().min(0).default(50),
+      montoReconexion: z.number().min(0).default(300),
+      diaCorte: z.number().int().min(1).max(28).default(5),
     }))
     .mutation(async ({ ctx, input }) => {
       const slug = slugifyFraccionamiento(input.nombre);
@@ -72,7 +95,14 @@ export const fraccionamientosRouter = router({
 
           const [created] = await tx
             .insert(fraccionamientos)
-            .values({ nombre: input.nombre, slug, activo: true })
+            .values({
+              nombre: input.nombre,
+              slug,
+              activo: true,
+              montoMensual: input.montoMensual.toFixed(2),
+              montoReconexion: input.montoReconexion.toFixed(2),
+              diaCorte: input.diaCorte,
+            })
             .returning({
               id: fraccionamientos.id,
               nombre: fraccionamientos.nombre,
@@ -105,5 +135,88 @@ export const fraccionamientosRouter = router({
         }
         throw error;
       }
+    }),
+
+  actualizarConfiguracion: roleProcedure('admin')
+    .input(z.object({
+      fraccionamientoId: z.string().uuid(),
+      montoMensual: z.number().min(0),
+      montoReconexion: z.number().min(0),
+      diaCorte: z.number().int().min(1).max(28),
+      activo: z.boolean(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const [updated] = await db.update(fraccionamientos).set({
+        montoMensual: input.montoMensual.toFixed(2),
+        montoReconexion: input.montoReconexion.toFixed(2),
+        diaCorte: input.diaCorte,
+        activo: input.activo,
+        updatedAt: new Date(),
+      }).where(eq(fraccionamientos.id, input.fraccionamientoId)).returning({ id: fraccionamientos.id });
+      if (!updated) throw new TRPCError({ code: 'NOT_FOUND', message: 'Fraccionamiento no encontrado' });
+      await db.insert(auditoria).values({
+        actorId: ctx.user.id,
+        accion: 'fraccionamiento.configuracion_actualizada',
+        entidad: 'fraccionamientos',
+        entidadId: updated.id,
+        detalle: {
+          montoMensual: input.montoMensual,
+          montoReconexion: input.montoReconexion,
+          diaCorte: input.diaCorte,
+          activo: input.activo,
+        },
+      });
+      return { ok: true };
+    }),
+
+  actualizarMercadoPago: roleProcedure('admin')
+    .input(z.object({
+      fraccionamientoId: z.string().uuid(),
+      // Omitirlo conserva el token cifrado existente; nunca se devuelve al cliente.
+      accessToken: z.string().trim().min(10).max(500).optional(),
+      collectorId: z.string().trim().regex(/^\d+$/, 'El Collector ID debe contener solo dígitos').max(30),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const existing = await db.query.fraccionamientoMetodosPago.findFirst({
+        columns: { accessTokenCifrado: true },
+        where: and(
+          eq(fraccionamientoMetodosPago.fraccionamientoId, input.fraccionamientoId),
+          eq(fraccionamientoMetodosPago.proveedor, 'mercado_pago'),
+        ),
+      });
+      if (!existing?.accessTokenCifrado && !input.accessToken) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'El Access Token es obligatorio al configurar Mercado Pago por primera vez' });
+      }
+
+      const encryptedAccessToken = input.accessToken ? encryptToken(input.accessToken) : undefined;
+      await db.transaction(async (tx) => {
+        const [tenant] = await tx.select({ id: fraccionamientos.id }).from(fraccionamientos)
+          .where(and(eq(fraccionamientos.id, input.fraccionamientoId), eq(fraccionamientos.activo, true))).limit(1);
+        if (!tenant) throw new TRPCError({ code: 'NOT_FOUND', message: 'Fraccionamiento no encontrado o inactivo' });
+
+        await tx.insert(fraccionamientoMetodosPago).values({
+          fraccionamientoId: input.fraccionamientoId,
+          proveedor: 'mercado_pago',
+          accessTokenCifrado: encryptedAccessToken ?? existing!.accessTokenCifrado,
+          collectorId: input.collectorId,
+          activo: true,
+        }).onConflictDoUpdate({
+          target: [fraccionamientoMetodosPago.fraccionamientoId, fraccionamientoMetodosPago.proveedor],
+          set: {
+            ...(encryptedAccessToken ? { accessTokenCifrado: encryptedAccessToken } : {}),
+            collectorId: input.collectorId,
+            activo: true,
+            actualizadoEn: new Date(),
+          },
+        });
+        await tx.insert(auditoria).values({
+          actorId: ctx.user.id,
+          accion: 'fraccionamiento.mercado_pago_actualizado',
+          entidad: 'fraccionamiento_metodos_pago',
+          entidadId: input.fraccionamientoId,
+          detalle: { proveedor: 'mercado_pago', tokenActualizado: Boolean(encryptedAccessToken) },
+        });
+      });
+      return { ok: true };
     }),
 });

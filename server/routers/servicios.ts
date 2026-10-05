@@ -1,6 +1,5 @@
 /* eslint-disable no-restricted-imports -- legacy router boundary; migrate queries to repositories incrementally. */
 import { and, eq } from 'drizzle-orm';
-import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 
 import { db } from '@/db';
@@ -10,6 +9,7 @@ import { generateMonthlyServiceCharges } from '@/src/infrastructure/db/services/
 import { residenteRepo } from '@/src/infrastructure/db/repositories';
 import { router, roleProcedure } from '../trpc';
 import { TRPCError } from '@trpc/server';
+import { generarFolioServicio } from '@/src/domain/pagos/folio.vo';
 
 const tenantInput = z.object({ fraccionamientoId: z.string().uuid() });
 
@@ -289,7 +289,7 @@ export const serviciosRouter = router({
       if (cargo.servicioClave === 'agua') {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Los pagos de agua deben registrarse desde el módulo de pagos de agua' });
       }
-      const folio = `SRV-${randomUUID().slice(0, 12).toUpperCase()}`;
+      const folio = generarFolioServicio();
       await db.transaction(async (tx) => {
         const [updated] = await tx.update(cargosServicios).set({
           estado: 'pagado', metodo: input.metodo, folio, pagadoEn: new Date(),

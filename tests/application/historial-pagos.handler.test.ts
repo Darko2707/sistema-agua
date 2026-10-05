@@ -17,6 +17,7 @@ const perfil = {
     nombre: 'Circuito 1',
     montoMensual: '50.00',
     montoReconexion: '300.00',
+    diaCorte: 5,
     representanteId: 'rep-001',
     activo: true,
   },

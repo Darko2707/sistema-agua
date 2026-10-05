@@ -13,7 +13,6 @@ export type PerfilCorteBloqueado = {
   userId: string;
   estadoAgua: EstadoAgua;
   fraccionamientoId?: string | null;
-  circuitoId?: string | null;
   fraccionamientoServicioId?: string | null;
   servicio?: ServicioOperable;
 };
@@ -82,7 +81,6 @@ export interface CorteOperacionTransaction {
   }): Promise<void>;
   recordOrdenTrabajo?(input: {
     fraccionamientoId: string;
-    circuitoId: string;
     perfilId: string;
     fraccionamientoServicioId: string;
     tipo: 'corte' | 'reconexion';
@@ -175,10 +173,9 @@ export class CorteOperacionService {
           fecha: efecto.fecha,
           corteId: corte.id,
         });
-      } else if (tx.recordOrdenTrabajo && perfil.fraccionamientoId && perfil.circuitoId && perfil.fraccionamientoServicioId) {
+      } else if (tx.recordOrdenTrabajo && perfil.fraccionamientoId && perfil.fraccionamientoServicioId) {
         await tx.recordOrdenTrabajo({
           fraccionamientoId: perfil.fraccionamientoId,
-          circuitoId: perfil.circuitoId,
           perfilId: input.perfilId,
           fraccionamientoServicioId: perfil.fraccionamientoServicioId,
           tipo: 'corte',
@@ -270,10 +267,9 @@ export class CorteOperacionService {
           fecha: efecto.fecha,
           corteId: corteActivo.id,
         });
-      } else if (tx.recordOrdenTrabajo && perfil.fraccionamientoId && perfil.circuitoId && perfil.fraccionamientoServicioId) {
+      } else if (tx.recordOrdenTrabajo && perfil.fraccionamientoId && perfil.fraccionamientoServicioId) {
         await tx.recordOrdenTrabajo({
           fraccionamientoId: perfil.fraccionamientoId,
-          circuitoId: perfil.circuitoId,
           perfilId: input.perfilId,
           fraccionamientoServicioId: perfil.fraccionamientoServicioId,
           tipo: 'reconexion',

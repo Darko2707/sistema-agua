@@ -67,7 +67,7 @@ export const usuariosRouter = router({
       telefono:            telefono10,
       sexo:                z.enum(['masculino', 'femenino', 'otro']),
       tenencia:            z.enum(['propietario', 'inquilino']),
-      circuitoId:          z.string().uuid(),
+      fraccionamientoId:   z.string().uuid(),
       edificio:            z.string().trim().min(1).max(8),
       departamento:        z.string().trim().min(1).max(8),
       nombrePropietario:   z.string().trim().min(2).max(120).optional(),
@@ -80,15 +80,21 @@ export const usuariosRouter = router({
       if (ctx.user.role !== 'residente') {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Solo una cuenta de residente puede completar este registro' });
       }
-      const circuito = await circuitoRepo.findById(input.circuitoId);
+      const [circuito] = await db.select({ id: circuitos.id, fraccionamientoId: circuitos.fraccionamientoId })
+        .from(circuitos)
+        .where(and(
+          eq(circuitos.fraccionamientoId, input.fraccionamientoId),
+          eq(circuitos.activo, true),
+        ))
+        .limit(1);
       if (!circuito?.fraccionamientoId) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'El circuito no tiene fraccionamiento asignado' });
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'El fraccionamiento no está disponible para registro' });
       }
-      if (ctx.user.fraccionamientoId && ctx.user.fraccionamientoId !== circuito.fraccionamientoId) {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'El circuito pertenece a otro fraccionamiento' });
+      if (ctx.user.fraccionamientoId && ctx.user.fraccionamientoId !== input.fraccionamientoId) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'El fraccionamiento pertenece a otra cuenta' });
       }
-      await subscriptionService.requireOperational(circuito.fraccionamientoId);
-      return crearPerfilHandler.execute({ userId: ctx.user.id, ...input });
+      await subscriptionService.requireOperational(input.fraccionamientoId);
+      return crearPerfilHandler.execute({ userId: ctx.user.id, ...input, circuitoId: circuito.id });
     }),
 
   miPerfil: authenticatedProcedure.query(async ({ ctx }) => {
@@ -300,7 +306,7 @@ export const usuariosRouter = router({
     .input(z.object({
       userId: z.string().min(1),
       // El admin es global y único; nunca se asigna mediante este flujo.
-      rol:    z.enum(['representante', 'tesorera', 'cuadrilla_cortes', 'operador_pozo', 'residente']),
+      rol:    z.enum(['representante', 'tesorera', 'cuadrilla_cortes', 'residente']),
     }))
     .mutation(async ({ ctx, input }) => {
       await cambiarRolHandler.execute({ actorId: ctx.user.id, userId: input.userId, nuevoRol: input.rol });
@@ -310,7 +316,7 @@ export const usuariosRouter = router({
   cambiarRolEnCircuito: roleProcedure('representante')
     .input(z.object({
       userId: z.string().min(1),
-      rol:    z.enum(['residente', 'tesorera', 'cuadrilla_cortes', 'operador_pozo']),
+      rol:    z.enum(['residente', 'tesorera', 'cuadrilla_cortes']),
     }))
     .mutation(async ({ ctx, input }) => {
       const miCircuito = await circuitoRepo.findByRepresentante(ctx.user.id);
@@ -359,20 +365,18 @@ export const usuariosRouter = router({
   }),
 
   listarPersonalPorCircuito: roleProcedure('admin')
-    .input(z.object({ fraccionamientoId: z.string().uuid(), circuitoId: z.string().uuid().optional() }))
+    .input(z.object({ fraccionamientoId: z.string().uuid() }))
     .query(async ({ input }) => {
       const conditions = [
         eq(user.fraccionamientoId, input.fraccionamientoId),
         inArray(user.role, ['representante', 'tesorera', 'cuadrilla_cortes', 'operador_pozo']),
       ];
-      if (input.circuitoId) conditions.push(eq(asignacionesCircuito.circuitoId, input.circuitoId));
       return db.select({
         id: user.id,
         asignacionId: asignacionesCircuito.id,
         nombre: user.name,
         email: user.email,
         rol: user.role,
-        circuitoId: asignacionesCircuito.circuitoId,
         servicioId: asignacionesCircuito.fraccionamientoServicioId,
         activo: asignacionesCircuito.activo,
       }).from(user)
@@ -388,7 +392,6 @@ export const usuariosRouter = router({
     .input(z.object({
       usuarioId: z.string().min(1),
       fraccionamientoId: z.string().uuid(),
-      circuitoId: z.string().uuid(),
       fraccionamientoServicioId: z.string().uuid(),
       rol: z.enum(['cuadrilla_cortes', 'operador_pozo']),
     }))
@@ -401,10 +404,10 @@ export const usuariosRouter = router({
       if (target.tenantId !== input.fraccionamientoId) throw new TRPCError({ code: 'FORBIDDEN', message: 'El usuario pertenece a otro fraccionamiento' });
 
       const [circuito] = await db.select({ id: circuitos.id }).from(circuitos).where(and(
-        eq(circuitos.id, input.circuitoId),
         eq(circuitos.fraccionamientoId, input.fraccionamientoId),
+        eq(circuitos.activo, true),
       )).limit(1);
-      if (!circuito) throw new TRPCError({ code: 'FORBIDDEN', message: 'El circuito no pertenece al fraccionamiento' });
+      if (!circuito) throw new TRPCError({ code: 'BAD_REQUEST', message: 'El fraccionamiento no está disponible para asignaciones' });
       const [servicio] = await db.select({ id: fraccionamientoServicios.id }).from(fraccionamientoServicios).where(and(
         eq(fraccionamientoServicios.id, input.fraccionamientoServicioId),
         eq(fraccionamientoServicios.fraccionamientoId, input.fraccionamientoId),
@@ -412,16 +415,17 @@ export const usuariosRouter = router({
       )).limit(1);
       if (!servicio) throw new TRPCError({ code: 'BAD_REQUEST', message: 'El servicio no está activo en el fraccionamiento' });
 
-      const [assignment] = await db.insert(asignacionesCircuito).values(input).onConflictDoUpdate({
+      const assignmentInput = { ...input, circuitoId: circuito.id };
+      const [assignment] = await db.insert(asignacionesCircuito).values(assignmentInput).onConflictDoUpdate({
         target: [asignacionesCircuito.usuarioId, asignacionesCircuito.circuitoId, asignacionesCircuito.fraccionamientoServicioId, asignacionesCircuito.rol],
         set: { activo: true, actualizadoEn: new Date() },
       }).returning({ id: asignacionesCircuito.id });
       await db.insert(auditoria).values({
         actorId: ctx.user.id,
-        accion: 'personal.circuito.asignado',
+        accion: 'personal.fraccionamiento.asignado',
         entidad: 'asignaciones_circuito',
         entidadId: assignment.id,
-        detalle: input,
+        detalle: assignmentInput,
       });
       return { ok: true, id: assignment.id };
     }),
@@ -469,8 +473,6 @@ export const usuariosRouter = router({
       email:                  z.string().email(),
       password:               z.string().min(8),
       circuitoId:             z.string().uuid().optional(),
-      mercadoPagoAccessToken: z.string().optional(),
-      mercadoPagoCollectorId: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       if (input.circuitoId) {
@@ -489,8 +491,6 @@ export const usuariosRouter = router({
       email:                  z.string().email().optional(),
       password:               z.string().min(8).optional(),
       circuitoId:             z.string().uuid().nullable().optional(),
-      mercadoPagoAccessToken: z.string().optional(),
-      mercadoPagoCollectorId: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       await actualizarPersonalHandler.execute({ actorId: ctx.user.id, role: 'representante', ...input });
@@ -517,8 +517,6 @@ export const usuariosRouter = router({
       email:                  z.string().email(),
       password:               z.string().min(8),
       circuitoId:             z.string().uuid().optional(),
-      mercadoPagoAccessToken: z.string().optional(),
-      mercadoPagoCollectorId: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       if (input.circuitoId) {
@@ -537,8 +535,6 @@ export const usuariosRouter = router({
       email:                  z.string().email().optional(),
       password:               z.string().min(8).optional(),
       circuitoId:             z.string().uuid().nullable().optional(),
-      mercadoPagoAccessToken: z.string().optional(),
-      mercadoPagoCollectorId: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       await actualizarPersonalHandler.execute({ actorId: ctx.user.id, role: 'tesorera', ...input });

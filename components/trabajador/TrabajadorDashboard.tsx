@@ -34,7 +34,6 @@ type FilterType = 'todos' | 'corte' | 'reconexion';
 type ResidenteJob = {
   id: string;
   usuario?: { name: string } | null;
-  circuito?: { nombre: string } | null;
   edificio: string;
   departamento: string;
 };
@@ -95,7 +94,7 @@ function JobCard({ job, tipo, procesando, onAction }: JobCardProps) {
             {job.usuario?.name ?? 'Sin nombre'}
           </div>
           <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2 }}>
-            {job.circuito?.nombre ?? ''} · Edif. {job.edificio}, Depto {job.departamento}
+            Edif. {job.edificio}, Depto {job.departamento}
           </div>
         </div>
         <span style={{ fontSize: 11, fontWeight: 700, padding: '5px 10px', borderRadius: 20, background: badgeBg, color, whiteSpace: 'nowrap', flexShrink: 0 }}>

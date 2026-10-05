@@ -21,3 +21,17 @@ export function fechaNegocio(fecha = new Date()): FechaNegocio {
 
   return { dia: value('day'), mes: value('month'), anio: value('year') };
 }
+
+/** Suma días a una fecha calendario sin depender de la zona horaria del servidor. */
+export function sumarDiasFechaNegocio(fecha: FechaNegocio, dias: number): FechaNegocio {
+  if (!Number.isInteger(dias)) {
+    throw new Error('La cantidad de días debe ser un entero');
+  }
+
+  const resultado = new Date(Date.UTC(fecha.anio, fecha.mes - 1, fecha.dia + dias, 12));
+  return {
+    dia: resultado.getUTCDate(),
+    mes: resultado.getUTCMonth() + 1,
+    anio: resultado.getUTCFullYear(),
+  };
+}

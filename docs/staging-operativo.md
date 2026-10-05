@@ -30,6 +30,7 @@ NEXT_PUBLIC_APP_URL="https://tu-staging.vercel.app"
 BETTER_AUTH_URL="https://tu-staging.vercel.app"
 BETTER_AUTH_SECRET="<secreto staging>"
 CRON_SECRET="<secreto staging>"
+REPRESENTATIVE_RESET_CODE_SECRET="<secreto aleatorio independiente, minimo 32 bytes>"
 MP_WEBHOOK_SECRET="<secret webhook sandbox>"
 MP_ENCRYPTION_KEY="<64 caracteres hex>"
 NEXT_PUBLIC_VAPID_PUBLIC_KEY="<clave publica staging>"
@@ -37,12 +38,12 @@ VAPID_PRIVATE_KEY="<clave privada staging>"
 VAPID_SUBJECT="mailto:correo-real@gmail.com"
 ```
 
-Mercado Pago no usa `MP_ACCESS_TOKEN` global. El token se captura por circuito
-desde el panel admin y se guarda cifrado con `MP_ENCRYPTION_KEY`.
+Mercado Pago no usa `MP_ACCESS_TOKEN` global. El token se captura por
+fraccionamiento desde el panel admin y se guarda cifrado con `MP_ENCRYPTION_KEY`.
 
 ## 2. Generar secretos
 
-Para `BETTER_AUTH_SECRET`, `CRON_SECRET` y `MP_ENCRYPTION_KEY`:
+Para `BETTER_AUTH_SECRET`, `CRON_SECRET`, `REPRESENTATIVE_RESET_CODE_SECRET` y `MP_ENCRYPTION_KEY`:
 
 ```powershell
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
@@ -68,7 +69,7 @@ npm install
 Luego ejecuta migraciones apuntando explicitamente a `.env.staging`:
 
 ```powershell
-npx dotenv -e .env.staging -- drizzle-kit migrate
+npm run db:migrate:staging
 ```
 
 Verificacion minima posterior:
@@ -89,8 +90,7 @@ En Mercado Pago Developers:
    - `https://tu-staging.vercel.app/api/mercadopago/webhook`
 3. Copia la clave secreta del webhook a `MP_WEBHOOK_SECRET`.
 4. Toma un `Access Token` sandbox (`TEST-...`).
-5. En SISCO, entra como admin y asigna ese token al circuito al crear/editar
-   representante o tesorera.
+5. En SISCO, entra como admin y asigna ese token al fraccionamiento.
 
 Prueba minima:
 

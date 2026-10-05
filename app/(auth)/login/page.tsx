@@ -61,7 +61,7 @@ export default function LoginPage() {
       }
       writeRememberedLoginEmail(normalizedEmail, rememberUser);
       const session = await authClient.getSession();
-      const rol = (session?.data?.user as { role?: string })?.role ?? 'residente';
+      const rol = (session?.data?.user as { role?: string })?.role;
       router.replace(homePathForRole(rol));
     } catch (err: unknown) {
         setError(userFacingError(err, 'SISCO-400'));

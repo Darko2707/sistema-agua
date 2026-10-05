@@ -162,6 +162,34 @@ describe('GET /api/tickets/[folio]/pdf', () => {
     expect(mockGeneratePdf).not.toHaveBeenCalled();
   });
 
+  it('consulta un DTO minimo sin credenciales ni identificadores de Mercado Pago', async () => {
+    const response = await callGet();
+
+    expect(response.status).toBe(200);
+    const ticketQuery = mockFindTicket.mock.calls[0]?.[0];
+    expect(ticketQuery.columns).toEqual({ folio: true, pdfUrl: true });
+    expect(ticketQuery.with.pago.columns).toEqual({
+      mes: true,
+      anio: true,
+      monto: true,
+      montoBase: true,
+      iva: true,
+      comisionMercadoPago: true,
+      retencionIsr: true,
+      retencionIva: true,
+      esReconexion: true,
+    });
+    expect(ticketQuery.with.pago.columns).not.toHaveProperty('mercadoPagoPaymentId');
+    expect(ticketQuery.with.pago.columns).not.toHaveProperty('mercadoPagoCollectorId');
+    expect(ticketQuery.with.pago.with.circuito.columns).toEqual({
+      nombre: true,
+      representanteId: true,
+    });
+    expect(ticketQuery.with.pago.with.circuito.columns)
+      .not.toHaveProperty('mercadoPagoAccessToken');
+    expect(mockFindUser.mock.calls[0]?.[0]?.columns).toEqual({ role: true });
+  });
+
   it('regenera el recibo aunque exista Blob privado para usar la plantilla vigente sin QR', async () => {
     const privateReference = `private-tickets/${FOLIO}.pdf`;
     mockFindTicket.mockResolvedValue({ ...BASE_TICKET, pdfUrl: privateReference });

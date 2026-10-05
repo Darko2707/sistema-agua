@@ -1,6 +1,5 @@
 import type { ResidenteRepository } from '../ports/residente.repository';
 import type { PagoRepository } from '../ports/pago.repository';
-import { DIA_CORTE } from '@/src/domain/pagos/constants';
 import { logger } from '@/lib/logger';
 import { fechaNegocio } from '@/src/domain/shared/fecha-negocio';
 
@@ -15,18 +14,20 @@ export class VerificarMorososHandler {
   async execute() {
     const { dia, mes, anio } = fechaNegocio();
 
-    if (dia <= DIA_CORTE) {
-      logger.info('morosos.omitido', { dia, diaCorte: DIA_CORTE, mes, anio });
+    // El día 1 ningún circuito puede estar vencido porque el corte mínimo
+    // configurable es 1. Los demás días se filtran en el repositorio.
+    if (dia === 1) {
+      logger.info('morosos.omitido', { dia, mes, anio });
       return {
         procesados: 0, totalPagados: 0, totalMorosos: 0, mes, anio, dia,
-        mensaje: `No es día de corte (antes del día ${DIA_CORTE + 1})`,
+        mensaje: 'No hay circuitos vencidos el primer día del mes',
       };
     }
 
     // Run in parallel: the UPDATE (with embedded NOT IN subquery) and the pagados
     // count for reporting. They touch different tables and don't depend on each other.
     const [totalMorosos, pagados] = await Promise.all([
-      this.deps.residenteRepo.marcarMorososDelMes(mes, anio),
+      this.deps.residenteRepo.marcarMorososDelMes(mes, anio, dia),
       this.deps.pagoRepo.findPagadosByMes(mes, anio),
     ]);
     const totalPagados = pagados.length;

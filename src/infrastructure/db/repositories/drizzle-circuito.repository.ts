@@ -12,6 +12,7 @@ function toData(row: typeof circuitos.$inferSelect): CircuitoData {
     tesoreraId:             row.tesoreraId ?? null,
     montoMensual:           row.montoMensual,
     montoReconexion:        row.montoReconexion,
+    diaCorte:               row.diaCorte,
     // Descifrar el token al leer — soporta valores cifrados y texto plano
     // (compatibilidad hacia atrás durante la migración)
     mercadoPagoAccessToken: null,

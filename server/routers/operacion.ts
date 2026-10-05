@@ -12,6 +12,7 @@ import {
   bitacoraCortes,
   consentimientosLegales,
   circuitos,
+  cortes,
   notificaciones,
   pagos,
   perfilesResidente,
@@ -66,7 +67,6 @@ async function assertPerfilVisible(userId: string, role: string, perfilId: strin
       .where(and(
         eq(asignacionesCircuito.usuarioId, userId),
         eq(asignacionesCircuito.fraccionamientoId, perfil.fraccionamientoId),
-        eq(asignacionesCircuito.circuitoId, perfil.circuitoId),
         eq(asignacionesCircuito.rol, 'cuadrilla_cortes'),
         eq(asignacionesCircuito.activo, true),
         eq(fraccionamientoServicios.estado, 'activo'),
@@ -78,26 +78,6 @@ async function assertPerfilVisible(userId: string, role: string, perfilId: strin
     return;
   }
   throw new TRPCError({ code: 'FORBIDDEN' });
-}
-
-async function registrarAuditoria(input: {
-  actorId: string;
-  accion: string;
-  entidad: string;
-  entidadId?: string | null;
-  detalle?: Record<string, unknown>;
-  headers?: Headers;
-}) {
-  const meta = getRequestMeta(input.headers);
-  await db.insert(auditoria).values({
-    actorId: input.actorId,
-    accion: input.accion,
-    entidad: input.entidad,
-    entidadId: input.entidadId ?? null,
-    detalle: input.detalle,
-    ip: meta.ip,
-    userAgent: meta.userAgent,
-  });
 }
 
 const auditoriaPublicColumns = {
@@ -278,28 +258,91 @@ export const operacionRouter = router({
     .input(z.object({
       perfilId: z.string().uuid(),
       corteId:  z.string().uuid().optional(),
-      accion:   z.enum(['nota', 'corte_confirmado', 'reconexion_confirmada', 'visita_sin_acceso']),
+      // Las confirmaciones solo pueden originarse en CorteOperacionService,
+      // donde el cambio de estado y la bitacora comparten transaccion.
+      accion:   z.enum(['nota', 'visita_sin_acceso']),
       nota:     z.string().min(3).max(500).optional(),
       fotoUrl:  z.string().url().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      await assertPerfilVisible(ctx.user.id, ctx.user.role, input.perfilId);
-      const [row] = await db.insert(bitacoraCortes).values({
-        perfilId: input.perfilId,
-        corteId: input.corteId ?? null,
-        actorId: ctx.user.id,
-        accion: input.accion,
-        nota: input.nota,
-        fotoUrl: input.fotoUrl,
-      }).returning();
-      await registrarAuditoria({
-        actorId: ctx.user.id,
-        accion: `corte.${input.accion}`,
-        entidad: 'corte',
-        entidadId: input.corteId ?? input.perfilId,
-        detalle: { perfilId: input.perfilId, nota: input.nota, fotoUrl: input.fotoUrl },
+      const requestMeta = getRequestMeta(ctx.headers);
+      return db.transaction(async (tx) => {
+        const [perfil] = await tx.select({
+          id: perfilesResidente.id,
+          fraccionamientoId: perfilesResidente.fraccionamientoId,
+          circuitoId: perfilesResidente.circuitoId,
+        })
+          .from(perfilesResidente)
+          .where(eq(perfilesResidente.id, input.perfilId))
+          .limit(1);
+        if (!perfil) throw new TRPCError({ code: 'NOT_FOUND', message: 'Residente no encontrado' });
+        if (ctx.user.role === 'cuadrilla_cortes') {
+          if (
+            !perfil.fraccionamientoId
+            || perfil.fraccionamientoId !== ctx.user.fraccionamientoId
+          ) {
+            throw new TRPCError({ code: 'FORBIDDEN' });
+          }
+          const [assignment] = await tx.select({ id: asignacionesCircuito.id })
+            .from(asignacionesCircuito)
+            .innerJoin(
+              fraccionamientoServicios,
+              eq(fraccionamientoServicios.id, asignacionesCircuito.fraccionamientoServicioId),
+            )
+            .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
+            .where(and(
+              eq(asignacionesCircuito.usuarioId, ctx.user.id),
+              eq(asignacionesCircuito.fraccionamientoId, perfil.fraccionamientoId),
+              eq(asignacionesCircuito.rol, 'cuadrilla_cortes'),
+              eq(asignacionesCircuito.activo, true),
+              eq(fraccionamientoServicios.fraccionamientoId, perfil.fraccionamientoId),
+              eq(fraccionamientoServicios.estado, 'activo'),
+              eq(servicios.clave, 'agua'),
+            ))
+            .limit(1);
+          if (!assignment) throw new TRPCError({ code: 'FORBIDDEN' });
+        }
+
+        if (input.corteId) {
+          const [corte] = await tx.select({
+            id: cortes.id,
+            perfilId: cortes.perfilId,
+            fraccionamientoId: perfilesResidente.fraccionamientoId,
+          })
+            .from(cortes)
+            .innerJoin(perfilesResidente, eq(perfilesResidente.id, cortes.perfilId))
+            .where(and(
+              eq(cortes.id, input.corteId),
+              eq(cortes.perfilId, input.perfilId),
+            ))
+            .limit(1);
+          if (!corte || corte.fraccionamientoId !== perfil.fraccionamientoId) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: 'El corte no pertenece al perfil indicado',
+            });
+          }
+        }
+
+        const [row] = await tx.insert(bitacoraCortes).values({
+          perfilId: input.perfilId,
+          corteId: input.corteId ?? null,
+          actorId: ctx.user.id,
+          accion: input.accion,
+          nota: input.nota,
+          fotoUrl: input.fotoUrl,
+        }).returning();
+        await tx.insert(auditoria).values({
+          actorId: ctx.user.id,
+          accion: `corte.${input.accion}`,
+          entidad: 'corte',
+          entidadId: input.corteId ?? input.perfilId,
+          detalle: { perfilId: input.perfilId, nota: input.nota, fotoUrl: input.fotoUrl },
+          ip: requestMeta.ip,
+          userAgent: requestMeta.userAgent,
+        });
+        return row;
       });
-      return row;
     }),
 
   notificaciones: roleProcedure('admin', 'representante')
@@ -338,11 +381,112 @@ export const operacionRouter = router({
 
   exportacionCompleta: roleProcedure('admin').query(async () => {
     const [residentes, pagosRows, cortesRows, foliosRows, auditoriaRows] = await Promise.all([
-      db.query.perfilesResidente.findMany({ with: { usuario: true, circuito: true } }),
-      db.query.pagos.findMany({ orderBy: [desc(pagos.creadoEn)] }),
-      db.query.cortes.findMany(),
-      db.query.tickets.findMany(),
-      db.query.auditoria.findMany({ orderBy: [desc(auditoria.creadoEn)], limit: 500 }),
+      db.query.perfilesResidente.findMany({
+        columns: {
+          id: true,
+          userId: true,
+          fraccionamientoId: true,
+          telefono: true,
+          sexo: true,
+          tenencia: true,
+          circuitoId: true,
+          edificio: true,
+          departamento: true,
+          nombrePropietario: true,
+          telefonoPropietario: true,
+          estadoAgua: true,
+          creadoEn: true,
+        },
+        with: {
+          usuario: {
+            columns: {
+              id: true,
+              name: true,
+              email: true,
+              emailVerified: true,
+              role: true,
+              fraccionamientoId: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+          },
+          circuito: {
+            columns: {
+              id: true,
+              nombre: true,
+              fraccionamientoId: true,
+              representanteId: true,
+              tesoreraId: true,
+              montoMensual: true,
+              montoReconexion: true,
+              diaCorte: true,
+              activo: true,
+              updatedAt: true,
+            },
+          },
+        },
+      }),
+      db.query.pagos.findMany({
+        columns: {
+          id: true,
+          fraccionamientoId: true,
+          perfilId: true,
+          circuitoId: true,
+          representanteId: true,
+          mes: true,
+          anio: true,
+          monto: true,
+          montoBase: true,
+          iva: true,
+          comisionMercadoPago: true,
+          retencionIsr: true,
+          retencionIva: true,
+          montoNetoRepresentante: true,
+          estado: true,
+          metodo: true,
+          folio: true,
+          esReconexion: true,
+          fechaPago: true,
+          creadoEn: true,
+        },
+        orderBy: [desc(pagos.creadoEn)],
+      }),
+      db.query.cortes.findMany({
+        columns: {
+          id: true,
+          perfilId: true,
+          trabajadorId: true,
+          motivo: true,
+          activo: true,
+          fechaCorte: true,
+          fechaReconexion: true,
+          reconectadoPor: true,
+          updatedAt: true,
+        },
+      }),
+      db.query.tickets.findMany({
+        columns: {
+          id: true,
+          pagoId: true,
+          cargoServicioId: true,
+          tipo: true,
+          folio: true,
+          emitidoEn: true,
+        },
+      }),
+      db.query.auditoria.findMany({
+        columns: {
+          id: true,
+          actorId: true,
+          accion: true,
+          entidad: true,
+          entidadId: true,
+          detalle: true,
+          creadoEn: true,
+        },
+        orderBy: [desc(auditoria.creadoEn)],
+        limit: 500,
+      }),
     ]);
     return {
       generadoEn: new Date().toISOString(),
