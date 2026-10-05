@@ -151,6 +151,7 @@ function assertPaymentIntentMatches(
   };
 
   if (intent.perfilId !== input.perfilId) conflict('profile_mismatch');
+  if (input.fraccionamientoId && intent.fraccionamientoId !== input.fraccionamientoId) conflict('circuit_mismatch');
   if (intent.circuitoId !== input.circuitoId) conflict('circuit_mismatch');
   if (intent.currency !== 'MXN') conflict('currency_mismatch');
   if (
@@ -574,6 +575,7 @@ export class DrizzlePagoRepository implements PagoRepository {
     for (const pago of input.pagos) {
       if (
         pago.perfilId !== input.perfilId ||
+        (input.fraccionamientoId && pago.fraccionamientoId !== input.fraccionamientoId) ||
         pago.circuitoId !== input.circuitoId ||
         pago.mercadoPagoPaymentId !== input.mercadoPagoPaymentId
       ) {
@@ -637,6 +639,9 @@ export class DrizzlePagoRepository implements PagoRepository {
         where: (p, { eq }) => eq(p.id, input.perfilId),
       });
       if (!perfil) throw new TRPCError({ code: 'NOT_FOUND', message: 'Perfil no encontrado' });
+      if (input.fraccionamientoId && perfil.fraccionamientoId !== input.fraccionamientoId) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'El perfil cambio de fraccionamiento durante la confirmacion del pago' });
+      }
       if (perfil.circuitoId !== input.circuitoId) {
         throw new TRPCError({
           code: 'CONFLICT',

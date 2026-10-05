@@ -280,7 +280,6 @@ describe('POST /api/mercadopago/checkout', () => {
     expect(mockPersistPaymentIntent).toHaveBeenCalledWith(expect.objectContaining({
       externalReference: preference.body.external_reference,
       perfilId: 'perfil-001',
-      circuitoId: 'circuito-001',
       periodos: [
         { mes: 9, anio: 2026, monto: '100.00', esReconexion: false },
         { mes: 11, anio: 2026, monto: '100.00', esReconexion: false },

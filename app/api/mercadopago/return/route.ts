@@ -40,6 +40,7 @@ export async function GET(request: Request) {
     if (verified.status === 'approved') {
       const result = await procesarPagoMpHandler.execute({
         perfilId: verified.perfilId,
+        fraccionamientoId: verified.fraccionamientoId,
         circuitoId: verified.circuitoId,
         paymentIntentReference: verified.paymentIntentReference,
         periodos: verified.periodos,

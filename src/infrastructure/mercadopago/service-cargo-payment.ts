@@ -56,8 +56,7 @@ export async function processServiceCargoPayment(input: { reference: string; pay
     intent.tipo !== 'servicio' ||
     intent.cargoServicioId !== cargoId ||
     intent.perfilId !== row.cargo.perfilId ||
-    intent.fraccionamientoId !== row.cargo.fraccionamientoId ||
-    intent.circuitoId !== row.perfil.circuitoId
+    intent.fraccionamientoId !== row.cargo.fraccionamientoId
   )) {
     throw new ServiceCargoPaymentValidationError('La intencion de servicio no coincide con el cargo');
   }

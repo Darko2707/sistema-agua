@@ -28,6 +28,7 @@ export type PagoData = {
 
 export type CrearPagoInput = {
   perfilId: string;
+  fraccionamientoId?: string;
   circuitoId: string;
   representanteId: string | null;
   mes: number;
@@ -56,6 +57,7 @@ export type CrearPagoAuditInput = {
 
 export type CrearPagosMercadoPagoBatchInput = {
   perfilId: string;
+  fraccionamientoId?: string;
   circuitoId: string;
   paymentIntentReference?: string;
   mercadoPagoPaymentId: string;

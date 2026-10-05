@@ -48,6 +48,7 @@ vi.mock('@/db', () => ({
   db: {
     query: {
       perfilesResidente: { findFirst: vi.fn() },
+      fraccionamientoMetodosPago: { findFirst: vi.fn().mockResolvedValue(null) },
     },
   },
 }));
@@ -127,6 +128,7 @@ beforeEach(() => {
   vi.mocked(db.query.perfilesResidente.findFirst).mockResolvedValue({
     id: 'perf-001',
     circuitoId: 'circuito-001',
+    fraccionamientoId: 'fraccionamiento-001',
     circuito: {
       id: 'circuito-001',
       mercadoPagoAccessToken: 'encrypted-token',
@@ -336,6 +338,7 @@ describe('POST /api/mercadopago/webhook', () => {
         externalReference: reference,
         perfilId: 'perf-001',
         circuitoId: 'circuito-001',
+        fraccionamientoId: 'fraccionamiento-001',
         periodos,
         total: '1399.84',
         currency: 'MXN',

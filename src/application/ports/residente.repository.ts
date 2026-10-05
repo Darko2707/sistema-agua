@@ -31,6 +31,17 @@ export type CircuitoPaymentConfigRef = CircuitoRef & {
   mercadoPagoCollectorId: string | null;
 };
 
+export type FraccionamientoCobroRef = {
+  id: string;
+  nombre: string;
+  montoMensual: string;
+  montoReconexion: string;
+  diaCorte: number;
+  representanteId: string | null;
+  tesoreraId: string | null;
+  activo: boolean;
+};
+
 export type ServicioCobroRef = {
   montoMensual: string;
   montoReconexion: string;
@@ -64,7 +75,10 @@ export type PaginatedResult<T> = {
 
 export interface ResidenteRepository {
   findById(id: string): Promise<ResidenteData | null>;
-  findByUserId(id: string): Promise<(ResidenteData & { circuito?: CircuitoRef | null }) | null>;
+  findByUserId(id: string): Promise<(ResidenteData & {
+    circuito?: CircuitoRef | null;
+    fraccionamiento?: FraccionamientoCobroRef | null;
+  }) | null>;
   findWaterServiceConfig?(perfilId: string): Promise<ServicioCobroRef | null>;
   findByCircuito(circuitoId: string): Promise<ResidenteConRelaciones[]>;
   findAll(): Promise<ResidenteConRelaciones[]>;

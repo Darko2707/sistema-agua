@@ -64,7 +64,7 @@ export const user = pgTable('user', {
   role:          rolEnum('role').notNull().default('residente'),
   // Nullable para el admin global y durante el onboarding del residente;
   // el perfil terminado debe fijar exactamente un fraccionamiento.
-  fraccionamientoId: uuid('fraccionamiento_id').notNull().references(() => fraccionamientos.id, { onDelete: 'restrict' }),
+  fraccionamientoId: uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
   createdAt:     timestamp('created_at').notNull().defaultNow(),
   updatedAt:     timestamp('updated_at').notNull().defaultNow(),
   deletedAt:     timestamp('deleted_at'),
@@ -288,7 +288,8 @@ export const asignacionesCircuito = pgTable('asignaciones_circuito', {
 export const perfilesResidente = pgTable('perfiles_residente', {
   id:           uuid('id').defaultRandom().primaryKey(),
   userId:       text('user_id').notNull().unique().references(() => user.id, { onDelete: 'cascade' }),
-  // Migration 0030 makes this column NOT NULL after validating legacy rows.
+  // La migración valida y exige este dato; se conserva opcional en el tipo
+  // mientras los fixtures históricos de integración terminan su transición.
   fraccionamientoId: uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
   telefono:     text('telefono').notNull(),
   sexo:         sexoEnum('sexo').notNull(),
@@ -390,6 +391,8 @@ export type MercadoPagoPaymentIntentPeriodo = {
 export const mercadoPagoPaymentIntents = pgTable('mercado_pago_payment_intents', {
   externalReference:    text('external_reference').primaryKey(),
   tipo:                 mercadoPagoIntentTipoEnum('tipo').notNull().default('agua'),
+  // La migracion 0042 lo exige en la base; el tipo se mantiene opcional hasta
+  // retirar los fixtures heredados que todavia representan datos previos.
   fraccionamientoId:    uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
   perfilId:             uuid('perfil_id').notNull().references(() => perfilesResidente.id),
   circuitoId:           uuid('circuito_id').notNull().references(() => circuitos.id),
@@ -429,6 +432,8 @@ export const mercadoPagoPaymentIntents = pgTable('mercado_pago_payment_intents',
 
 export const pagos = pgTable('pagos', {
   id:                     uuid('id').defaultRandom().primaryKey(),
+  // La migracion 0042 lo exige en la base; el tipo se mantiene opcional hasta
+  // retirar los fixtures heredados que todavia representan datos previos.
   fraccionamientoId:      uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
   perfilId:               uuid('perfil_id').references(() => perfilesResidente.id).notNull(),
   circuitoId:             uuid('circuito_id').references(() => circuitos.id).notNull(),
@@ -741,6 +746,10 @@ export const perfilesResidenteRelations = relations(perfilesResidente, ({ one, m
   usuario: one(user, {
     fields: [perfilesResidente.userId],
     references: [user.id],
+  }),
+  fraccionamiento: one(fraccionamientos, {
+    fields: [perfilesResidente.fraccionamientoId],
+    references: [fraccionamientos.id],
   }),
   circuito: one(circuitos, {
     fields: [perfilesResidente.circuitoId],

@@ -38,7 +38,6 @@ const REFERENCE = `agua_${'a'.repeat(48)}`;
 const INPUT = {
   externalReference: REFERENCE,
   perfilId: '11111111-1111-4111-8111-111111111111',
-  circuitoId: '22222222-2222-4222-8222-222222222222',
   periodos: [
     { mes: 8, anio: 2026, monto: '100.00', esReconexion: false },
   ],
@@ -53,7 +52,7 @@ function storedIntent(overrides: Record<string, unknown> = {}) {
     externalReference: REFERENCE,
     fraccionamientoId: TENANT_ID,
     perfilId: INPUT.perfilId,
-    circuitoId: INPUT.circuitoId,
+    circuitoId: '22222222-2222-4222-8222-222222222222',
     periodos: INPUT.periodos,
     total: INPUT.total,
     currency: 'MXN',
@@ -82,7 +81,7 @@ describe('intenciones de pago de Mercado Pago', () => {
   });
 
   it('persiste periodos y normaliza el collector sin exponerlos en la referencia', async () => {
-    mocks.selectRows.mockResolvedValueOnce([{ fraccionamientoId: TENANT_ID }]);
+    mocks.selectRows.mockResolvedValueOnce([{ fraccionamientoId: TENANT_ID, circuitoId: '22222222-2222-4222-8222-222222222222' }]);
     const result = await persistMercadoPagoPaymentIntent(INPUT);
 
     expect(result.externalReference).toBe(REFERENCE);
@@ -99,7 +98,7 @@ describe('intenciones de pago de Mercado Pago', () => {
   it('rechaza una colision determinista si la fila existente describe otro cobro', async () => {
     mocks.insertReturning.mockResolvedValue([]);
     mocks.selectRows
-      .mockResolvedValueOnce([{ fraccionamientoId: TENANT_ID }])
+      .mockResolvedValueOnce([{ fraccionamientoId: TENANT_ID, circuitoId: '22222222-2222-4222-8222-222222222222' }])
       .mockResolvedValueOnce([storedIntent({ total: '999.99' })]);
 
     await expect(persistMercadoPagoPaymentIntent(INPUT))
@@ -109,7 +108,7 @@ describe('intenciones de pago de Mercado Pago', () => {
   it('reutiliza de forma idempotente una intencion identica ya persistida', async () => {
     mocks.insertReturning.mockResolvedValue([]);
     mocks.selectRows
-      .mockResolvedValueOnce([{ fraccionamientoId: TENANT_ID }])
+      .mockResolvedValueOnce([{ fraccionamientoId: TENANT_ID, circuitoId: '22222222-2222-4222-8222-222222222222' }])
       .mockResolvedValueOnce([storedIntent()]);
 
     await expect(persistMercadoPagoPaymentIntent(INPUT))

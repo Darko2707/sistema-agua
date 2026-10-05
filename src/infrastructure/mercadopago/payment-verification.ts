@@ -39,6 +39,7 @@ export type VerifiedMercadoPagoPayment = {
   status: string;
   collectorId?: string;
   perfilId: string;
+  fraccionamientoId: string;
   circuitoId: string;
   paymentIntentReference?: string;
   expectedTotal: string;
@@ -97,6 +98,13 @@ export async function fetchVerifiedMercadoPagoPayment(input: {
       fraccionamientoId: true,
     },
     with: {
+      fraccionamiento: {
+        columns: {
+          id:               true,
+          montoMensual:     true,
+          montoReconexion:  true,
+        },
+      },
       circuito: {
         columns: {
           id:                     true,
@@ -112,13 +120,16 @@ export async function fetchVerifiedMercadoPagoPayment(input: {
   if (!perfil) {
     throw new MercadoPagoPaymentValidationError('profile_not_found', 'Perfil de pago no encontrado');
   }
+  if (intent && perfil.fraccionamientoId && intent.fraccionamientoId !== perfil.fraccionamientoId) {
+    throw new MercadoPagoPaymentValidationError('circuit_mismatch', 'Fraccionamiento de pago inconsistente');
+  }
   if (
     !perfil.circuito ||
-    perfil.circuitoId !== perfil.circuito.id ||
-    (intent && intent.circuitoId !== perfil.circuito.id)
+    perfil.circuitoId !== perfil.circuito.id
   ) {
     throw new MercadoPagoPaymentValidationError('circuit_mismatch', 'Circuito de pago inconsistente');
   }
+  const configuracionCobro = perfil.fraccionamiento ?? perfil.circuito;
 
   const metodoPago = perfil.fraccionamientoId
     ? await db.query.fraccionamientoMetodosPago.findFirst({
@@ -181,9 +192,9 @@ export async function fetchVerifiedMercadoPagoPayment(input: {
       mes,
       anio,
       monto: calcularMontoBase(
-        perfil.circuito.montoMensual,
+        configuracionCobro.montoMensual,
         esReconexion,
-        perfil.circuito.montoReconexion,
+        configuracionCobro.montoReconexion,
       ).toFixed(2),
       esReconexion,
     };
@@ -191,13 +202,13 @@ export async function fetchVerifiedMercadoPagoPayment(input: {
 
   const montoBase = intent
     ? null
-    : Number(perfil.circuito.montoMensual) * periodos.length +
-      (legacyReference!.esReconexion ? Number(perfil.circuito.montoReconexion) : 0);
+    : Number(configuracionCobro.montoMensual) * periodos.length +
+      (legacyReference!.esReconexion ? Number(configuracionCobro.montoReconexion) : 0);
   const expectedTotal = intent
     ? intent.total
     : calcularDesglosePago(montoBase!).total;
   if (paymentAmountInCents(payment.transaction_amount) !== moneyInCents(expectedTotal)) {
-    throw new MercadoPagoPaymentValidationError('invalid_amount', 'El importe del pago no coincide con la configuracion del circuito');
+    throw new MercadoPagoPaymentValidationError('invalid_amount', 'El importe del pago no coincide con la configuracion del fraccionamiento');
   }
 
   const configuredCollector = intent
@@ -205,7 +216,7 @@ export async function fetchVerifiedMercadoPagoPayment(input: {
     : (metodoPago?.collectorId ?? perfil.circuito.mercadoPagoCollectorId)?.trim();
   const paymentCollector = payment.collector_id === undefined ? undefined : String(payment.collector_id);
   if (configuredCollector && paymentCollector !== configuredCollector) {
-    throw new MercadoPagoPaymentValidationError('collector_mismatch', 'El cobrador del pago no coincide con el circuito');
+    throw new MercadoPagoPaymentValidationError('collector_mismatch', 'El cobrador del pago no coincide con el fraccionamiento');
   }
 
   return {
@@ -213,6 +224,7 @@ export async function fetchVerifiedMercadoPagoPayment(input: {
     status: payment.status,
     collectorId: paymentCollector,
     perfilId: perfil.id,
+    fraccionamientoId: perfil.fraccionamientoId!,
     circuitoId: perfil.circuito.id,
     paymentIntentReference: intent?.externalReference,
     expectedTotal,

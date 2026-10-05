@@ -45,7 +45,7 @@ function periodoKey(periodo: { mes: number; anio: number }) {
 
 export function mercadoPagoIntentReference(input: {
   perfilId: string;
-  circuitoId: string;
+  fraccionamientoId: string;
   periodos: MercadoPagoPaymentIntentPeriod[];
   total: string;
   collectorId?: string | null;
@@ -56,7 +56,7 @@ export function mercadoPagoIntentReference(input: {
   const canonical = JSON.stringify({
     version: 1,
     perfilId: input.perfilId,
-    circuitoId: input.circuitoId,
+    fraccionamientoId: input.fraccionamientoId,
     periodos: input.periodos,
     total: Number(input.total).toFixed(2),
     currency: 'MXN',
@@ -105,7 +105,7 @@ async function nextUnpaidPeriods(perfilId: string, tenantId: string, count: numb
 
 export function mercadoPagoCheckoutMetadata(input: {
   perfilId: string;
-  circuitoId: string;
+  fraccionamientoId: string;
   externalReference: string;
   total: string;
   now?: Date;
@@ -114,7 +114,7 @@ export function mercadoPagoCheckoutMetadata(input: {
   const windowStart = Math.floor(now.getTime() / IDEMPOTENCY_WINDOW_MS) * IDEMPOTENCY_WINDOW_MS;
   const canonical = [
     input.perfilId,
-    input.circuitoId,
+    input.fraccionamientoId,
     input.externalReference,
     Number(input.total).toFixed(2),
     windowStart,
@@ -218,7 +218,7 @@ export async function POST(request: Request) {
   const checkoutNow = new Date();
   const externalReference = mercadoPagoIntentReference({
     perfilId: perfil.id,
-    circuitoId: perfil.circuito.id,
+    fraccionamientoId: perfil.fraccionamientoId,
     periodos: intentPeriodos,
     total: desglose.total,
     collectorId: perfil.circuito.mercadoPagoCollectorId,
@@ -231,7 +231,7 @@ export async function POST(request: Request) {
   const primerPeriodo = periodosSolicitados[0];
   const checkoutMetadata = mercadoPagoCheckoutMetadata({
     perfilId: perfil.id,
-    circuitoId: perfil.circuito.id,
+    fraccionamientoId: perfil.fraccionamientoId,
     externalReference,
     total: desglose.total,
     now: checkoutNow,
@@ -240,7 +240,6 @@ export async function POST(request: Request) {
   await persistMercadoPagoPaymentIntent({
     externalReference,
     perfilId: perfil.id,
-    circuitoId: perfil.circuito.id,
     periodos: intentPeriodos,
     total: desglose.total,
     collectorId: perfil.circuito.mercadoPagoCollectorId,

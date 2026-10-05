@@ -28,7 +28,8 @@ export class HistorialPagosHandler {
     const corteActivo = await pagoRepo.findCorteActivo(perfil.id);
     const periodo = PeriodoVO.vigente();
     const hoy = fechaNegocio().dia;
-    const diaCorte = getDiaCorte(perfil.circuito ?? undefined);
+    const configuracionCobro = perfil.fraccionamiento ?? perfil.circuito;
+    const diaCorte = getDiaCorte(configuracionCobro ?? undefined);
     const vencido = hoy > diaCorte;
     const esMoroso = vencido && !historial.some(
       p => p.mes === periodo.mes && p.anio === periodo.anio && p.estado === 'pagado'
@@ -40,8 +41,8 @@ export class HistorialPagosHandler {
       ? await residenteRepo.findWaterServiceConfig(perfil.id)
       : null;
     const montoBase     = calcularMontoServicio(servicioAgua ?? {
-      montoMensual: perfil.circuito?.montoMensual ?? '50',
-      montoReconexion: perfil.circuito?.montoReconexion ?? '300',
+      montoMensual: configuracionCobro?.montoMensual ?? '50',
+      montoReconexion: configuracionCobro?.montoReconexion ?? '300',
       conCorteFisico: true,
     }, { incluyeReconexion: esReconexion });
     const desgloseVigente = calcularDesglosePago(montoBase);

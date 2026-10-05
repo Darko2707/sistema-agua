@@ -111,6 +111,7 @@ export async function POST(request: Request) {
       });
       const result = await procesarPagoMpHandler.execute({
         perfilId: verified.perfilId,
+        fraccionamientoId: verified.fraccionamientoId,
         circuitoId: verified.circuitoId,
         paymentIntentReference: verified.paymentIntentReference,
         periodos: verified.periodos,

@@ -71,6 +71,9 @@ export class ProcesarPagoMpHandler {
 
     const perfil = await residenteRepo.findById(cmd.perfilId);
     if (!perfil) throw new Error('Perfil no encontrado');
+    if (cmd.fraccionamientoId && perfil.fraccionamientoId !== cmd.fraccionamientoId) {
+      throw new Error('El perfil cambio de fraccionamiento durante la confirmacion del pago');
+    }
     if (perfil.circuitoId !== cmd.circuitoId) {
       throw new Error('El perfil cambio de circuito durante la confirmacion del pago');
     }
@@ -97,6 +100,7 @@ export class ProcesarPagoMpHandler {
       const montoCents = bases[index] + comisiones[index] + retencionesIsr[index] + retencionesIva[index];
       return {
         perfilId:               cmd.perfilId,
+        fraccionamientoId:      perfil.fraccionamientoId ?? undefined,
         circuitoId:             circuito.id,
         representanteId:        circuito.representanteId,
         mes:                    periodo.mes,
@@ -120,6 +124,7 @@ export class ProcesarPagoMpHandler {
 
     const result = await pagoRepo.createMercadoPagoBatchWithLock({
       perfilId: cmd.perfilId,
+      fraccionamientoId: perfil.fraccionamientoId ?? undefined,
       circuitoId: cmd.circuitoId,
       paymentIntentReference: cmd.paymentIntentReference,
       mercadoPagoPaymentId: cmd.mercadoPagoPaymentId,

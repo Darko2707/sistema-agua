@@ -30,11 +30,11 @@ export type ReversarPagoResult = {
 function assertPuedeReversar(
   actorId: string,
   actorRole: ReversarPagoInput['actorRole'],
-  circuito: { representanteId: string | null; tesoreraId: string | null } | null,
+  fraccionamiento: { representanteId: string | null; tesoreraId: string | null } | null,
 ) {
   if (actorRole === 'admin') return;
-  if (actorRole === 'representante' && circuito?.representanteId === actorId) return;
-  if (actorRole === 'tesorera' && circuito?.tesoreraId === actorId) return;
+  if (actorRole === 'representante' && fraccionamiento?.representanteId === actorId) return;
+  if (actorRole === 'tesorera' && fraccionamiento?.tesoreraId === actorId) return;
   throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes acceso a este pago' });
 }
 
@@ -54,13 +54,13 @@ export async function reversarPagoAtomico(input: ReversarPagoInput): Promise<Rev
 
     const pago = await tx.query.pagos.findFirst({
       where: eq(pagos.id, input.pagoId),
-      with: { perfil: { with: { circuito: true } } },
+      with: { perfil: { with: { fraccionamiento: true, circuito: true } } },
     });
     if (!pago || !pago.perfil) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Pago no encontrado' });
     }
 
-    assertPuedeReversar(input.actorId, input.actorRole, pago.perfil.circuito ?? null);
+    assertPuedeReversar(input.actorId, input.actorRole, pago.perfil.fraccionamiento ?? null);
     if (pago.estado !== 'pagado') {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'Solo se pueden reversar pagos pagados' });
     }
@@ -85,7 +85,7 @@ export async function reversarPagoAtomico(input: ReversarPagoInput): Promise<Rev
     const periodo = PeriodoVO.vigente();
     const esMesActual = pago.mes === periodo.mes && pago.anio === periodo.anio;
     const diaNegocio = fechaNegocio().dia;
-    const diaCorte = getDiaCorte(pago.perfil.circuito ?? undefined);
+    const diaCorte = getDiaCorte(pago.perfil.fraccionamiento ?? pago.perfil.circuito ?? undefined);
     const nuevoEstado = pago.esReconexion && pago.perfil.estadoAgua === 'pendiente_reconexion'
       ? 'cortado' as const
       : esMesActual && pago.perfil.estadoAgua === 'activo' && diaNegocio > diaCorte

@@ -39,7 +39,6 @@ export type PersistMercadoPagoPaymentIntentInput = {
   externalReference: string;
   tipo?: MercadoPagoPaymentIntentTipo;
   perfilId: string;
-  circuitoId: string;
   cargoServicioId?: string | null;
   periodos: MercadoPagoPaymentIntentPeriod[];
   total: string;
@@ -62,11 +61,12 @@ function parseIntentRow(row: unknown): MercadoPagoPaymentIntent {
 function assertSameIntent(
   stored: MercadoPagoPaymentIntent,
   input: PersistMercadoPagoPaymentIntentInput,
+  fraccionamientoId: string,
 ) {
   const matches =
     stored.tipo === (input.tipo ?? 'agua') &&
     stored.perfilId === input.perfilId &&
-    stored.circuitoId === input.circuitoId &&
+    stored.fraccionamientoId === fraccionamientoId &&
     stored.cargoServicioId === (input.cargoServicioId ?? null) &&
     stored.total === input.total &&
     stored.currency === 'MXN' &&
@@ -96,7 +96,7 @@ export async function persistMercadoPagoPaymentIntent(
   if ((tipo === 'agua') !== input.externalReference.startsWith('agua_')) {
     throw new Error('El tipo no coincide con la referencia de la intencion');
   }
-  if (perfil.circuitoId && perfil.circuitoId !== input.circuitoId) throw new Error('El circuito no pertenece al perfil');
+  if (!perfil.circuitoId) throw new Error('El perfil no tiene circuito legado asignado');
   if (tipo === 'agua' && input.cargoServicioId) throw new Error('Una intencion de agua no puede tener cargo de servicio');
   if (tipo === 'servicio' && !input.cargoServicioId) throw new Error('La intencion de servicio requiere un cargo');
   if (tipo === 'servicio' && input.cargoServicioId) {
@@ -124,7 +124,7 @@ export async function persistMercadoPagoPaymentIntent(
       tipo,
       fraccionamientoId: perfil.fraccionamientoId,
       perfilId: input.perfilId,
-      circuitoId: input.circuitoId,
+      circuitoId: perfil.circuitoId,
       cargoServicioId: input.cargoServicioId ?? null,
       periodos: input.periodos,
       total: input.total,
@@ -157,14 +157,14 @@ export async function persistMercadoPagoPaymentIntent(
     // Los cargos de servicio conservan una referencia estable por cargo. Si
     // la preferencia expiró, se renueva la intención sin cambiar su identidad
     // ni permitir una segunda intención concurrente para el mismo cargo.
-    assertSameIntent(intent, { ...normalizedInput, expiresAt: intent.expiresAt });
+    assertSameIntent(intent, { ...normalizedInput, expiresAt: intent.expiresAt }, perfil.fraccionamientoId);
     const [refreshed] = await db.update(mercadoPagoPaymentIntents)
       .set({ expiresAt: input.expiresAt })
       .where(eq(mercadoPagoPaymentIntents.externalReference, input.externalReference))
       .returning();
     return parseIntentRow(refreshed ?? { ...row, expiresAt: input.expiresAt });
   }
-  assertSameIntent(intent, normalizedInput);
+  assertSameIntent(intent, normalizedInput, perfil.fraccionamientoId);
   return intent;
 }
 

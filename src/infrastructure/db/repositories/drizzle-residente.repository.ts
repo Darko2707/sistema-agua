@@ -9,6 +9,7 @@ import type {
   PaginatedResult,
   CircuitoRef,
   CircuitoPaymentConfigRef,
+  FraccionamientoCobroRef,
   ServicioCobroRef,
 } from '@/src/application/ports/residente.repository';
 
@@ -22,9 +23,21 @@ const circuitoSafeColumns = {
   activo: true,
 } as const;
 
+const fraccionamientoCobroColumns = {
+  id: true,
+  nombre: true,
+  montoMensual: true,
+  montoReconexion: true,
+  diaCorte: true,
+  representanteId: true,
+  tesoreraId: true,
+  activo: true,
+} as const;
+
 type WithRelaciones = typeof perfilesResidente.$inferSelect & {
   usuario?: { id: string; name: string; email: string; role: string } | null;
   circuito?: CircuitoRef | null;
+  fraccionamiento?: FraccionamientoCobroRef | null;
   pagos?: { mes: number; anio: number; estado: string | null }[];
   cortes?: { activo: boolean | null }[];
 };
@@ -68,10 +81,17 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
   async findByUserId(userId: string) {
     const row = await db.query.perfilesResidente.findFirst({
       where: (p, { eq }) => eq(p.userId, userId),
-      with: { circuito: { columns: circuitoSafeColumns } },
+      with: {
+        circuito: { columns: circuitoSafeColumns },
+        fraccionamiento: { columns: fraccionamientoCobroColumns },
+      },
     });
     if (!row) return null;
-    return { ...toData(row), circuito: row.circuito ?? null };
+    return {
+      ...toData(row),
+      circuito: row.circuito ?? null,
+      fraccionamiento: row.fraccionamiento ?? null,
+    };
   }
 
   async findWaterServiceConfig(perfilId: string): Promise<ServicioCobroRef | null> {

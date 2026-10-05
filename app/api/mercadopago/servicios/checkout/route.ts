@@ -60,7 +60,6 @@ export async function POST(request: Request) {
     externalReference: reference,
     tipo: 'servicio',
     perfilId: perfil.id,
-    circuitoId: perfil.circuitoId,
     cargoServicioId: cargo.id,
     periodos: [{ mes: cargo.mes, anio: cargo.anio, monto: Number(cargo.monto).toFixed(2), esReconexion: false }],
     total: Number(cargo.monto).toFixed(2),

@@ -61,10 +61,9 @@ export const pagosRouter = router({
     .input(z.object({ perfilId: z.uuid() }))
     .query(async ({ ctx, input }) => {
       if (ctx.user.role === 'representante') {
-        const miCircuito = await circuitoRepo.findByRepresentante(ctx.user.id);
-        if (!miCircuito) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes circuito asignado' });
+        if (!ctx.user.fraccionamientoId) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes fraccionamiento asignado' });
         const perfil = await residenteRepo.findById(input.perfilId);
-        if (!perfil || perfil.circuitoId !== miCircuito.id)
+        if (!perfil || perfil.fraccionamientoId !== ctx.user.fraccionamientoId)
           throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes acceso a este residente' });
       }
       return historialPagosHandler.executeByPerfilId(input.perfilId);
@@ -128,19 +127,18 @@ export const pagosRouter = router({
     }),
 
   reportePagos: roleProcedure('representante').query(async ({ ctx }) => {
-    const miCircuito = await circuitoRepo.findByRepresentante(ctx.user.id);
-    if (!miCircuito) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes un circuito asignado.' });
+    if (!ctx.user.fraccionamientoId) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes un fraccionamiento asignado.' });
 
     return db.query.pagos.findMany({
-      where: (p, { eq, and }) => and(eq(p.circuitoId, miCircuito.id), eq(p.estado, 'pagado')),
+      where: (p, { eq, and }) => and(eq(p.fraccionamientoId, ctx.user.fraccionamientoId!), eq(p.estado, 'pagado')),
       with: { perfil: true },
       orderBy: (p, { desc }) => [desc(p.anio), desc(p.mes), desc(p.fechaPago)],
     });
   }),
 
-  pagosPorCircuito: roleProcedure('representante', 'admin')
+  pagosPorFraccionamiento: roleProcedure('representante', 'admin')
     .input(z.object({
-      circuitoId: z.uuid().optional(),
+      fraccionamientoId: z.uuid().optional(),
       mes:        z.number().optional(),
       anio:       z.number().optional(),
     }))
@@ -149,18 +147,17 @@ export const pagosRouter = router({
       const { mes, anio } = periodo;
       const mesFiltro  = input.mes  || mes;
       const anioFiltro = input.anio || anio;
-      let targetCircuitoId = input.circuitoId;
+      let targetFraccionamientoId = input.fraccionamientoId;
       if (ctx.user.role !== 'admin') {
-        const miCircuito = await circuitoRepo.findByRepresentante(ctx.user.id);
-        if (!miCircuito) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes un circuito asignado.' });
-        targetCircuitoId = miCircuito.id;
-      } else if (!targetCircuitoId) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'El administrador debe proveer un circuitoId.' });
+        if (!ctx.user.fraccionamientoId) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes un fraccionamiento asignado.' });
+        targetFraccionamientoId = ctx.user.fraccionamientoId;
+      } else if (!targetFraccionamientoId) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'El administrador debe proveer un fraccionamientoId.' });
       }
 
       return db.query.pagos.findMany({
         where: (p, { eq, and }) =>
-          and(eq(p.circuitoId, targetCircuitoId!), eq(p.mes, mesFiltro), eq(p.anio, anioFiltro), eq(p.estado, 'pagado')),
+          and(eq(p.fraccionamientoId, targetFraccionamientoId!), eq(p.mes, mesFiltro), eq(p.anio, anioFiltro), eq(p.estado, 'pagado')),
         with: { perfil: { with: { usuario: true } } },
         orderBy: (p, { desc }) => [desc(p.fechaPago)],
       });
@@ -171,10 +168,10 @@ export const pagosRouter = router({
     const periodo = PeriodoVO.vigente();
     const periodoActual = { mes: periodo.mes, anio: periodo.anio };
     const circuito = await resolverCircuitoTesoreraService.execute(ctx.user.id);
-    if (!circuito) return { circuito: null, periodoActual, residentes: [] };
+    if (!circuito || !ctx.user.fraccionamientoId) return { circuito: null, periodoActual, residentes: [] };
 
     const perfiles = await db.query.perfilesResidente.findMany({
-      where:  (p, { eq }) => eq(p.circuitoId, circuito.id),
+      where:  (p, { eq }) => eq(p.fraccionamientoId, ctx.user.fraccionamientoId!),
       with: {
         usuario: true,
         pagos: {
@@ -228,10 +225,13 @@ export const pagosRouter = router({
       const circuito = await resolverCircuitoTesoreraService.execute(ctx.user.id);
       if (!circuito)        throw new TRPCError({ code: 'FORBIDDEN',   message: 'No tienes circuito asignado' });
       if (!circuito.activo) throw new TRPCError({ code: 'FORBIDDEN',   message: 'Tu circuito está inhabilitado' });
+      if (!ctx.user.fraccionamientoId) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes fraccionamiento asignado' });
+      }
 
       const perfil = await residenteRepo.findById(input.perfilId);
-      if (!perfil || perfil.circuitoId !== circuito.id) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Residente no encontrado en tu circuito' });
+      if (!perfil || perfil.fraccionamientoId !== ctx.user.fraccionamientoId) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Residente no encontrado en tu fraccionamiento' });
       }
 
       const periodos = [...input.meses].sort(compararPeriodos);
@@ -248,6 +248,7 @@ export const pagosRouter = router({
         const desglose   = calcularDesgloseServicio(montoBase, 'manual');
         return {
           perfilId:               perfil.id,
+          fraccionamientoId:      perfil.fraccionamientoId ?? undefined,
           circuitoId:             circuito.id,
           representanteId:        circuito.representanteId ?? null,
           mes:                    periodo.mes,
@@ -344,6 +345,7 @@ export const pagosRouter = router({
         const desglose  = calcularDesgloseServicio(montoBase, 'manual');
         return {
           perfilId:               perfil.id,
+          fraccionamientoId:      perfil.fraccionamientoId ?? undefined,
           circuitoId:             circuito.id,
           representanteId:        circuito.representanteId ?? null,
           mes,

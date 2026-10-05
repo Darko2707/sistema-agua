@@ -44,7 +44,7 @@ export function usePagosPorCircuito(input: {
   mes?: number;
   anio?: number;
 }) {
-  return trpcReact.pagos.pagosPorCircuito.useQuery(input);
+  return trpcReact.pagos.pagosPorFraccionamiento.useQuery(input);
 }
 
 // Residente: iniciar cobro vía Mercado Pago (redirige, no es tRPC)

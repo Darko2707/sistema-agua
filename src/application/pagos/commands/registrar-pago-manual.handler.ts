@@ -36,8 +36,11 @@ export class RegistrarPagoManualHandler {
     }
 
     const perfil = await residenteRepo.findById(cmd.perfilId);
-    if (!perfil || perfil.circuitoId !== miCircuito.id) {
-      throw new TRPCError({ code: 'NOT_FOUND', message: 'Residente no encontrado en tu circuito' });
+    const mismaFraccionamiento = miCircuito.fraccionamientoId && perfil?.fraccionamientoId
+      ? perfil.fraccionamientoId === miCircuito.fraccionamientoId
+      : perfil?.circuitoId === miCircuito.id;
+    if (!perfil || !mismaFraccionamiento) {
+      throw new TRPCError({ code: 'NOT_FOUND', message: 'Residente no encontrado en tu fraccionamiento' });
     }
 
     const periodo = PeriodoVO.vigente();
@@ -55,6 +58,7 @@ export class RegistrarPagoManualHandler {
 
     const pago = await pagoRepo.createWithLock(perfil.id, {
       perfilId:               perfil.id,
+      fraccionamientoId:      perfil.fraccionamientoId ?? undefined,
       circuitoId:             miCircuito.id,
       representanteId:        cmd.representanteId,
       mes:                    periodo.mes,

@@ -21,6 +21,16 @@ const perfil = {
     representanteId: 'rep-001',
     activo: true,
   },
+  fraccionamiento: {
+    id: 'fraccionamiento-001',
+    nombre: 'Fraccionamiento 1',
+    montoMensual: '75.00',
+    montoReconexion: '350.00',
+    diaCorte: 10,
+    representanteId: 'rep-001',
+    tesoreraId: 'tesorera-001',
+    activo: true,
+  },
 };
 
 function pago(mes: number, anio: number): PagoData {
@@ -114,5 +124,18 @@ describe('HistorialPagosHandler', () => {
     expect(pagoRepo.findByPerfilId).toHaveBeenCalledWith(perfil.id, 48);
     expect(result.esMoroso).toBe(false);
     expect(result.pagos).toHaveLength(14);
+  });
+
+  it('obtiene el importe y dia de corte del fraccionamiento', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-08T18:00:00.000Z'));
+
+    const { pagoRepo, residenteRepo } = makeDeps([]);
+    const handler = new HistorialPagosHandler({ pagoRepo, residenteRepo });
+
+    const result = await handler.execute({ perfilId: perfil.userId });
+
+    expect(result.esMoroso).toBe(false);
+    expect(result.desgloseVigente?.montoBase).toBe('75.00');
   });
 });

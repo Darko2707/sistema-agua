@@ -30,6 +30,11 @@ const pagoPagado = {
   perfil: {
     userId: 'residente-001',
     estadoAgua: 'pendiente_reconexion' as const,
+    fraccionamiento: {
+      representanteId: 'representante-001',
+      tesoreraId: 'tesorera-001',
+      diaCorte: 10,
+    },
     circuito: {
       representanteId: 'representante-001',
       tesoreraId: 'tesorera-001',
@@ -135,10 +140,10 @@ describe('reversarPagoAtomico', () => {
     expect(mocks.delete).not.toHaveBeenCalled();
   });
 
-  it('revalida el alcance por circuito dentro de la transaccion', async () => {
+  it('revalida el alcance por fraccionamiento dentro de la transaccion', async () => {
     await expect(reversarPagoAtomico({
       pagoId: pagoPagado.id,
-      motivo: 'Intento sobre un circuito ajeno',
+      motivo: 'Intento sobre un fraccionamiento ajeno',
       actorId: 'representante-ajeno',
       actorRole: 'representante',
     })).rejects.toMatchObject({ code: 'FORBIDDEN' });
