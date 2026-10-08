@@ -181,11 +181,11 @@ describe('GET /api/tickets/[folio]/pdf', () => {
     });
     expect(ticketQuery.with.pago.columns).not.toHaveProperty('mercadoPagoPaymentId');
     expect(ticketQuery.with.pago.columns).not.toHaveProperty('mercadoPagoCollectorId');
-    expect(ticketQuery.with.pago.with.circuito.columns).toEqual({
+    expect(ticketQuery.with.pago.with.fraccionamiento.columns).toEqual({
       nombre: true,
       representanteId: true,
     });
-    expect(ticketQuery.with.pago.with.circuito.columns)
+    expect(ticketQuery.with.pago.with.fraccionamiento.columns)
       .not.toHaveProperty('mercadoPagoAccessToken');
     expect(mockFindUser.mock.calls[0]?.[0]?.columns).toEqual({ role: true });
   });
