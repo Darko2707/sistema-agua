@@ -73,3 +73,30 @@ export function useCheckoutMP() {
 
   return { checkout, isPending, error };
 }
+
+// Residente: un solo checkout para agua y cargos de servicios seleccionados.
+export function useCheckoutCombinadoMP() {
+  const [isPending, setIsPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function checkout(input: { mesesAgua: number; cargoIds: string[] }) {
+    setIsPending(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/mercadopago/checkout-combinado', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+        credentials: 'include',
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'No se pudo iniciar el pago');
+      window.location.href = data.url;
+    } catch (err: unknown) {
+      setError(userFacingError(err, 'SISCO-302'));
+      setIsPending(false);
+    }
+  }
+
+  return { checkout, isPending, error };
+}

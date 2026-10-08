@@ -4,8 +4,8 @@ import { z } from 'zod';
 import { db } from '@/db';
 import { cargosServicios, mercadoPagoPaymentIntents, perfilesResidente } from '@/db/schema';
 
-export const MERCADO_PAGO_INTENT_REFERENCE_PATTERN = /^(agua_[a-f0-9]{48}|serv_[0-9a-f-]{36})$/;
-export type MercadoPagoPaymentIntentTipo = 'agua' | 'servicio';
+export const MERCADO_PAGO_INTENT_REFERENCE_PATTERN = /^(agua_[a-f0-9]{48}|serv_[0-9a-f-]{36}|mix_[a-f0-9]{48})$/;
+export type MercadoPagoPaymentIntentTipo = 'agua' | 'servicio' | 'mixto';
 
 const MoneySchema = z.string().regex(/^\d{1,8}\.\d{2}$/);
 const PaymentIntentPeriodSchema = z.object({
@@ -17,11 +17,12 @@ const PaymentIntentPeriodSchema = z.object({
 
 const PaymentIntentRowSchema = z.object({
   externalReference: z.string().regex(MERCADO_PAGO_INTENT_REFERENCE_PATTERN),
-  tipo: z.enum(['agua', 'servicio']).default('agua'),
+  tipo: z.enum(['agua', 'servicio', 'mixto']).default('agua'),
   fraccionamientoId: z.string().uuid(),
   perfilId: z.string().uuid(),
   cargoServicioId: z.string().uuid().nullable().default(null),
-  periodos: z.array(PaymentIntentPeriodSchema).min(1).max(12),
+  cargosServicioIds: z.array(z.string().uuid()).max(50).default([]),
+  periodos: z.array(PaymentIntentPeriodSchema).max(12),
   total: MoneySchema,
   currency: z.literal('MXN'),
   collectorId: z.string().min(1).nullable(),
@@ -39,6 +40,7 @@ export type PersistMercadoPagoPaymentIntentInput = {
   tipo?: MercadoPagoPaymentIntentTipo;
   perfilId: string;
   cargoServicioId?: string | null;
+  cargosServicioIds?: string[];
   periodos: MercadoPagoPaymentIntentPeriod[];
   total: string;
   collectorId?: string | null;
@@ -67,6 +69,7 @@ function assertSameIntent(
     stored.perfilId === input.perfilId &&
     stored.fraccionamientoId === fraccionamientoId &&
     stored.cargoServicioId === (input.cargoServicioId ?? null) &&
+    JSON.stringify(stored.cargosServicioIds) === JSON.stringify(input.cargosServicioIds ?? []) &&
     stored.total === input.total &&
     stored.currency === 'MXN' &&
     stored.collectorId === (input.collectorId ?? null) &&
@@ -91,12 +94,21 @@ export async function persistMercadoPagoPaymentIntent(
     .where(eq(perfilesResidente.id, input.perfilId))
     .limit(1);
   if (!perfil?.fraccionamientoId) throw new Error('El perfil no tiene fraccionamiento asignado');
-  const tipo = input.tipo ?? (input.externalReference.startsWith('serv_') ? 'servicio' : 'agua');
-  if ((tipo === 'agua') !== input.externalReference.startsWith('agua_')) {
+  const tipo = input.tipo ?? (input.externalReference.startsWith('serv_') ? 'servicio' : input.externalReference.startsWith('mix_') ? 'mixto' : 'agua');
+  const expectedPrefix = tipo === 'agua' ? 'agua_' : tipo === 'servicio' ? 'serv_' : 'mix_';
+  if (!input.externalReference.startsWith(expectedPrefix)) {
     throw new Error('El tipo no coincide con la referencia de la intencion');
   }
-  if (tipo === 'agua' && input.cargoServicioId) throw new Error('Una intencion de agua no puede tener cargo de servicio');
+  const cargosServicioIds = [...new Set(input.cargosServicioIds ?? [])].sort();
+  if (cargosServicioIds.length !== (input.cargosServicioIds ?? []).length) {
+    throw new Error('La intencion contiene cargos duplicados');
+  }
+  if (tipo === 'agua' && (input.cargoServicioId || cargosServicioIds.length > 0)) throw new Error('Una intencion de agua no puede tener cargos de servicio');
   if (tipo === 'servicio' && !input.cargoServicioId) throw new Error('La intencion de servicio requiere un cargo');
+  if (tipo === 'servicio' && cargosServicioIds.length > 0) throw new Error('Una intencion de servicio individual no admite una lista de cargos');
+  if (tipo === 'mixto' && (input.cargoServicioId || (input.periodos.length === 0 && cargosServicioIds.length === 0))) {
+    throw new Error('La intencion combinada no contiene conceptos validos');
+  }
   if (tipo === 'servicio' && input.cargoServicioId) {
     const [cargo] = await db.select({
       id: cargosServicios.id,
@@ -114,6 +126,21 @@ export async function persistMercadoPagoPaymentIntent(
       throw new Error('El total de la intencion no coincide con el cargo');
     }
   }
+  if (tipo === 'mixto' && cargosServicioIds.length > 0) {
+    const cargos = await db.select({
+      id: cargosServicios.id,
+      perfilId: cargosServicios.perfilId,
+      fraccionamientoId: cargosServicios.fraccionamientoId,
+      estado: cargosServicios.estado,
+    }).from(cargosServicios).where(and(
+      eq(cargosServicios.perfilId, input.perfilId),
+      eq(cargosServicios.fraccionamientoId, perfil.fraccionamientoId),
+    ));
+    const encontrados = new Set(cargos.filter(cargo => cargo.estado === 'pendiente').map(cargo => cargo.id));
+    if (cargosServicioIds.some(id => !encontrados.has(id))) {
+      throw new Error('Uno o mas cargos ya no estan disponibles para pago');
+    }
+  }
 
   const [inserted] = await db
     .insert(mercadoPagoPaymentIntents)
@@ -123,6 +150,7 @@ export async function persistMercadoPagoPaymentIntent(
       fraccionamientoId: perfil.fraccionamientoId,
       perfilId: input.perfilId,
       cargoServicioId: input.cargoServicioId ?? null,
+      cargosServicioIds,
       periodos: input.periodos,
       total: input.total,
       currency: 'MXN',
@@ -144,6 +172,7 @@ export async function persistMercadoPagoPaymentIntent(
     ...input,
     tipo,
     cargoServicioId: input.cargoServicioId ?? null,
+    cargosServicioIds,
     collectorId: input.collectorId?.trim() || null,
   };
   if (

@@ -28,6 +28,7 @@ import {
   type MercadoPagoPaymentIntentConflictReason,
 } from '@/src/application/pagos/errors/mercado-pago-payment-intent-conflict.error';
 import { MercadoPagoPeriodConflictError } from '@/src/application/pagos/errors/mercado-pago-period-conflict.error';
+import { calcularDesglosePago } from '@/src/domain/pagos/calculator';
 import { pushNotificationValues } from '@/src/infrastructure/db/push-notification-outbox';
 import {
   construirEstadoPagosTesorera,
@@ -176,7 +177,14 @@ function assertPaymentIntentMatches(
     conflict('periods_mismatch');
   }
 
-  const expectedTotal = moneyToCents(intent.total);
+  // Una intención mixta guarda el total cobrado de agua + servicios. Este
+  // repositorio inserta únicamente los renglones de agua; el webhook valida el
+  // total completo antes de llegar aquí y acredita los servicios por separado.
+  const expectedTotal = intent.tipo === 'mixto'
+    ? moneyToCents(calcularDesglosePago(
+        input.pagos.reduce((sum, pago) => sum + Number(pago.montoBase), 0),
+      ).total)
+    : moneyToCents(intent.total);
   const requestedAmounts = input.pagos.map(pago => moneyToCents(pago.monto));
   const requestedTotal = requestedAmounts.reduce<number>(
     (sum, amount) => sum + (amount ?? 0),

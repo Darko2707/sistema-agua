@@ -42,6 +42,8 @@ export type VerifiedMercadoPagoPayment = {
   fraccionamientoId: string;
   representanteId: string | null;
   paymentIntentReference?: string;
+  paymentIntentTipo?: 'agua' | 'mixto';
+  cargosServicioIds: string[];
   expectedTotal: string;
   periodos: Array<{
     mes: number;
@@ -216,6 +218,8 @@ export async function fetchVerifiedMercadoPagoPayment(input: {
     fraccionamientoId: perfil.fraccionamientoId!,
     representanteId: perfil.fraccionamiento.representanteId ?? null,
     paymentIntentReference: intent?.externalReference,
+    paymentIntentTipo: intent?.tipo === 'mixto' ? 'mixto' : 'agua',
+    cargosServicioIds: intent?.cargosServicioIds ?? [],
     expectedTotal,
     periodos,
   };

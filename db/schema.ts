@@ -18,7 +18,7 @@ export const estadoActivacionServicioEnum = pgEnum('estado_activacion_servicio',
 export const estadoSolicitudPerfilEnum = pgEnum('estado_solicitud_perfil', ['pendiente', 'aprobada', 'rechazada']);
 export const estadoCargoServicioEnum = pgEnum('estado_cargo_servicio', ['pendiente', 'pagado', 'cancelado']);
 export const rolAsignacionCircuitoEnum = pgEnum('rol_asignacion_circuito', ['cuadrilla_cortes', 'operador_pozo']);
-export const mercadoPagoIntentTipoEnum = pgEnum('mercado_pago_intent_tipo', ['agua', 'servicio']);
+export const mercadoPagoIntentTipoEnum = pgEnum('mercado_pago_intent_tipo', ['agua', 'servicio', 'mixto']);
 export const ticketTipoEnum = pgEnum('ticket_tipo', ['agua', 'servicio']);
 export const tipoOrdenTrabajoEnum = pgEnum('tipo_orden_trabajo', ['corte', 'reconexion']);
 export const estadoOrdenTrabajoEnum = pgEnum('estado_orden_trabajo', [
@@ -365,6 +365,9 @@ export const mercadoPagoPaymentIntents = pgTable('mercado_pago_payment_intents',
   fraccionamientoId:    uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
   perfilId:             uuid('perfil_id').notNull().references(() => perfilesResidente.id),
   cargoServicioId:      uuid('cargo_servicio_id').references(() => cargosServicios.id, { onDelete: 'restrict' }),
+  // Para un checkout combinado se congelan los cargos elegidos. Nunca se
+  // vuelve a consultar una lista abierta al recibir el webhook.
+  cargosServicioIds:    jsonb('cargos_servicio_ids').$type<string[]>().notNull().default(sql`'[]'::jsonb`),
   periodos:             jsonb('periodos').$type<MercadoPagoPaymentIntentPeriodo[]>().notNull(),
   total:                decimal('total', { precision: 10, scale: 2 }).notNull(),
   currency:             text('currency').notNull().default('MXN'),
@@ -376,14 +379,15 @@ export const mercadoPagoPaymentIntents = pgTable('mercado_pago_payment_intents',
 }, (t) => [
   check(
     'chk_mp_payment_intents_external_reference',
-    sql`(${t.tipo} = 'agua' AND ${t.externalReference} ~ '^agua_[a-f0-9]{48}$' AND ${t.cargoServicioId} IS NULL)
-      OR (${t.tipo} = 'servicio' AND ${t.externalReference} ~ '^serv_[0-9a-f-]{36}$' AND ${t.cargoServicioId} IS NOT NULL)`,
+    sql`(${t.tipo} = 'agua' AND ${t.externalReference} ~ '^agua_[a-f0-9]{48}$' AND ${t.cargoServicioId} IS NULL AND jsonb_array_length(${t.cargosServicioIds}) = 0)
+      OR (${t.tipo} = 'servicio' AND ${t.externalReference} ~ '^serv_[0-9a-f-]{36}$' AND ${t.cargoServicioId} IS NOT NULL AND jsonb_array_length(${t.cargosServicioIds}) = 0)
+      OR (${t.tipo} = 'mixto' AND ${t.externalReference} ~ '^mix_[a-f0-9]{48}$' AND ${t.cargoServicioId} IS NULL AND (jsonb_array_length(${t.periodos}) > 0 OR jsonb_array_length(${t.cargosServicioIds}) > 0))`,
   ),
   check('chk_mp_payment_intents_currency', sql`${t.currency} = 'MXN'`),
   check('chk_mp_payment_intents_total_positive', sql`${t.total} > 0`),
   check(
     'chk_mp_payment_intents_periodos_count',
-    sql`jsonb_typeof(${t.periodos}) = 'array' AND jsonb_array_length(${t.periodos}) BETWEEN 1 AND 12`,
+    sql`jsonb_typeof(${t.periodos}) = 'array' AND jsonb_array_length(${t.periodos}) BETWEEN 0 AND 12`,
   ),
   check(
     'chk_mp_payment_intents_consumption',

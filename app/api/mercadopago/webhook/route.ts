@@ -17,6 +17,10 @@ import {
   processServiceCargoPayment,
   ServiceCargoPaymentValidationError,
 } from '@/src/infrastructure/mercadopago/service-cargo-payment';
+import {
+  CombinedServiceCargoPaymentValidationError,
+  processCombinedServiceCargos,
+} from '@/src/infrastructure/mercadopago/combined-service-cargo-payment';
 
 const procesarPagoMpHandler = new ProcesarPagoMpHandler({ residenteRepo, pagoRepo });
 
@@ -109,17 +113,29 @@ export async function POST(request: Request) {
         esReconexion: verified.periodos.some(periodo => periodo.esReconexion),
         mesesAdelantados: verified.periodos.length,
       });
-      const result = await procesarPagoMpHandler.execute({
-        perfilId: verified.perfilId,
-        fraccionamientoId: verified.fraccionamientoId,
-        representanteId: verified.representanteId,
-        paymentIntentReference: verified.paymentIntentReference,
-        periodos: verified.periodos,
-        metodo: 'mercado_pago',
-        mercadoPagoPaymentId: verified.paymentId,
-        mercadoPagoCollectorId: verified.collectorId,
-      });
-      if (!result.yaRegistrado) schedulePushDispatch();
+      if (verified.periodos.length > 0) {
+        const result = await procesarPagoMpHandler.execute({
+          perfilId: verified.perfilId,
+          fraccionamientoId: verified.fraccionamientoId,
+          representanteId: verified.representanteId,
+          paymentIntentReference: verified.paymentIntentReference,
+          periodos: verified.periodos,
+          metodo: 'mercado_pago',
+          mercadoPagoPaymentId: verified.paymentId,
+          mercadoPagoCollectorId: verified.collectorId,
+        });
+        if (!result.yaRegistrado) schedulePushDispatch();
+      }
+      if (verified.paymentIntentTipo === 'mixto' && verified.paymentIntentReference) {
+        await processCombinedServiceCargos({
+          reference: verified.paymentIntentReference,
+          paymentId: verified.paymentId,
+          perfilId: verified.perfilId,
+          fraccionamientoId: verified.fraccionamientoId,
+          cargoIds: verified.cargosServicioIds,
+        });
+        schedulePushDispatch();
+      }
     }
 
     return Response.json({ received: true });
@@ -135,6 +151,10 @@ export async function POST(request: Request) {
         extra: { reason: error.reason },
       });
       logger.warn('mp.webhook.pago_invalido', { reason: error.reason });
+      return Response.json({ received: true, credited: false });
+    }
+    if (error instanceof CombinedServiceCargoPaymentValidationError) {
+      logger.warn('mp.webhook.cargo_combinado_invalido', { message: error.message });
       return Response.json({ received: true, credited: false });
     }
     if (error instanceof MercadoPagoPeriodConflictError) {
