@@ -11,7 +11,7 @@ import {
 type ValidationReason =
   | 'invalid_reference'
   | 'profile_not_found'
-  | 'circuit_mismatch'
+  | 'fraccionamiento_mismatch'
   | 'missing_access_token'
   | 'payment_id_mismatch'
   | 'reference_mismatch'
@@ -115,10 +115,10 @@ export async function fetchVerifiedMercadoPagoPayment(input: {
     throw new MercadoPagoPaymentValidationError('profile_not_found', 'Perfil de pago no encontrado');
   }
   if (intent && perfil.fraccionamientoId && intent.fraccionamientoId !== perfil.fraccionamientoId) {
-    throw new MercadoPagoPaymentValidationError('circuit_mismatch', 'Fraccionamiento de pago inconsistente');
+    throw new MercadoPagoPaymentValidationError('fraccionamiento_mismatch', 'Fraccionamiento de pago inconsistente');
   }
   if (!perfil.fraccionamiento || perfil.fraccionamiento.activo === false) {
-    throw new MercadoPagoPaymentValidationError('circuit_mismatch', 'Fraccionamiento de pago inactivo o inexistente');
+    throw new MercadoPagoPaymentValidationError('fraccionamiento_mismatch', 'Fraccionamiento de pago inactivo o inexistente');
   }
   const configuracionCobro = perfil.fraccionamiento;
 

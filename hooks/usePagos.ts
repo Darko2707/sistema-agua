@@ -38,7 +38,7 @@ export function usePagar() {
   });
 }
 
-// Pagos de un circuito filtrados por mes / año (representante o admin)
+// Pagos de un fraccionamiento filtrados por mes / año (representante o admin)
 export function usePagosPorFraccionamiento(input: {
   fraccionamientoId?: string;
   mes?: number;

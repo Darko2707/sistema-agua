@@ -77,7 +77,7 @@ export class ProcesarPagoMpHandler {
 
     // En referencias nuevas los importes vienen congelados en la intencion
     // persistida; en referencias legacy fueron reconstruidos desde la
-    // configuracion actual del circuito. La comision fija de MP pertenece al
+    // configuracion actual del fraccionamiento. La comision fija de MP pertenece al
     // cobro completo, no a cada mes; se calcula una sola vez y se reparte
     // proporcionalmente, dejando el ajuste de centavos al ultimo mes.
     const fechaPago = new Date();

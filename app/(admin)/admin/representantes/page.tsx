@@ -36,7 +36,7 @@ export default function AdminRepresentantesPage() {
   const representantes = repsQuery.data      ?? [];
   const cargando       = repsQuery.isLoading;
 
-  // Circuitos libres + el circuito actual del representante que se edita
+  // Fraccionamientos disponibles para el representante que se edita.
   const fraccionamientosDisponibles = useMemo(() => fraccionamientosQuery.data ?? [], [fraccionamientosQuery.data]);
 
   const asignarMut = trpcReact.usuarios.asignarRepresentante.useMutation();

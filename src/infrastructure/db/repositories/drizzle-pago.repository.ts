@@ -152,7 +152,7 @@ function assertPaymentIntentMatches(
   };
 
   if (intent.perfilId !== input.perfilId) conflict('profile_mismatch');
-  if (input.fraccionamientoId && intent.fraccionamientoId !== input.fraccionamientoId) conflict('circuit_mismatch');
+  if (input.fraccionamientoId && intent.fraccionamientoId !== input.fraccionamientoId) conflict('fraccionamiento_mismatch');
   if (intent.currency !== 'MXN') conflict('currency_mismatch');
   if (
     intent.mercadoPagoPaymentId &&

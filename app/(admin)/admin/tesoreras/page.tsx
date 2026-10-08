@@ -49,7 +49,7 @@ export default function AdminTesorerasPage() {
   const tesoreras = tesorerasQuery.data ?? [];
   const cargando  = tesorerasQuery.isLoading;
 
-  // Circuitos disponibles: sin tesorera o el circuito actual de la que se edita
+  // Fraccionamientos disponibles para la tesorera que se edita.
   const fraccionamientosDisponibles = useMemo(() => fraccionamientosQuery.data ?? [], [fraccionamientosQuery.data]);
 
   const asignarMut = trpcReact.usuarios.asignarTesorera.useMutation();

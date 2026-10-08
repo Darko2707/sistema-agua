@@ -1,7 +1,7 @@
 export type MercadoPagoPaymentIntentConflictReason =
   | 'not_found'
   | 'profile_mismatch'
-  | 'circuit_mismatch'
+  | 'fraccionamiento_mismatch'
   | 'currency_mismatch'
   | 'periods_mismatch'
   | 'total_mismatch'

@@ -55,7 +55,7 @@ export function mapDomainError(err: unknown): never {
   throw err;
 }
 
-// ── Circuit access guard ───────────────────────────────────────────────────────
+// ── Tenant access guard ────────────────────────────────────────────────────────
 // Instantiated once at module load; React.cache() deduplicates within one
 // HTTP request batch — the service call runs at most once per (userId, role) pair.
 const accesService = new VerificarAccesoService({ residenteRepo });

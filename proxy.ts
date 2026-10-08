@@ -40,6 +40,7 @@ function pickLimiter(pathname: string): RouteLimiter | null {
   }
   if (
     pathname === '/api/mercadopago/checkout'
+    || pathname === '/api/mercadopago/checkout-combinado'
     || pathname === '/api/mercadopago/servicios/checkout'
     || pathname === '/api/mercadopago/return'
   ) {
