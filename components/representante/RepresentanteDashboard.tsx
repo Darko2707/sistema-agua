@@ -4,7 +4,6 @@ import { useState, useMemo, useRef, useEffect } from 'react';
 import { authClient } from '@/lib/auth-client';
 import { useRouter } from 'next/navigation';
 import { useSession } from '@/hooks/useAuth';
-import { useCircuitoActual } from '@/hooks/useCircuito';
 import { trpcReact } from '@/lib/trpc-react';
 import { EstadoAguaBadge } from '@/components/domain/EstadoAguaBadge';
 import { MESES_CORTO as MESES } from '@/lib/meses';
@@ -134,7 +133,7 @@ export function RepresentanteDashboard() {
     vivienda: string;
   } | null>(null);
 
-  const circuitoQuery   = useCircuitoActual();
+  const fraccionamientoQuery = trpcReact.fraccionamientos.miFraccionamiento.useQuery();
   const resumenQuery    = trpcReact.pagos.resumenMes.useQuery();
   const residentesQuery = trpcReact.usuarios.listarResidentes.useQuery();
   const personalQuery   = trpcReact.usuarios.listarPersonal.useQuery();
@@ -144,12 +143,12 @@ export function RepresentanteDashboard() {
   const cambiarRolMut   = trpcReact.usuarios.cambiarRolEnFraccionamiento.useMutation();
   const generarCodigoMut = trpcReact.usuarios.generarCodigoRecuperacion.useMutation();
 
-  const circuito   = circuitoQuery.data;
+  const fraccionamiento = fraccionamientoQuery.data;
   const resumen    = resumenQuery.data;
   const residentes = useMemo(() => residentesQuery.data?.items ?? [], [residentesQuery.data?.items]);
   const personal   = personalQuery.data ?? [];
-  const cargando   = sessionPending || circuitoQuery.isLoading || resumenQuery.isLoading || residentesQuery.isLoading || solicitudesQuery.isLoading;
-  const queryError = circuitoQuery.error?.message ?? resumenQuery.error?.message ?? residentesQuery.error?.message ?? solicitudesQuery.error?.message ?? null;
+  const cargando   = sessionPending || fraccionamientoQuery.isLoading || resumenQuery.isLoading || residentesQuery.isLoading || solicitudesQuery.isLoading;
+  const queryError = fraccionamientoQuery.error?.message ?? resumenQuery.error?.message ?? residentesQuery.error?.message ?? solicitudesQuery.error?.message ?? null;
   const solicitudesPendientes = useMemo(
     () => new Set((solicitudesQuery.data ?? []).filter(s => s.pendiente).map(s => s.perfilId)),
     [solicitudesQuery.data],
@@ -256,7 +255,7 @@ export function RepresentanteDashboard() {
         <style>{`@keyframes rep-spin{to{transform:rotate(360deg)}}`}</style>
         <div style={{ textAlign: 'center' }}>
           <div style={{ width: 30, height: 30, border: `3px solid ${C.greenLight}`, borderTopColor: C.bgHeader, borderRadius: '50%', animation: 'rep-spin .8s linear infinite', margin: '0 auto 10px' }} />
-          <span style={{ fontSize: 14, color: C.textMuted, fontWeight: 600 }}>Cargando circuito...</span>
+          <span style={{ fontSize: 14, color: C.textMuted, fontWeight: 600 }}>Cargando fraccionamiento...</span>
         </div>
       </div>
     );
@@ -288,9 +287,9 @@ export function RepresentanteDashboard() {
               <div style={{ fontFamily: FS, fontSize: 15, fontWeight: 700, color: '#fff', lineHeight: 1.2 }}>
                 Representante — SISCO
               </div>
-              {circuito?.nombre && (
+              {fraccionamiento?.nombre && (
                 <div style={{ fontSize: 11.5, color: '#9FC2AC', marginTop: 1 }}>
-                  Circuito {circuito.nombre} · {MESES[ahora.getMonth()]} {ahora.getFullYear()}
+                  Fraccionamiento {fraccionamiento.nombre} · {MESES[ahora.getMonth()]} {ahora.getFullYear()}
                 </div>
               )}
             </div>
@@ -317,7 +316,7 @@ export function RepresentanteDashboard() {
                 <div style={{ padding: '10px 14px 9px', borderBottom: '1px solid #E4E1D5', marginBottom: 4 }}>
                   <div style={{ fontWeight: 700, fontSize: 14, color: '#1F2A22', fontFamily: FS, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombre}</div>
                   <div style={{ fontSize: 12, color: '#8A8879', marginTop: 2, fontFamily: FM }}>
-                    {circuito?.nombre ? `Circuito ${circuito.nombre}` : 'Representante — SISCO'}
+                    {fraccionamiento?.nombre ? `Fraccionamiento ${fraccionamiento.nombre}` : 'Representante — SISCO'}
                   </div>
                 </div>
                 <button role="menuitem" onClick={() => { setMenuOpen(false); router.push('/residente'); }}
@@ -421,7 +420,7 @@ export function RepresentanteDashboard() {
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 8, fontSize: 11.5, color: C.textMuted }}>
             <span>{resumen?.pagados ?? 0} pagados de {resumen?.totalDeptos ?? 0}</span>
-            <span>Cuota mensual: <strong style={{ color: C.textMain }}>${circuito?.montoMensual ?? '—'}</strong> · Reconexión: <strong style={{ color: C.danger }}>${circuito?.montoReconexion ?? '—'}</strong></span>
+            <span>Consulta la configuración de cuotas en tu fraccionamiento.</span>
           </div>
         </div>
 
@@ -430,8 +429,8 @@ export function RepresentanteDashboard() {
           <div style={{ background: C.card, borderRadius: 18, border: `1px solid ${C.border}`, overflow: 'hidden' }}>
             <div style={{ padding: '16px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
               <div>
-                <div style={{ fontFamily: FS, fontSize: 15, fontWeight: 700, color: C.textMain }}>Personal del circuito</div>
-                <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2 }}>Tesorera/o y cuadrilla de cortes de tu circuito</div>
+                <div style={{ fontFamily: FS, fontSize: 15, fontWeight: 700, color: C.textMain }}>Personal del fraccionamiento</div>
+                <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2 }}>Tesorera/o y cuadrilla de cortes de tu fraccionamiento</div>
               </div>
               <Btn onClick={() => { setModalPersonal(true); setResidenteSelId(''); setRolSeleccionado('tesorera'); setErrorPersonal(''); }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
@@ -594,7 +593,7 @@ export function RepresentanteDashboard() {
                   Datos de contacto
                 </div>
                 <p style={{ fontSize: 12.5, color: C.textMuted, marginTop: 4 }}>
-                  Residente del circuito {circuito?.nombre ?? ''}
+                  Residente del fraccionamiento {fraccionamiento?.nombre ?? ''}
                 </p>
               </div>
               <button onClick={() => setResidenteDetalleId(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: C.textMuted }}>
@@ -680,7 +679,7 @@ export function RepresentanteDashboard() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
               <div>
                 <div style={{ fontFamily: FS, fontSize: 17, fontWeight: 800, color: C.textMain }}>Añadir personal</div>
-                <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2 }}>Circuito {circuito?.nombre}</div>
+                <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2 }}>Fraccionamiento {fraccionamiento?.nombre}</div>
               </div>
               <button onClick={() => setModalPersonal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: C.textMuted }}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-label="Cerrar"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -701,7 +700,7 @@ export function RepresentanteDashboard() {
               </div>
 
               <div>
-                <label style={{ fontSize: 12, fontWeight: 700, color: C.textMuted, display: 'block', marginBottom: 6 }}>RESIDENTE DEL CIRCUITO</label>
+                <label style={{ fontSize: 12, fontWeight: 700, color: C.textMuted, display: 'block', marginBottom: 6 }}>RESIDENTE DEL FRACCIONAMIENTO</label>
                 <select
                   value={residenteSelId}
                   onChange={e => setResidenteSelId(e.target.value)}

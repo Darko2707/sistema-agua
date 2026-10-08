@@ -164,7 +164,6 @@ export async function processServiceCargoPayment(input: { reference: string; pay
       const [waterPayment] = await tx.insert(pagos).values({
         fraccionamientoId: row.cargo.fraccionamientoId,
         perfilId: row.cargo.perfilId,
-        circuitoId: null,
         representanteId: row.fraccionamiento.representanteId,
         mes: row.cargo.mes,
         anio: row.cargo.anio,

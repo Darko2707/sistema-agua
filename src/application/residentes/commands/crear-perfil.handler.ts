@@ -82,7 +82,6 @@ export class CrearPerfilHandler {
     try {
       const perfil = await residenteRepo.create({
         userId:              cmd.userId,
-        circuitoId:          null,
         fraccionamientoId:   cmd.fraccionamientoId,
         edificio:            vivienda.edificio,
         departamento:        vivienda.departamento,

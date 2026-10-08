@@ -197,7 +197,7 @@ export async function GET(req: Request) {
   }
 
   const xlsxBuffer = await generarReporteResidentesExcel({
-    circuito:   fraccionamiento.nombre,
+    fraccionamiento: fraccionamiento.nombre,
     generadoEn: new Date(),
     residentes: ordenados,
   });

@@ -117,15 +117,6 @@ export const ticketsRouter = router({
             esReconexion: true,
           },
           with: {
-            circuito: {
-              columns: {
-                id: true,
-                nombre: true,
-                montoMensual: true,
-                montoReconexion: true,
-                activo: true,
-              },
-            },
             perfil: {
               columns: { id: true, edificio: true, departamento: true },
               with: {
@@ -146,7 +137,7 @@ export const ticketsRouter = router({
       } : null,
       pago: ticket.pago ? {
         ...ticket.pago,
-        montoCircuito: ticket.pago.montoBase ?? ticket.pago.monto,
+        montoServicio: ticket.pago.montoBase ?? ticket.pago.monto,
         montoTotalCobrado: ticket.pago.monto,
       } : null,
     }));

@@ -54,7 +54,7 @@ export async function reversarPagoAtomico(input: ReversarPagoInput): Promise<Rev
 
     const pago = await tx.query.pagos.findFirst({
       where: eq(pagos.id, input.pagoId),
-      with: { perfil: { with: { fraccionamiento: true, circuito: true } } },
+      with: { perfil: { with: { fraccionamiento: true } } },
     });
     if (!pago || !pago.perfil) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Pago no encontrado' });
@@ -85,7 +85,7 @@ export async function reversarPagoAtomico(input: ReversarPagoInput): Promise<Rev
     const periodo = PeriodoVO.vigente();
     const esMesActual = pago.mes === periodo.mes && pago.anio === periodo.anio;
     const diaNegocio = fechaNegocio().dia;
-    const diaCorte = getDiaCorte(pago.perfil.fraccionamiento ?? pago.perfil.circuito ?? undefined);
+    const diaCorte = getDiaCorte(pago.perfil.fraccionamiento ?? undefined);
     const nuevoEstado = pago.esReconexion && pago.perfil.estadoAgua === 'pendiente_reconexion'
       ? 'cortado' as const
       : esMesActual && pago.perfil.estadoAgua === 'activo' && diaNegocio > diaCorte

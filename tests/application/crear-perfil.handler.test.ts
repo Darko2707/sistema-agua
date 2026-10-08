@@ -29,7 +29,6 @@ const UNIQUE_VIVIENDA = 'uq_perfiles_residente_ubicacion';
 const perfilCreado: ResidenteData = {
   id: '10000000-0000-4000-8000-000000000001',
   userId: 'user-new',
-  circuitoId: null,
   edificio: '8',
   departamento: '314A',
   estadoAgua: 'activo',
@@ -56,12 +55,9 @@ function makeResidenteRepo(): ResidenteRepository {
   return {
     findById: vi.fn(),
     findByUserId: vi.fn().mockResolvedValue(null),
-    findByCircuito: vi.fn(),
     findAll: vi.fn(),
     findAllPaginated: vi.fn(),
-    findByCircuitoPaginated: vi.fn(),
     findByEstado: vi.fn(),
-    findByCircuitoYEstado: vi.fn(),
     create: vi.fn().mockResolvedValue(perfilCreado),
     updateEstado: vi.fn(),
     marcarMorososDelMes: vi.fn(),
@@ -106,7 +102,6 @@ describe('CrearPerfilHandler', () => {
     expect(result).toBe(perfilCreado);
     expect(residenteRepo.create).toHaveBeenCalledWith({
       userId: 'user-new',
-      circuitoId: null,
       fraccionamientoId: '00000000-0000-4000-8000-000000000001',
       edificio: '8',
       departamento: '314A',

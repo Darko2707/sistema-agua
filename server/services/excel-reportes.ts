@@ -70,7 +70,7 @@ export interface ResidenteReporte {
 }
 
 export async function generarReporteResidentesExcel(params: {
-  circuito: string;
+  fraccionamiento: string;
   generadoEn: Date;
   residentes: ResidenteReporte[];
 }): Promise<Buffer> {
@@ -90,7 +90,7 @@ export async function generarReporteResidentesExcel(params: {
   // ── Título ────────────────────────────────────────────────────
   ws.mergeCells(1, 1, 1, totalCols);
   const titleCell = ws.getCell('A1');
-  titleCell.value = `Reporte de Residentes — ${params.circuito}`;
+  titleCell.value = `Reporte de Residentes — ${params.fraccionamiento}`;
   titleCell.font  = { bold: true, size: 16, color: { argb: 'FF' + COLOR_HEADER } };
   titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
   ws.getRow(1).height = 36;
@@ -252,7 +252,7 @@ export interface EdificioFinanciero {
 }
 
 export async function generarReporteFinancieroExcel(params: {
-  circuito: string;
+  fraccionamiento: string;
   mes: number;
   anio: number;
   generadoEn: Date;
@@ -283,7 +283,7 @@ export async function generarReporteFinancieroExcel(params: {
   agregarLogo(wb, wsR, 3); // logo en col D (índice 3), fuera del merge A1:C1
   wsR.mergeCells('A1:C1');
   const t = wsR.getCell('A1');
-  t.value = `Reporte Financiero — ${params.circuito}`;
+  t.value = `Reporte Financiero — ${params.fraccionamiento}`;
   t.font  = { bold: true, size: 16, color: { argb: 'FF' + COLOR_HEADER } };
   t.alignment = { horizontal: 'center', vertical: 'middle' };
   wsR.getRow(1).height = 36;
@@ -545,7 +545,7 @@ export interface IngresoRangoReporte extends IngresoAdicionalReporte {
 }
 
 export async function generarReporteFinancieroRangoExcel(params: {
-  circuito:    string;
+  fraccionamiento: string;
   mesDesde:    number;
   anioDesde:   number;
   mesHasta:    number;
@@ -579,7 +579,7 @@ export async function generarReporteFinancieroRangoExcel(params: {
 
   wsR.mergeCells('A1:C1');
   const t = wsR.getCell('A1');
-  t.value = `Reporte Financiero — ${params.circuito}`;
+  t.value = `Reporte Financiero — ${params.fraccionamiento}`;
   t.font  = { bold: true, size: 16, color: { argb: 'FF' + COLOR_HEADER } };
   t.alignment = { horizontal: 'center', vertical: 'middle' };
   wsR.getRow(1).height = 36;

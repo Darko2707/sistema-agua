@@ -47,7 +47,6 @@ export class RegistrarPagoManualHandler {
     const pago = await pagoRepo.createWithLock(perfil.id, {
       perfilId:               perfil.id,
       fraccionamientoId:      perfil.fraccionamientoId ?? undefined,
-      circuitoId:             null,
       representanteId:        cmd.representanteId,
       mes:                    periodo.mes,
       anio:                   periodo.anio,

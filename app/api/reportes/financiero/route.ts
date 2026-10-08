@@ -179,7 +179,7 @@ export async function GET(req: Request) {
     }));
 
     const xlsxBuffer = await generarReporteFinancieroRangoExcel({
-      circuito:    fraccionamiento.nombre,
+      fraccionamiento: fraccionamiento.nombre,
       mesDesde, anioDesde, mesHasta, anioHasta,
       generadoEn:  new Date(),
       totalRecaudado, totalPagos, totalIngresosAdicionales, totalGastos, saldo,
@@ -253,7 +253,7 @@ export async function GET(req: Request) {
   });
 
   const xlsxBuffer = await generarReporteFinancieroExcel({
-    circuito:           fraccionamiento.nombre,
+    fraccionamiento:    fraccionamiento.nombre,
     mes, anio,
     generadoEn:         new Date(),
     totalRecaudado,

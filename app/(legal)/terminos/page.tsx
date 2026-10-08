@@ -15,13 +15,13 @@ export default function TerminosPage() {
       <h2 style={s.h2}>Responsabilidades del usuario</h2>
       <ul style={s.list}>
         <li>Proporcionar informacion correcta de cuenta, contacto y vivienda.</li>
-        <li>No compartir credenciales ni intentar acceder a informacion de otros circuitos.</li>
+        <li>No compartir credenciales ni intentar acceder a informacion de otros fraccionamientos.</li>
         <li>Verificar importes, periodos y metodo de pago antes de confirmar una operacion.</li>
       </ul>
       <h2 style={s.h2}>Pagos</h2>
       <p style={s.p}>
         Los residentes pueden pagar el mes vigente o meses adelantados con tarjeta mediante Mercado Pago. Las tesoreras
-        pueden registrar pagos recibidos en efectivo o transferencia para su circuito. Cada pago confirmado genera un
+        pueden registrar pagos recibidos en efectivo o transferencia para su fraccionamiento. Cada pago confirmado genera un
         folio y queda sujeto a validacion administrativa.
       </p>
       <h2 style={s.h2}>Disponibilidad y seguridad</h2>

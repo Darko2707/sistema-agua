@@ -5,7 +5,6 @@ import { MESES_FULL as MESES } from '@/lib/meses';
 export async function generarTicketPDF(data: {
   folio: string;
   fraccionamiento?: string;
-  circuito?: string;
   nombre: string;
   edificio?: string;
   departamento?: string;
@@ -82,17 +81,17 @@ export async function generarTicketPDF(data: {
   });
 
   // ════════════════════════════════════════════════════════
-  // FOLIO + CIRCUITO
+  // FOLIO + FRACCIONAMIENTO
   // ════════════════════════════════════════════════════════
   let y = H - HEADER_H - 36;
 
   // El recibo no incluye QR por decision operativa; el folio se muestra como
   // texto para consulta manual y evita depender de codigos escaneables.
   page.drawText('Folio', { x: 28, y, size: 8, font, color: GRAY });
-  page.drawText('Circuito', { x: 220, y, size: 8, font, color: GRAY });
+  page.drawText('Fraccionamiento', { x: 220, y, size: 8, font, color: GRAY });
   y -= 18;
   page.drawText(data.folio, { x: 28, y, size: 14, font: bold, color: BLACK });
-  page.drawText(data.circuito ?? 'Sin circuito', { x: 220, y, size: 13, font: bold, color: BLACK });
+  page.drawText(fraccionamiento, { x: 220, y, size: 13, font: bold, color: BLACK });
 
   y -= 20;
   page.drawLine({ start: { x: 28, y }, end: { x: W - 28, y }, thickness: 0.5, color: GRAY_L });

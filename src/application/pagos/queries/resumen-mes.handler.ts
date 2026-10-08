@@ -1,13 +1,11 @@
 import type { PagoRepository } from '../../ports/pago.repository';
 import type { ResidenteRepository } from '../../ports/residente.repository';
-import type { CircuitoRepository } from '../../ports/circuito.repository';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
 import type { ResumenMesQuery } from './resumen-mes.query';
 
 type Deps = {
   pagoRepo: PagoRepository;
   residenteRepo: ResidenteRepository;
-  circuitoRepo: CircuitoRepository;
 };
 
 export class ResumenMesHandler {

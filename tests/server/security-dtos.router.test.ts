@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  listarCircuitos: vi.fn(),
   exportarResidentes: vi.fn(),
   exportarPagos: vi.fn(),
   exportarCortes: vi.fn(),
@@ -12,7 +11,6 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/db', () => ({
   db: {
     query: {
-      circuitos: { findMany: mocks.listarCircuitos },
       perfilesResidente: { findMany: mocks.exportarResidentes },
       pagos: { findMany: mocks.exportarPagos },
       cortes: { findMany: mocks.exportarCortes },
@@ -40,7 +38,6 @@ vi.mock('@/lib/push-dispatcher', () => ({
   schedulePushDispatch: vi.fn(),
 }));
 
-import { circuitosRouter } from '@/server/routers/circuitos';
 import { operacionRouter } from '@/server/routers/operacion';
 
 const adminContext = {
@@ -59,7 +56,6 @@ const adminContext = {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.listarCircuitos.mockResolvedValue([]);
   mocks.exportarResidentes.mockResolvedValue([]);
   mocks.exportarPagos.mockResolvedValue([]);
   mocks.exportarCortes.mockResolvedValue([]);
@@ -68,17 +64,6 @@ beforeEach(() => {
 });
 
 describe('DTOs de procedimientos administrativos', () => {
-  it('listarPorFraccionamiento nunca selecciona credenciales de Mercado Pago', async () => {
-    await circuitosRouter.createCaller(adminContext).listarPorFraccionamiento({
-      fraccionamientoId: '11111111-1111-4111-8111-111111111111',
-    });
-
-    const query = mocks.listarCircuitos.mock.calls[0]?.[0];
-    expect(query.columns).toBeDefined();
-    expect(query.columns).not.toHaveProperty('mercadoPagoAccessToken');
-    expect(query.columns).not.toHaveProperty('mercadoPagoCollectorId');
-  });
-
   it('exportacionCompleta usa selecciones por fraccionamiento y excluye secretos e IDs de proveedor', async () => {
     await operacionRouter.createCaller(adminContext).exportacionCompleta();
 

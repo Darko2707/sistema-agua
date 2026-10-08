@@ -2,14 +2,11 @@ import { calcularDesglosePago } from '@/src/domain/pagos/calculator';
 import { FolioVO } from '@/src/domain/pagos/folio.vo';
 import type { ResidenteRepository } from '../../ports/residente.repository';
 import type { PagoRepository } from '../../ports/pago.repository';
-import type { CircuitoRepository } from '../../ports/circuito.repository';
 import type { ProcesarPagoMpCommand } from './procesar-pago-mp.command';
 
 type Deps = {
   residenteRepo: ResidenteRepository;
   pagoRepo: PagoRepository;
-  /** @deprecated Compatibility only; it is intentionally not consulted. */
-  circuitoRepo?: CircuitoRepository;
 };
 
 function toCents(value: string | number): number {
@@ -98,7 +95,6 @@ export class ProcesarPagoMpHandler {
       return {
         perfilId:               cmd.perfilId,
         fraccionamientoId:      perfil.fraccionamientoId ?? undefined,
-        circuitoId:             null,
         representanteId,
         mes:                    periodo.mes,
         anio:                   periodo.anio,
@@ -122,7 +118,6 @@ export class ProcesarPagoMpHandler {
     const result = await pagoRepo.createMercadoPagoBatchWithLock({
       perfilId: cmd.perfilId,
       fraccionamientoId: perfil.fraccionamientoId ?? undefined,
-      circuitoId: null,
       paymentIntentReference: cmd.paymentIntentReference,
       mercadoPagoPaymentId: cmd.mercadoPagoPaymentId,
       pagos,

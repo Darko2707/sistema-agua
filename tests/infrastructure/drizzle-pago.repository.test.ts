@@ -38,7 +38,7 @@ import type {
 function pagoInput(mes: number, anio = 2026): CrearPagoInput {
   return {
     perfilId: 'perfil-001',
-    circuitoId: 'circuito-001',
+    fraccionamientoId: 'fraccionamiento-001',
     representanteId: 'representante-001',
     mes,
     anio,
@@ -63,7 +63,6 @@ function persistedPago(input: CrearPagoInput, index: number): PagoData {
   return {
     ...input,
     id: `pago-${index}`,
-    circuitoId: input.circuitoId ?? null,
     mercadoPagoPaymentId: input.mercadoPagoPaymentId ?? null,
     mercadoPagoCollectorId: input.mercadoPagoCollectorId ?? null,
     creadoEn: new Date('2026-08-09T18:00:00Z'),
@@ -73,7 +72,7 @@ function persistedPago(input: CrearPagoInput, index: number): PagoData {
 function batch(pagos = Array.from({ length: 12 }, (_, index) => pagoInput(index + 1))): CrearPagosMercadoPagoBatchInput {
   return {
     perfilId: 'perfil-001',
-    circuitoId: 'circuito-001',
+    fraccionamientoId: 'fraccionamiento-001',
     mercadoPagoPaymentId: 'payment-001',
     pagos,
     pushNotification: {
@@ -145,7 +144,7 @@ function paymentIntent(overrides: Record<string, unknown> = {}) {
   return {
     externalReference: PAYMENT_INTENT_REFERENCE,
     perfilId: 'perfil-001',
-    circuitoId: 'circuito-001',
+    fraccionamientoId: 'fraccionamiento-001',
     periodos: [{ mes: 4, anio: 2026, monto: '100.00', esReconexion: false }],
     total: '104.85',
     currency: 'MXN',
@@ -172,7 +171,7 @@ beforeEach(() => {
   mocks.findPaymentIntent.mockResolvedValue(null);
   mocks.findPerfil.mockResolvedValue({
     id: 'perfil-001',
-    circuitoId: 'circuito-001',
+    fraccionamientoId: 'fraccionamiento-001',
     estadoAgua: 'activo',
     creadoEn: new Date('2026-08-01T18:00:00.000Z'),
   });
@@ -271,7 +270,7 @@ describe('DrizzlePagoRepository.createManualBatchWithLock', () => {
     async cantidad => {
       mocks.findPerfil.mockResolvedValue({
         id: 'perfil-001',
-        circuitoId: 'circuito-001',
+        fraccionamientoId: 'fraccionamiento-001',
         estadoAgua: 'activo',
         creadoEn: new Date('2025-08-01T18:00:00.000Z'),
       });
@@ -368,7 +367,7 @@ describe('DrizzlePagoRepository.createManualBatchWithLock', () => {
   it('bloquea el mes actual mientras existan periodos atrasados', async () => {
     mocks.findPerfil.mockResolvedValue({
       id: 'perfil-001',
-      circuitoId: 'circuito-001',
+      fraccionamientoId: 'fraccionamiento-001',
       estadoAgua: 'activo',
       creadoEn: new Date('2026-06-15T18:00:00.000Z'),
     });
@@ -394,10 +393,10 @@ describe('DrizzlePagoRepository.createManualBatchWithLock', () => {
     expect(mocks.insertedAudits).toHaveLength(0);
   });
 
-  it('rechaza si el perfil cambio de circuito antes de adquirir el lock', async () => {
+  it('rechaza si el perfil cambio de fraccionamiento antes de adquirir el lock', async () => {
     mocks.findPerfil.mockResolvedValue({
       id: 'perfil-001',
-      circuitoId: 'circuito-movido',
+      fraccionamientoId: 'fraccionamiento-movido',
       estadoAgua: 'activo',
       creadoEn: new Date('2026-08-01T18:00:00.000Z'),
     });
@@ -637,10 +636,10 @@ describe('DrizzlePagoRepository.createMercadoPagoBatchWithLock', () => {
     expect(mocks.insertedOutbox).toHaveLength(0);
   });
 
-  it('revalida bajo lock que el perfil siga en el circuito verificado', async () => {
+  it('revalida bajo lock que el perfil siga en el fraccionamiento verificado', async () => {
     mocks.findPerfil.mockResolvedValue({
       id: 'perfil-001',
-      circuitoId: 'circuito-movido',
+      fraccionamientoId: 'fraccionamiento-movido',
       estadoAgua: 'activo',
     });
 

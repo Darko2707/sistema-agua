@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { db } from '@/db';
-import { auditoria, cargosServicios, circuitos, fraccionamientos, fraccionamientoServicios, perfilesResidente, perfilesServicios, servicios, tickets } from '@/db/schema';
+import { auditoria, cargosServicios, fraccionamientos, fraccionamientoServicios, perfilesResidente, perfilesServicios, servicios, tickets } from '@/db/schema';
 import { subscriptionService } from '@/src/infrastructure/db/services/subscription.service';
 import { generateMonthlyServiceCharges } from '@/src/infrastructure/db/services/service-charge.service';
 import { residenteRepo } from '@/src/infrastructure/db/repositories';
@@ -267,7 +267,6 @@ export const serviciosRouter = router({
         estado: cargosServicios.estado,
         perfilId: cargosServicios.perfilId,
         fraccionamientoId: cargosServicios.fraccionamientoId,
-        circuitoId: perfilesResidente.circuitoId,
         servicioClave: servicios.clave,
       }).from(cargosServicios)
         .innerJoin(perfilesResidente, eq(perfilesResidente.id, cargosServicios.perfilId))

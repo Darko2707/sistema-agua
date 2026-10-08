@@ -131,7 +131,7 @@ describe('tRPC HTTP boundary', () => {
     async (method) => {
       mocks.createContext.mockResolvedValueOnce({ user: null, headers: new Headers() });
       const request = new Request(
-        'https://example.test/api/trpc/tickets.verificar,usuarios.listarCircuitos?batch=1',
+        'https://example.test/api/trpc/tickets.verificar,fraccionamientos.listarPublicos?batch=1',
         {
           method,
           headers: { 'x-vercel-forwarded-for': '203.0.113.6' },

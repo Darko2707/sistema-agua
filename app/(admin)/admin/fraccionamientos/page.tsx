@@ -178,7 +178,7 @@ export default function FraccionamientosAdminPage() {
               </Button>
             </form>
             <p className="mt-3 text-sm text-muted-foreground">
-              Después de crearlo deberás configurar su suscripción anual, servicios y circuitos.
+              Después de crearlo deberás configurar su suscripción anual y sus servicios.
             </p>
           </CardContent>
         </Card>

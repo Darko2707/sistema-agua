@@ -77,7 +77,7 @@ beforeAll(async () => {
     });
     const [p] = await db.insert(perfilesResidente).values({
       userId: id, telefono: '5500000000', sexo: 'otro', tenencia: 'propietario',
-      circuitoId: FX.circId, edificio: '999991', departamento: String(Number(depto)), estadoAgua: estado,
+      edificio: '999991', departamento: String(Number(depto)), estadoAgua: estado,
     }).returning({ id: perfilesResidente.id });
     return p.id;
   }
@@ -104,7 +104,7 @@ beforeAll(async () => {
     estado: 'pagado' | 'pendiente',
   ) {
     await db.insert(pagos).values({
-      perfilId, circuitoId: FX.circId, representanteId: FX.repId,
+      perfilId, representanteId: FX.repId,
       mes, anio,
       monto: '100.00', montoBase: '100.00', iva: '0.00',
       comisionMercadoPago: '0.00', retencionIsr: '0.00', retencionIva: '0.00',
@@ -262,7 +262,7 @@ describe('marcarMorososDelMes — integración con BD real', () => {
     it('un pago tardío del mes 7 no protege en la evaluación del mes 8', async () => {
       // Insertar pago tardío de mes 7 para perfI (paga después de la fecha de corte)
       await db.insert(pagos).values({
-        perfilId: FX.perfI, circuitoId: FX.circId, representanteId: FX.repId,
+        perfilId: FX.perfI, representanteId: FX.repId,
         mes: MES + 1, anio: ANIO,
         monto: '100.00', montoBase: '100.00', iva: '0.00',
         comisionMercadoPago: '0.00', retencionIsr: '0.00', retencionIva: '0.00',
@@ -297,7 +297,7 @@ describe('marcarMorososDelMes — integración con BD real', () => {
       // Simula: residente paga mes 6 después del corte y paga mes 7 antes del corte.
       // Estado: debe quedar activo en evaluación de mes 7.
       await db.insert(pagos).values({
-        perfilId: FX.perfA, circuitoId: FX.circId, representanteId: FX.repId,
+        perfilId: FX.perfA, representanteId: FX.repId,
         mes: MES + 1, anio: ANIO,
         monto: '100.00', montoBase: '100.00', iva: '0.00',
         comisionMercadoPago: '0.00', retencionIsr: '0.00', retencionIva: '0.00',

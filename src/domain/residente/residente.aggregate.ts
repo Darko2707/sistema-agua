@@ -11,7 +11,7 @@ import { CorteEjecutadoEvent } from './events/corte-ejecutado.event';
 export type ResidenteProps = {
   id: string;
   userId: string;
-  circuitoId: string;
+  fraccionamientoId: string;
   edificio: string;
   departamento: string;
   estadoAgua: EstadoAgua;

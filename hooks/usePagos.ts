@@ -39,8 +39,8 @@ export function usePagar() {
 }
 
 // Pagos de un circuito filtrados por mes / año (representante o admin)
-export function usePagosPorCircuito(input: {
-  circuitoId?: string;
+export function usePagosPorFraccionamiento(input: {
+  fraccionamientoId?: string;
   mes?: number;
   anio?: number;
 }) {

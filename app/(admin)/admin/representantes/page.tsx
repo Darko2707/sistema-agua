@@ -95,7 +95,7 @@ export default function AdminRepresentantesPage() {
             Para añadir un representante, cambia el rol de un residente a{' '}
             <strong>Representante</strong> desde la pestaña{' '}
             <strong>Personal</strong> en el panel de administrador (o pídele al representante que lo haga desde su panel).
-            Después aparecerá en esta lista para asignarle un circuito.
+            Después aparecerá en esta lista para asignarle un fraccionamiento.
           </p>
         </div>
 
@@ -169,7 +169,7 @@ export default function AdminRepresentantesPage() {
                   onChange={e => setFraccionamientoSel(e.target.value)}
                   className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm"
                 >
-                  <option value="">Sin circuito</option>
+                  <option value="">Sin fraccionamiento</option>
                   {fraccionamientosDisponibles.map(f => (
                     <option key={f.id} value={f.id}>{f.nombre}</option>
                   ))}

@@ -7,7 +7,6 @@ import type { ResidenteRepository } from '@/src/application/ports/residente.repo
 const perfil = {
   id: 'perfil-001',
   userId: 'user-001',
-  circuitoId: 'circuito-001',
   edificio: '1',
   departamento: 'A',
   estadoAgua: 'activo' as const,
@@ -37,7 +36,6 @@ function pago(mes: number, anio: number): PagoData {
   return {
     id: `pago-${anio}-${mes}`,
     perfilId: perfil.id,
-    circuitoId: perfil.circuitoId,
     representanteId: null,
     mes,
     anio,
@@ -78,12 +76,9 @@ function makeDeps(pagos: PagoData[]) {
   const residenteRepo: ResidenteRepository = {
     findById: vi.fn(),
     findByUserId: vi.fn().mockResolvedValue(perfil),
-    findByCircuito: vi.fn(),
     findAll: vi.fn(),
     findAllPaginated: vi.fn(),
-    findByCircuitoPaginated: vi.fn(),
     findByEstado: vi.fn(),
-    findByCircuitoYEstado: vi.fn(),
     create: vi.fn(),
     updateEstado: vi.fn(),
     marcarMorososDelMes: vi.fn(),

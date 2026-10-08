@@ -21,14 +21,14 @@ export class HistorialPagosHandler {
 
     const perfil = await residenteRepo.findByUserId(query.perfilId);
     if (!perfil) {
-      return { perfil: null, circuito: null, pagos: [], corteActivo: false, esMoroso: false, mes: null, anio: null };
+      return { perfil: null, fraccionamiento: null, pagos: [], corteActivo: false, esMoroso: false, mes: null, anio: null };
     }
 
     const historial = await pagoRepo.findByPerfilId(perfil.id, query.limit ?? DEFAULT_HISTORIAL_LIMIT);
     const corteActivo = await pagoRepo.findCorteActivo(perfil.id);
     const periodo = PeriodoVO.vigente();
     const hoy = fechaNegocio().dia;
-    const configuracionCobro = perfil.fraccionamiento ?? perfil.circuito;
+    const configuracionCobro = perfil.fraccionamiento;
     const diaCorte = getDiaCorte(configuracionCobro ?? undefined);
     const vencido = hoy > diaCorte;
     const esMoroso = vencido && !historial.some(
@@ -49,7 +49,7 @@ export class HistorialPagosHandler {
 
     return {
       perfil,
-      circuito: perfil.circuito ?? null,
+      fraccionamiento: perfil.fraccionamiento ?? null,
       pagos: historial,
       corteActivo: corteActivo ?? null,
       esMoroso,

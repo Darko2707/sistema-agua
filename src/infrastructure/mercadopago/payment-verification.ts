@@ -40,7 +40,6 @@ export type VerifiedMercadoPagoPayment = {
   collectorId?: string;
   perfilId: string;
   fraccionamientoId: string;
-  circuitoId: string | null;
   representanteId: string | null;
   paymentIntentReference?: string;
   expectedTotal: string;
@@ -95,7 +94,6 @@ export async function fetchVerifiedMercadoPagoPayment(input: {
     where: (row, { eq }) => eq(row.id, perfilId),
     columns: {
       id:         true,
-      circuitoId: true,
       fraccionamientoId: true,
     },
     with: {
@@ -216,7 +214,6 @@ export async function fetchVerifiedMercadoPagoPayment(input: {
     collectorId: paymentCollector,
     perfilId: perfil.id,
     fraccionamientoId: perfil.fraccionamientoId!,
-    circuitoId: null,
     representanteId: perfil.fraccionamiento.representanteId ?? null,
     paymentIntentReference: intent?.externalReference,
     expectedTotal,

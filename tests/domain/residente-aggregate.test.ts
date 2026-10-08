@@ -6,7 +6,7 @@ import { CorteEjecutadoEvent } from '@/src/domain/residente/events/corte-ejecuta
 const baseProps = {
   id:           'res-001',
   userId:       'user-001',
-  circuitoId:   'circ-001',
+  fraccionamientoId: 'fracc-001',
   edificio:     'A',
   departamento: '101',
 };

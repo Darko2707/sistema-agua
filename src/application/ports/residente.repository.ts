@@ -3,7 +3,6 @@ import type { EstadoAgua } from '@/src/domain/agua/state-machine';
 export type ResidenteData = {
   id: string;
   userId: string;
-  circuitoId?: string | null;
   fraccionamientoId?: string | null;
   edificio: string;
   departamento: string;
@@ -14,21 +13,6 @@ export type ResidenteData = {
   nombrePropietario?: string | null;
   telefonoPropietario?: string | null;
   creadoEn: Date | null;
-};
-
-export type CircuitoRef = {
-  id: string;
-  nombre: string;
-  montoMensual: string;
-  montoReconexion: string;
-  diaCorte: number;
-  representanteId: string | null;
-  activo: boolean;
-};
-
-export type CircuitoPaymentConfigRef = CircuitoRef & {
-  mercadoPagoAccessToken: string | null;
-  mercadoPagoCollectorId: string | null;
 };
 
 export type FraccionamientoCobroRef = {
@@ -60,7 +44,6 @@ export type CorteRef = { activo: boolean | null };
 
 export type ResidenteConRelaciones = ResidenteData & {
   usuario?: UsuarioRef | null;
-  circuito?: CircuitoRef | null;
   fraccionamiento?: FraccionamientoCobroRef | null;
   pagos?: PagoRef[];
   cortes?: CorteRef[];
@@ -77,17 +60,13 @@ export type PaginatedResult<T> = {
 export interface ResidenteRepository {
   findById(id: string): Promise<ResidenteData | null>;
   findByUserId(id: string): Promise<(ResidenteData & {
-    circuito?: CircuitoRef | null;
     fraccionamiento?: FraccionamientoCobroRef | null;
   }) | null>;
   findWaterServiceConfig?(perfilId: string): Promise<ServicioCobroRef | null>;
-  findByCircuito(circuitoId: string): Promise<ResidenteConRelaciones[]>;
   findAll(): Promise<ResidenteConRelaciones[]>;
   findAllPaginated(page: number, pageSize: number): Promise<PaginatedResult<ResidenteConRelaciones>>;
   findByTenantPaginated?(fraccionamientoId: string, page: number, pageSize: number): Promise<PaginatedResult<ResidenteConRelaciones>>;
-  findByCircuitoPaginated(circuitoId: string, page: number, pageSize: number): Promise<PaginatedResult<ResidenteConRelaciones>>;
   findByEstado(estado: EstadoAgua): Promise<ResidenteConRelaciones[]>;
-  findByCircuitoYEstado(circuitoId: string, estado: EstadoAgua): Promise<ResidenteConRelaciones[]>;
   findByFraccionamientoYEstado?(fraccionamientoId: string, estado: EstadoAgua): Promise<ResidenteConRelaciones[]>;
   create(data: Omit<ResidenteData, 'id' | 'creadoEn'>): Promise<ResidenteData>;
   updateEstado(id: string, estadoAgua: EstadoAgua): Promise<void>;

@@ -26,12 +26,6 @@ export type CreatePersonalInput = {
   fraccionamientoId: string;
 };
 
-export type CreatePersonalWithCircuitInput = CreatePersonalInput & {
-  circuitoId: string;
-  encryptedAccessToken?: string;
-  collectorId?: string;
-};
-
 export type UpdatePersonalInput = {
   nombre?: string;
   email?:  string;
@@ -53,7 +47,6 @@ export interface UserRepository {
   findById(id: string): Promise<UserData | null>;
   findByEmail(email: string): Promise<UserData | null>;
   create(input: CreatePersonalInput): Promise<string>;
-  createWithCircuit?(input: CreatePersonalWithCircuitInput): Promise<string>;
   update(id: string, data: UpdatePersonalInput): Promise<void>;
   updatePassword(userId: string, hashedPassword: string): Promise<void>;
   updateRole(id: string, role: UserRole): Promise<void>;
@@ -64,7 +57,6 @@ export interface UserRepository {
   listarRepresentantes(): Promise<RepresentanteData[]>;
   listarTesoreras(): Promise<TesoreraData[]>;
   listarNonResidente(): Promise<UserData[]>;
-  listarPorCircuito(circuitoId: string): Promise<UserData[]>;
 
   // Atomic role transitions (DB transaction encapsulated internally)
   cambiarRol(input: CambiarRolInput): Promise<void>;

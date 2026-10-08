@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import type { Ratelimit } from '@upstash/ratelimit';
 
-import { residenteRepo, circuitoRepo, userRepo } from '@/src/infrastructure/db/repositories';
+import { residenteRepo, userRepo } from '@/src/infrastructure/db/repositories';
 import {
   representativeResetGenerateAccountLimiter,
   representativeResetGenerateIpLimiter,
@@ -17,9 +17,6 @@ import { consumeRateLimit } from '@/lib/rate-limit-guard';
 import { clientIpFromHeaders, opaqueRateLimitKey } from '@/lib/request-security';
 import { CrearPerfilHandler } from '@/src/application/residentes/commands/crear-perfil.handler';
 import { ListarResidentesHandler } from '@/src/application/residentes/queries/listar-residentes.handler';
-import { CrearPersonalHandler } from '@/src/application/usuarios/commands/crear-personal.handler';
-import { ActualizarPersonalHandler } from '@/src/application/usuarios/commands/actualizar-personal.handler';
-import { EliminarPersonalHandler } from '@/src/application/usuarios/commands/eliminar-personal.handler';
 import { CambiarRolHandler } from '@/src/application/usuarios/commands/cambiar-rol.handler';
 import { ListarPersonalHandler } from '@/src/application/usuarios/queries/listar-personal.handler';
 import { representativePasswordResetService } from '@/src/infrastructure/db/services/representative-password-reset.service';
@@ -35,11 +32,8 @@ const telefono10 = z.string().regex(/^\d{10}$/, 'El telefono debe contener exact
 
 const crearPerfilHandler        = new CrearPerfilHandler({ residenteRepo });
 const listarResidentesHandler   = new ListarResidentesHandler({ residenteRepo });
-const crearPersonalHandler      = new CrearPersonalHandler({ userRepo, circuitoRepo });
-const actualizarPersonalHandler = new ActualizarPersonalHandler({ userRepo, circuitoRepo });
-const eliminarPersonalHandler   = new EliminarPersonalHandler({ userRepo, circuitoRepo });
 const cambiarRolHandler         = new CambiarRolHandler({ userRepo });
-const listarPersonalHandler     = new ListarPersonalHandler({ userRepo, circuitoRepo });
+const listarPersonalHandler     = new ListarPersonalHandler({ userRepo });
 
 async function limitOrThrow(
   limiter: Ratelimit | null,
@@ -162,6 +156,7 @@ export const usuariosRouter = router({
   // anónima de circuitos sin identificar su fraccionamiento. El backend
   // devuelve el tenant junto con cada circuito; la UI filtra y presenta la
   // selección en dos pasos (fraccionamiento → circuito).
+  /* Ruta pública heredada retirada; usar fraccionamientos.listarPublicos.
   listarCircuitos: publicProcedure.query(async () => {
     const rows = await circuitoRepo.findActivos();
     const tenantIds = [...new Set(rows.map((row) => row.fraccionamientoId).filter((id): id is string => Boolean(id)))];
@@ -179,6 +174,7 @@ export const usuariosRouter = router({
       }));
   }),
 
+  */
   solicitarCodigoRecuperacion: publicProcedure
     .input(z.object({ email: z.string().trim().email().max(254) }))
     .mutation(async ({ ctx, input }) => {
@@ -270,6 +266,7 @@ export const usuariosRouter = router({
       });
     }),
 
+  /* Ruta retirada: la asignación de residentes es exclusivamente por fraccionamiento.
   asignarResidenteCircuito: roleProcedure('admin', 'representante')
     .input(z.object({ perfilId: z.string().uuid(), circuitoId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
@@ -299,6 +296,7 @@ export const usuariosRouter = router({
       });
       return { ok: true, circuitoId: circuito.id };
     }),
+  */
 
   cambiarRol: roleProcedure('admin')
     .input(z.object({
@@ -356,10 +354,10 @@ export const usuariosRouter = router({
     }),
 
   listarPersonal: roleProcedure('admin', 'representante').query(async ({ ctx }) => {
-    return listarPersonalHandler.execute({ rol: ctx.user.role as 'admin' | 'representante', userId: ctx.user.id });
+    return listarPersonalHandler.execute({ rol: ctx.user.role as 'admin' | 'representante', fraccionamientoId: ctx.user.fraccionamientoId });
   }),
 
-  listarPersonalPorCircuito: roleProcedure('admin')
+  listarPersonalPorFraccionamiento: roleProcedure('admin')
     .input(z.object({ fraccionamientoId: z.string().uuid() }))
     .query(async ({ input }) => {
       const conditions = [
@@ -427,7 +425,7 @@ export const usuariosRouter = router({
         .where(and(eq(asignacionesCircuito.id, input.asignacionId), eq(asignacionesCircuito.activo, true)))
         .returning({ id: asignacionesCircuito.id, fraccionamientoId: asignacionesCircuito.fraccionamientoId });
       if (!assignment) throw new TRPCError({ code: 'NOT_FOUND', message: 'Asignación no encontrada o ya inactiva' });
-      await db.insert(auditoria).values({ actorId: ctx.user.id, accion: 'personal.circuito.desasignado', entidad: 'asignaciones_circuito', entidadId: assignment.id, detalle: { fraccionamientoId: assignment.fraccionamientoId } });
+      await db.insert(auditoria).values({ actorId: ctx.user.id, accion: 'personal.fraccionamiento.desasignado', entidad: 'asignaciones_fraccionamiento', entidadId: assignment.id, detalle: { fraccionamientoId: assignment.fraccionamientoId } });
       return { ok: true };
     }),
 
@@ -459,6 +457,7 @@ export const usuariosRouter = router({
     return userRepo.listarRepresentantes();
   }),
 
+  /* CRUD heredado por circuito retirado. Las asignaciones se hacen por fraccionamiento.
   crearRepresentante: roleProcedure('admin')
     .input(z.object({
       nombre:                 z.string().min(1),
@@ -499,10 +498,12 @@ export const usuariosRouter = router({
   // ══════════════════════════════════════════════════════════════════════════
   // CRUD TESORERAS
   // ══════════════════════════════════════════════════════════════════════════
+  */
   listarTesoreras: roleProcedure('admin').query(async () => {
     return userRepo.listarTesoreras();
   }),
 
+  /* CRUD heredado por circuito retirado. Las asignaciones se hacen por fraccionamiento.
   crearTesorera: roleProcedure('admin')
     .input(z.object({
       nombre:                 z.string().min(1),
@@ -539,4 +540,5 @@ export const usuariosRouter = router({
       await eliminarPersonalHandler.execute({ actorId: ctx.user.id, id: input.id, role: 'tesorera' });
       return { ok: true };
     }),
+  */
 });

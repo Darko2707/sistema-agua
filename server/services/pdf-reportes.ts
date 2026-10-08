@@ -34,7 +34,7 @@ function estadoBadge(
 // REPORTE DE RESIDENTES (landscape A4)
 // ─────────────────────────────────────────────────────────────────────────
 export async function generarReporteResidentesPDF(data: {
-  circuito: string;
+  fraccionamiento: string;
   generadoEn: Date;
   residentes: Array<{
     nombre: string;
@@ -83,7 +83,7 @@ export async function generarReporteResidentesPDF(data: {
     // Header bar
     page.drawRectangle({ x: 0, y: H - HEADER_H, width: W, height: HEADER_H, color: C.HEADER });
     page.drawText('Reporte de Residentes', { x: MARGIN, y: H - 24, size: 16, font: bold, color: C.WHITE });
-    page.drawText(`Circuito: ${data.circuito}`, { x: MARGIN, y: H - 40, size: 10, font, color: rgb(0.8, 0.93, 1) });
+    page.drawText(`Fraccionamiento: ${data.fraccionamiento}`, { x: MARGIN, y: H - 40, size: 10, font, color: rgb(0.8, 0.93, 1) });
     const fecha = data.generadoEn.toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
     page.drawText(`Generado: ${fecha}`, { x: W - MARGIN - 180, y: H - 32, size: 9, font, color: rgb(0.8, 0.93, 1) });
     return page;
@@ -197,7 +197,7 @@ export async function generarReporteResidentesPDF(data: {
 // REPORTE FINANCIERO (portrait A4)
 // ─────────────────────────────────────────────────────────────────────────
 export async function generarReporteFinancieroPDF(data: {
-  circuito: string;
+  fraccionamiento: string;
   mes: number;
   anio: number;
   generadoEn: Date;
@@ -241,7 +241,7 @@ export async function generarReporteFinancieroPDF(data: {
   // ── Header ──
   page.drawRectangle({ x: 0, y: H - 80, width: W, height: 80, color: C.HEADER });
   page.drawText('Reporte Financiero', { x: MARGIN, y: H - 32, size: 20, font: bold, color: C.WHITE });
-  page.drawText(`Circuito: ${data.circuito}`, { x: MARGIN, y: H - 52, size: 11, font, color: rgb(0.8, 0.93, 1) });
+  page.drawText(`Fraccionamiento: ${data.fraccionamiento}`, { x: MARGIN, y: H - 52, size: 11, font, color: rgb(0.8, 0.93, 1) });
   const periodo = `${MESES_FULL[data.mes - 1]} ${data.anio}`;
   page.drawText(periodo, { x: W - MARGIN - 120, y: H - 38, size: 13, font: bold, color: C.WHITE });
   const fecha = data.generadoEn.toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });

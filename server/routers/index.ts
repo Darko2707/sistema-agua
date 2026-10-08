@@ -3,7 +3,6 @@ import { pagosRouter }    from './pagos'
 import { cortesRouter }   from './cortes'
 import { ticketsRouter }  from './tickets'
 import { usuariosRouter } from './usuarios'
-import { circuitosRouter } from './circuitos'
 import { reportesRouter } from './reportes'
 import { operacionRouter } from './operacion'
 import { suscripcionesRouter } from './suscripciones'
@@ -15,7 +14,6 @@ export const appRouter = router({
   cortes:    cortesRouter,
   tickets:   ticketsRouter,
   usuarios:  usuariosRouter,
-  circuitos: circuitosRouter,
   reportes:  reportesRouter,
   operacion: operacionRouter,
   suscripciones: suscripcionesRouter,

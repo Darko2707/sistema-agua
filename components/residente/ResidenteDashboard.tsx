@@ -259,8 +259,8 @@ export function ResidenteDashboard() {
   const anioActual  = ahora.getFullYear();
   const yaPagoEsteMes   = pagos.some(p => p.mes === mesActual && p.anio === anioActual && p.estado === 'pagado');
   const totalConCargos  = desgloseVigente?.total ?? '0.00';
-  const montoMensual    = Number(perfil.circuito?.montoMensual ?? 50);
-  const montoReconexion = Number(perfil.circuito?.montoReconexion ?? 300);
+  const montoMensual    = Number(perfil.fraccionamiento?.montoMensual ?? 50);
+  const montoReconexion = Number(perfil.fraccionamiento?.montoReconexion ?? 300);
   const esReconexion    = perfil.estadoAgua === 'cortado';
   const montoBaseAdelantado = montoMensual * mesesAdelantados + (esReconexion ? montoReconexion : 0);
   const desgloseAdelantado = desgloseVigente ? calcularDesglosePago(montoBaseAdelantado) : null;
@@ -611,7 +611,7 @@ export function ResidenteDashboard() {
                       {breakdownOpen && (
                         <div id="desglose-cargos" style={{ marginTop: 10, fontSize: 13 }}>
                           <p style={{ fontSize: 12, color: '#A07040', marginBottom: 10, lineHeight: 1.4 }}>
-                            Mercado Pago cobra una comisión por procesar pagos con tarjeta. Los cargos se incluyen en el total para que tu circuito reciba el monto completo.
+                            Mercado Pago cobra una comisión por procesar pagos con tarjeta. Los cargos se incluyen en el total para que tu fraccionamiento reciba el monto completo.
                           </p>
                           {breakdown.map(row => (
                             <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', color: '#6A6450' }}>

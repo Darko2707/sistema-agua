@@ -9,7 +9,7 @@ export default function PrivacidadPage() {
     <LegalPage title="Politica de privacidad de datos" updated="5 de agosto de 2026">
       <h2 style={s.h2}>Datos que tratamos</h2>
       <p style={s.p}>
-        SISCO usa datos de cuenta, contacto, vivienda, circuito, estado del servicio de agua, historial de pagos,
+        SISCO usa datos de cuenta, contacto, vivienda, fraccionamiento, estado del servicio de agua, historial de pagos,
         folios y comprobantes para administrar cuotas del fraccionamiento Ciudad de los 4 Soles.
       </p>
       <h2 style={s.h2}>Finalidades</h2>
@@ -37,7 +37,7 @@ export default function PrivacidadPage() {
       <h2 style={s.h2}>Derechos</h2>
       <p style={s.p}>
         Puedes solicitar acceso, rectificacion o baja de datos contactando a la administracion del sistema o al
-        representante de tu circuito. Algunas operaciones pueden requerir conservar registros contables.
+        representante de tu fraccionamiento. Algunas operaciones pueden requerir conservar registros contables.
       </p>
     </LegalPage>
   );

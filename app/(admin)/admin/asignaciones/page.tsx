@@ -31,11 +31,11 @@ export default function AsignacionesPage() {
     { fraccionamientoId },
     { enabled: Boolean(fraccionamientoId) },
   );
-  const personalQuery = trpcReact.usuarios.listarPersonalPorCircuito.useQuery(
+  const personalQuery = trpcReact.usuarios.listarPersonalPorFraccionamiento.useQuery(
     { fraccionamientoId },
     { enabled: Boolean(fraccionamientoId) },
   );
-  const asignacionesQuery = trpcReact.usuarios.listarPersonalPorCircuito.useQuery(
+  const asignacionesQuery = trpcReact.usuarios.listarPersonalPorFraccionamiento.useQuery(
     { fraccionamientoId },
     { enabled: Boolean(fraccionamientoId) },
   );

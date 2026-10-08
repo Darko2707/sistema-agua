@@ -48,6 +48,15 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 export const fraccionamientosRouter = router({
+  miFraccionamiento: roleProcedure('representante', 'tesorera')
+    .query(async ({ ctx }) => {
+      if (!ctx.user.fraccionamientoId) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes un fraccionamiento asignado' });
+      const [fraccionamiento] = await db.select({ id: fraccionamientos.id, nombre: fraccionamientos.nombre, activo: fraccionamientos.activo })
+        .from(fraccionamientos).where(eq(fraccionamientos.id, ctx.user.fraccionamientoId)).limit(1);
+      if (!fraccionamiento?.activo) throw new TRPCError({ code: 'FORBIDDEN', message: 'El fraccionamiento no está activo' });
+      return fraccionamiento;
+    }),
+
   listarPublicos: publicProcedure.query(async () => db
     .select({ id: fraccionamientos.id, nombre: fraccionamientos.nombre })
     .from(fraccionamientos)

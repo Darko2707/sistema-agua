@@ -2,7 +2,7 @@ import { eq, asc, isNull, and, ne } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { TRPCError } from '@trpc/server';
 import { db } from '@/db';
-import { user, account, session, circuitos, fraccionamientos, fraccionamientoMetodosPago } from '@/db/schema';
+import { user, account, session, fraccionamientos, fraccionamientoMetodosPago } from '@/db/schema';
 import { hashAccountPassword } from '@/lib/password';
 import type {
   UserRepository,
@@ -10,7 +10,6 @@ import type {
   RepresentanteData,
   TesoreraData,
   CreatePersonalInput,
-  CreatePersonalWithCircuitInput,
   UpdatePersonalInput,
   CambiarRolInput,
   CambiarRolEnFraccionamientoInput,
@@ -51,46 +50,6 @@ export class DrizzleUserRepository implements UserRepository {
         id: nanoid(), accountId: input.email, providerId: 'credential',
         userId, password: hashed,
       });
-    });
-    return userId;
-  }
-
-  async createWithCircuit(input: CreatePersonalWithCircuitInput): Promise<string> {
-    const userId = nanoid();
-    const hashed = await hashAccountPassword(input.password);
-    await db.transaction(async (tx) => {
-      const [circuito] = await tx.select({ fraccionamientoId: circuitos.fraccionamientoId, activo: circuitos.activo })
-        .from(circuitos).where(eq(circuitos.id, input.circuitoId)).limit(1);
-      if (!circuito?.fraccionamientoId || !circuito.activo || circuito.fraccionamientoId !== input.fraccionamientoId) {
-        throw new Error('El circuito no existe, esta inactivo o no pertenece al fraccionamiento');
-      }
-      await tx.insert(user).values({
-        id: userId, name: input.nombre, email: input.email,
-        role: input.role,
-        fraccionamientoId: input.fraccionamientoId,
-      });
-      await tx.insert(account).values({
-        id: nanoid(), accountId: input.email, providerId: 'credential',
-        userId, password: hashed,
-      });
-      if (input.role === 'representante' || input.role === 'tesorera') {
-        const field = input.role === 'representante' ? 'representanteId' : 'tesoreraId';
-        await tx.update(circuitos).set({ [field]: userId }).where(eq(circuitos.id, input.circuitoId));
-        if (input.encryptedAccessToken || input.collectorId) {
-          await tx.insert(fraccionamientoMetodosPago).values({
-            fraccionamientoId: input.fraccionamientoId,
-            accessTokenCifrado: input.encryptedAccessToken ?? '',
-            collectorId: input.collectorId ?? null,
-          }).onConflictDoUpdate({
-            target: [fraccionamientoMetodosPago.fraccionamientoId, fraccionamientoMetodosPago.proveedor],
-            set: {
-              ...(input.encryptedAccessToken ? { accessTokenCifrado: input.encryptedAccessToken } : {}),
-              ...(input.collectorId ? { collectorId: input.collectorId } : {}),
-              actualizadoEn: new Date(),
-            },
-          });
-        }
-      }
     });
     return userId;
   }
@@ -221,22 +180,11 @@ export class DrizzleUserRepository implements UserRepository {
     }));
   }
 
-  async listarPorCircuito(circuitoId: string): Promise<UserData[]> {
-    const perfiles = await db.query.perfilesResidente.findMany({
-      where: (p, { eq }) => eq(p.circuitoId, circuitoId),
-      with: { usuario: true },
-    });
-    return perfiles
-      .filter(p => p.usuario?.role && !['admin', 'representante', 'residente'].includes(p.usuario.role))
-      .map(p => toData(p.usuario!));
-  }
-
   async cambiarRol({ userId, nuevoRol }: CambiarRolInput): Promise<void> {
     const existente = await db.query.user.findFirst({ where: (u, { eq }) => eq(u.id, userId) });
     if (!existente) throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
 
-    let nuevaCircuitoId: string | undefined;
-    let nuevaFraccionamientoId: string | undefined;
+    let nuevaFraccionamientoId = existente.fraccionamientoId ?? undefined;
     let anteriorRepresentanteId: string | undefined;
     let anteriorTesoreraId: string | undefined;
 
@@ -244,46 +192,42 @@ export class DrizzleUserRepository implements UserRepository {
       const perfil = await db.query.perfilesResidente.findFirst({
         where: (p, { eq }) => eq(p.userId, userId),
       });
-      if (perfil?.circuitoId) {
-        nuevaCircuitoId = perfil.circuitoId;
-        const circ = await db.query.circuitos.findFirst({
-          where: (c, { eq }) => eq(c.id, perfil.circuitoId!),
+      nuevaFraccionamientoId = perfil?.fraccionamientoId ?? nuevaFraccionamientoId;
+      if (nuevaFraccionamientoId) {
+        const fraccionamiento = await db.query.fraccionamientos.findFirst({
+          where: (f, { eq }) => eq(f.id, nuevaFraccionamientoId!),
         });
-        nuevaFraccionamientoId = circ?.fraccionamientoId ?? undefined;
-        if (nuevoRol === 'representante' && circ?.representanteId && circ.representanteId !== userId) {
-          anteriorRepresentanteId = circ.representanteId;
+        if (nuevoRol === 'representante' && fraccionamiento?.representanteId && fraccionamiento.representanteId !== userId) {
+          anteriorRepresentanteId = fraccionamiento.representanteId;
         }
-        if (nuevoRol === 'tesorera' && circ?.tesoreraId && circ.tesoreraId !== userId) {
-          anteriorTesoreraId = circ.tesoreraId;
+        if (nuevoRol === 'tesorera' && fraccionamiento?.tesoreraId && fraccionamiento.tesoreraId !== userId) {
+          anteriorTesoreraId = fraccionamiento.tesoreraId;
         }
       }
     }
 
-    if ((nuevoRol === 'representante' || nuevoRol === 'tesorera') && !nuevaCircuitoId) {
-      throw new TRPCError({ code: 'BAD_REQUEST', message: 'El personal debe tener un circuito asignado' });
-    }
     if (nuevoRol !== 'admin' && !nuevaFraccionamientoId && !existente.fraccionamientoId) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'El usuario no tiene fraccionamiento asignado' });
     }
 
     await db.transaction(async (tx) => {
       if (existente.role === 'representante' && nuevoRol !== 'representante') {
-        await tx.update(circuitos).set({ representanteId: null }).where(eq(circuitos.representanteId, userId));
+        await tx.update(fraccionamientos).set({ representanteId: null, updatedAt: new Date() }).where(eq(fraccionamientos.representanteId, userId));
       }
       if (existente.role === 'tesorera' && nuevoRol !== 'tesorera') {
-        await tx.update(circuitos).set({ tesoreraId: null }).where(eq(circuitos.tesoreraId, userId));
+        await tx.update(fraccionamientos).set({ tesoreraId: null, updatedAt: new Date() }).where(eq(fraccionamientos.tesoreraId, userId));
       }
-      if (nuevaCircuitoId && nuevoRol === 'representante') {
+      if (nuevaFraccionamientoId && nuevoRol === 'representante') {
         if (anteriorRepresentanteId) {
           await tx.update(user).set({ role: 'residente', updatedAt: new Date() }).where(eq(user.id, anteriorRepresentanteId));
         }
-        await tx.update(circuitos).set({ representanteId: userId }).where(eq(circuitos.id, nuevaCircuitoId));
+        await tx.update(fraccionamientos).set({ representanteId: userId, updatedAt: new Date() }).where(eq(fraccionamientos.id, nuevaFraccionamientoId));
       }
-      if (nuevaCircuitoId && nuevoRol === 'tesorera') {
+      if (nuevaFraccionamientoId && nuevoRol === 'tesorera') {
         if (anteriorTesoreraId) {
           await tx.update(user).set({ role: 'residente' }).where(eq(user.id, anteriorTesoreraId));
         }
-        await tx.update(circuitos).set({ tesoreraId: userId }).where(eq(circuitos.id, nuevaCircuitoId));
+        await tx.update(fraccionamientos).set({ tesoreraId: userId, updatedAt: new Date() }).where(eq(fraccionamientos.id, nuevaFraccionamientoId));
       }
       await tx.update(user).set({
         role: nuevoRol,

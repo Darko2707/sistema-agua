@@ -269,7 +269,6 @@ export const asignacionesCircuito = pgTable('asignaciones_circuito', {
   id: uuid('id').defaultRandom().primaryKey(),
   usuarioId: text('usuario_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
   fraccionamientoId: uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
-  circuitoId: uuid('circuito_id').references(() => circuitos.id, { onDelete: 'set null' }),
   fraccionamientoServicioId: uuid('fraccionamiento_servicio_id').notNull().references(() => fraccionamientoServicios.id, { onDelete: 'restrict' }),
   rol: rolAsignacionCircuitoEnum('rol').notNull(),
   activo: boolean('activo').notNull().default(true),
@@ -278,7 +277,7 @@ export const asignacionesCircuito = pgTable('asignaciones_circuito', {
 }, (t) => [
   uniqueIndex('uq_asignacion_fraccionamiento_persona').on(t.usuarioId, t.fraccionamientoId, t.fraccionamientoServicioId, t.rol),
   index('idx_asignaciones_fraccionamiento_activa').on(t.fraccionamientoId, t.activo),
-  index('idx_asignaciones_circuito_usuario').on(t.usuarioId, t.activo),
+  index('idx_asignaciones_usuario_activa').on(t.usuarioId, t.activo),
   foreignKey({ columns: [t.usuarioId, t.fraccionamientoId], foreignColumns: [user.id, user.fraccionamientoId], name: 'asignaciones_circuito_usuario_tenant_fk' }),
   foreignKey({ columns: [t.fraccionamientoServicioId, t.fraccionamientoId], foreignColumns: [fraccionamientoServicios.id, fraccionamientoServicios.fraccionamientoId], name: 'asignaciones_circuito_servicio_tenant_fk' }),
 ]);
@@ -293,8 +292,6 @@ export const perfilesResidente = pgTable('perfiles_residente', {
   telefono:     text('telefono').notNull(),
   sexo:         sexoEnum('sexo').notNull(),
   tenencia:     tenenciaEnum('tenencia').notNull(),
-  // Los perfiles nuevos pertenecen directamente al fraccionamiento.
-  circuitoId:   uuid('circuito_id').references(() => circuitos.id),
   edificio:             text('edificio').notNull(),
   departamento:         text('departamento').notNull(),
   nombrePropietario:    text('nombre_propietario'),
@@ -307,10 +304,8 @@ export const perfilesResidente = pgTable('perfiles_residente', {
   uniqueIndex('uq_perfiles_residente_ubicacion')
     .on(t.fraccionamientoId, t.edificio, t.departamento),
   uniqueIndex('uq_perfiles_residente_tenant_id').on(t.id, t.fraccionamientoId),
-  foreignKey({ columns: [t.circuitoId, t.fraccionamientoId], foreignColumns: [circuitos.id, circuitos.fraccionamientoId], name: 'perfiles_circuito_mismo_fraccionamiento_fk' }),
   check('chk_perfiles_edificio_canonico', sql`${t.edificio} ~ '^[1-9][0-9]{0,5}$'`),
   check('chk_perfiles_departamento_canonico', sql`${t.departamento} ~ '^[1-9][0-9]{0,5}[A-Z]?$'`),
-  index('idx_perfiles_circuito_estado').on(t.circuitoId, t.estadoAgua),
   index('idx_perfiles_fraccionamiento_estado').on(t.fraccionamientoId, t.estadoAgua),
 ]);
 
@@ -395,7 +390,6 @@ export const mercadoPagoPaymentIntents = pgTable('mercado_pago_payment_intents',
   // retirar los fixtures heredados que todavia representan datos previos.
   fraccionamientoId:    uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
   perfilId:             uuid('perfil_id').notNull().references(() => perfilesResidente.id),
-  circuitoId:           uuid('circuito_id').references(() => circuitos.id),
   cargoServicioId:      uuid('cargo_servicio_id').references(() => cargosServicios.id, { onDelete: 'restrict' }),
   periodos:             jsonb('periodos').$type<MercadoPagoPaymentIntentPeriodo[]>().notNull(),
   total:                decimal('total', { precision: 10, scale: 2 }).notNull(),
@@ -436,7 +430,6 @@ export const pagos = pgTable('pagos', {
   // retirar los fixtures heredados que todavia representan datos previos.
   fraccionamientoId:      uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
   perfilId:               uuid('perfil_id').references(() => perfilesResidente.id).notNull(),
-  circuitoId:             uuid('circuito_id').references(() => circuitos.id),
   representanteId:        text('representante_id').references(() => user.id, { onDelete: 'set null' }),
   mes:                    integer('mes').notNull(),
   anio:                   integer('anio').notNull(),
@@ -465,9 +458,6 @@ export const pagos = pgTable('pagos', {
   // Historial completo de un residente (miHistorial, historialDe).
   // El índice parcial de arriba no cubre búsquedas sin filtro de estado.
   index('idx_pagos_perfil_periodo').on(t.perfilId, t.mes, t.anio),
-
-  // Reportes financieros y de residentes filtran por circuito y periodo.
-  index('idx_pagos_circuito_periodo').on(t.circuitoId, t.mes, t.anio),
 
   // Ordenamiento cronológico en listados admin.
   index('idx_pagos_creado_en').on(t.creadoEn),
@@ -675,7 +665,6 @@ export const pushDeliveries = pgTable('push_deliveries', {
 export const ingresosAdicionales = pgTable('ingresos_adicionales', {
   id:              uuid('id').defaultRandom().primaryKey(),
   fraccionamientoId: uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
-  circuitoId:      uuid('circuito_id').references(() => circuitos.id, { onDelete: 'set null' }),
   representanteId: text('representante_id').notNull().references(() => user.id),
   concepto:        text('concepto').notNull(),
   monto:           decimal('monto', { precision: 10, scale: 2 }).notNull(),
@@ -683,14 +672,11 @@ export const ingresosAdicionales = pgTable('ingresos_adicionales', {
   mes:             integer('mes').notNull(),
   anio:            integer('anio').notNull(),
   creadoEn:        timestamp('creado_en').defaultNow(),
-}, (t) => [
-  index('idx_ingresos_circuito_periodo').on(t.circuitoId, t.mes, t.anio),
-]);
+}, (t) => [index('idx_ingresos_fraccionamiento_periodo').on(t.fraccionamientoId, t.mes, t.anio)]);
 
 export const gastosCircuito = pgTable('gastos_circuito', {
   id:              uuid('id').defaultRandom().primaryKey(),
   fraccionamientoId: uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
-  circuitoId:      uuid('circuito_id').references(() => circuitos.id, { onDelete: 'set null' }),
   representanteId: text('representante_id').notNull().references(() => user.id),
   concepto:        text('concepto').notNull(),
   monto:           decimal('monto', { precision: 10, scale: 2 }).notNull(),
@@ -699,9 +685,7 @@ export const gastosCircuito = pgTable('gastos_circuito', {
   mes:             integer('mes').notNull(),
   anio:            integer('anio').notNull(),
   creadoEn:        timestamp('creado_en').defaultNow(),
-}, (t) => [
-  index('idx_gastos_circuito_periodo').on(t.circuitoId, t.mes, t.anio),
-]);
+}, (t) => [index('idx_gastos_fraccionamiento_periodo').on(t.fraccionamientoId, t.mes, t.anio)]);
 
 // ─────────────────────────────────────────────
 // Relaciones
@@ -714,17 +698,7 @@ export const userRelations = relations(user, ({ one, many }) => ({
   pushSubscriptions: many(pushSubscriptions),
 }));
 
-export const ingresosAdicionalesRelations = relations(ingresosAdicionales, ({ one }) => ({
-  circuito: one(circuitos, {
-    fields: [ingresosAdicionales.circuitoId],
-    references: [circuitos.id],
-  }),
-}));
-
 export const circuitosRelations = relations(circuitos, ({ many, one }) => ({
-  perfiles:  many(perfilesResidente),
-  gastos:    many(gastosCircuito),
-  ingresos:  many(ingresosAdicionales),
   representante: one(user, {
     fields: [circuitos.representanteId],
     references: [user.id],
@@ -732,10 +706,6 @@ export const circuitosRelations = relations(circuitos, ({ many, one }) => ({
 }));
 
 export const gastosCircuitoRelations = relations(gastosCircuito, ({ one }) => ({
-  circuito: one(circuitos, {
-    fields: [gastosCircuito.circuitoId],
-    references: [circuitos.id],
-  }),
   representante: one(user, {
     fields: [gastosCircuito.representanteId],
     references: [user.id],
@@ -751,29 +721,26 @@ export const perfilesResidenteRelations = relations(perfilesResidente, ({ one, m
     fields: [perfilesResidente.fraccionamientoId],
     references: [fraccionamientos.id],
   }),
-  circuito: one(circuitos, {
-    fields: [perfilesResidente.circuitoId],
-    references: [circuitos.id],
-  }),
   pagos:  many(pagos),
   cortes: many(cortes),
   ordenesTrabajo: many(ordenesTrabajo),
 }));
 
 export const pagosRelations = relations(pagos, ({ one }) => ({
+  fraccionamiento: one(fraccionamientos, {
+    fields: [pagos.fraccionamientoId],
+    references: [fraccionamientos.id],
+  }),
   perfil: one(perfilesResidente, {
     fields: [pagos.perfilId],
     references: [perfilesResidente.id],
-  }),
-  circuito: one(circuitos, {
-    fields: [pagos.circuitoId],
-    references: [circuitos.id],
   }),
   representante: one(user, {
     fields: [pagos.representanteId],
     references: [user.id],
   }),
   ticket: one(tickets, {
+    relationName: 'pago_ticket',
     fields: [pagos.id],
     references: [tickets.pagoId],
   }),
@@ -823,6 +790,7 @@ export const ordenesTrabajoRelations = relations(ordenesTrabajo, ({ one }) => ({
 
 export const ticketsRelations = relations(tickets, ({ one }) => ({
   pago: one(pagos, {
+    relationName: 'pago_ticket',
     fields: [tickets.pagoId],
     references: [pagos.id],
   }),

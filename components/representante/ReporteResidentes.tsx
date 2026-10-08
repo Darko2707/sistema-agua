@@ -207,7 +207,7 @@ export function ReporteResidentes() {
       {/* Tabla */}
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle>Residentes del circuito</CardTitle>
+          <CardTitle>Residentes del fraccionamiento</CardTitle>
         </CardHeader>
         <CardContent className="p-0 overflow-x-auto">
           {cargando ? (

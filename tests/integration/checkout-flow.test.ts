@@ -16,7 +16,7 @@ import { eq, and, inArray } from 'drizzle-orm';
 import { db } from '@/db';
 import { user, circuitos, perfilesResidente, pagos, tickets } from '@/db/schema';
 import { ProcesarPagoMpHandler } from '@/src/application/pagos/commands/procesar-pago-mp.handler';
-import { residenteRepo, pagoRepo, circuitoRepo } from '@/src/infrastructure/db/repositories';
+import { residenteRepo, pagoRepo } from '@/src/infrastructure/db/repositories';
 import { parseExternalReference } from '@/src/infrastructure/mercadopago/parser';
 import { calcularDesglosePago } from '@/src/domain/pagos/calculator';
 
@@ -34,7 +34,7 @@ const FX = {
 
 const ANIO = 2090; // far future — never conflicts with real payments
 
-const handler = new ProcesarPagoMpHandler({ residenteRepo, pagoRepo, circuitoRepo });
+const handler = new ProcesarPagoMpHandler({ residenteRepo, pagoRepo });
 
 // ── Seed ───────────────────────────────────────────────────────────────────────
 beforeAll(async () => {
@@ -63,7 +63,6 @@ beforeAll(async () => {
     telefono:     '5500000000',
     sexo:         'otro',
     tenencia:     'propietario',
-    circuitoId:   FX.circId,
     edificio:     '999990',
     departamento: '1A',
     estadoAgua:   'activo',
@@ -110,7 +109,6 @@ function cmd(mes: number, overrides: Partial<{
 }> = {}) {
   return {
     perfilId:               FX.perfilId,
-    circuitoId:             FX.circId,
     periodos: [{
       mes,
       anio: ANIO,
@@ -151,7 +149,6 @@ describe('Checkout flow — integración con BD real', () => {
       expect(pago!.metodo).toBe('mercado_pago');
       expect(pago!.mercadoPagoPaymentId).toBe('mp-1');
       expect(pago!.mercadoPagoCollectorId).toBe(`col-${suffix}`);
-      expect(pago!.circuitoId).toBe(FX.circId);
       expect(pago!.mes).toBe(1);
       expect(pago!.anio).toBe(ANIO);
       expect(pago!.esReconexion).toBe(false);
@@ -207,7 +204,6 @@ describe('Checkout flow — integración con BD real', () => {
 
       const result = await handler.execute({
         perfilId: FX.perfilId,
-        circuitoId: FX.circId,
         periodos,
         metodo: 'mercado_pago',
         mercadoPagoPaymentId: 'mp-batch-12',

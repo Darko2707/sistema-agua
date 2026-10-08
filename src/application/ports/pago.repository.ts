@@ -5,7 +5,6 @@ export type MetodoPago = 'efectivo' | 'transferencia' | 'mercado_pago';
 export type PagoData = {
   id: string;
   perfilId: string;
-  circuitoId: string | null;
   representanteId: string | null;
   mes: number;
   anio: number;
@@ -29,7 +28,6 @@ export type PagoData = {
 export type CrearPagoInput = {
   perfilId: string;
   fraccionamientoId?: string;
-  circuitoId?: string | null;
   representanteId: string | null;
   mes: number;
   anio: number;
@@ -58,7 +56,6 @@ export type CrearPagoAuditInput = {
 export type CrearPagosMercadoPagoBatchInput = {
   perfilId: string;
   fraccionamientoId?: string;
-  circuitoId?: string | null;
   paymentIntentReference?: string;
   mercadoPagoPaymentId: string;
   pagos: CrearPagoInput[];

@@ -2,21 +2,14 @@ import { describe, it, expect, vi } from 'vitest';
 import { RegistrarPagoManualHandler } from '@/src/application/pagos/commands/registrar-pago-manual.handler';
 import type { ResidenteRepository } from '@/src/application/ports/residente.repository';
 import type { PagoRepository } from '@/src/application/ports/pago.repository';
-import type { CircuitoRepository } from '@/src/application/ports/circuito.repository';
-
-const mockCircuitoActivo = {
-  id: 'circ-001', nombre: 'Circuito A', representanteId: 'rep-001', tesoreraId: null,
-  montoMensual: '50.00', montoReconexion: '300.00', diaCorte: 5,
-  mercadoPagoAccessToken: null, mercadoPagoCollectorId: null, activo: true,
-};
 
 const mockPerfil = {
-  id: 'perf-001', userId: 'user-001', circuitoId: null, fraccionamientoId: 'fracc-001',
+  id: 'perf-001', userId: 'user-001', fraccionamientoId: 'fracc-001',
   edificio: 'A', departamento: '101', estadoAgua: 'activo' as const, creadoEn: null,
 };
 
 const mockPagoCreado = {
-  id: 'pago-001', perfilId: 'perf-001', circuitoId: null, representanteId: 'rep-001',
+  id: 'pago-001', perfilId: 'perf-001', representanteId: 'rep-001',
   mes: 6, anio: 2025, monto: '50.00', montoBase: '50.00',
   iva: '0.00', comisionMercadoPago: '0.00', retencionIsr: '0.00', retencionIva: '0.00',
   montoNetoRepresentante: '50.00', mercadoPagoPaymentId: null, mercadoPagoCollectorId: null,
@@ -28,15 +21,12 @@ function makeDeps() {
   const residenteRepo: ResidenteRepository = {
     findById: vi.fn().mockResolvedValue(mockPerfil),
     findByUserId: vi.fn(),
-    findByCircuito: vi.fn(),
     findAll: vi.fn(),
     findByEstado: vi.fn(),
-    findByCircuitoYEstado: vi.fn(),
     create: vi.fn(),
     updateEstado: vi.fn(),
     marcarMorososDelMes: vi.fn().mockResolvedValue(0),
     findAllPaginated: vi.fn(),
-    findByCircuitoPaginated: vi.fn(),
   };
   const pagoRepo: PagoRepository = {
     findByPerfilYMes: vi.fn().mockResolvedValue(null),
@@ -53,22 +43,7 @@ function makeDeps() {
     marcarPendientesVencidos: vi.fn(),
     getMetricasAdmin: vi.fn(),
   };
-  const circuitoRepo: CircuitoRepository = {
-    findById: vi.fn(),
-    findByRepresentante: vi.fn().mockResolvedValue(mockCircuitoActivo),
-    findByTesorera: vi.fn(),
-    findAll: vi.fn(),
-    findActivos: vi.fn(),
-    updateActivo: vi.fn(),
-    updateMontos: vi.fn(),
-    updateRepresentante: vi.fn(),
-    updateTesorera: vi.fn(),
-    updateRepresentanteWithMp: vi.fn(),
-    updateTesoreraWithMp: vi.fn(),
-    clearRepresentanteByUserId: vi.fn(),
-    clearTesoreraByUserId: vi.fn(),
-  };
-  return { residenteRepo, pagoRepo, circuitoRepo };
+  return { residenteRepo, pagoRepo };
 }
 
 describe('RegistrarPagoManualHandler', () => {

@@ -3,12 +3,11 @@ import { router, protectedProcedure, roleProcedure, operationalRoleProcedure } f
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 
-import { residenteRepo, pagoRepo, circuitoRepo } from '@/src/infrastructure/db/repositories';
+import { residenteRepo, pagoRepo } from '@/src/infrastructure/db/repositories';
 import { RegistrarPagoManualHandler } from '@/src/application/pagos/commands/registrar-pago-manual.handler';
 import { HistorialPagosHandler } from '@/src/application/pagos/queries/historial-pagos.handler';
 import { ResumenMesHandler } from '@/src/application/pagos/queries/resumen-mes.handler';
 import { MetricasAdminHandler } from '@/src/application/pagos/queries/metricas-admin.handler';
-import { ResolverCircuitoTesoreraService } from '@/src/application/circuitos/queries/resolver-circuito-tesorera.service';
 // eslint-disable-next-line no-restricted-imports -- inline MP webhook queries not yet in a repo
 import { db } from '@/db';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
@@ -26,11 +25,9 @@ import { subscriptionService } from '@/src/infrastructure/db/services/subscripti
 import { logger } from '@/lib/logger';
 import { schedulePushDispatch } from '@/lib/push-dispatcher';
 
-const resolverCircuitoTesoreraService = new ResolverCircuitoTesoreraService({ circuitoRepo });
-
 const registrarPagoManualHandler = new RegistrarPagoManualHandler({ residenteRepo, pagoRepo });
 const historialPagosHandler = new HistorialPagosHandler({ pagoRepo, residenteRepo });
-const resumenMesHandler = new ResumenMesHandler({ pagoRepo, residenteRepo, circuitoRepo });
+const resumenMesHandler = new ResumenMesHandler({ pagoRepo, residenteRepo });
 const metricasAdminHandler = new MetricasAdminHandler({ pagoRepo });
 
 const MESES_CORTO = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
@@ -117,7 +114,7 @@ export const pagosRouter = router({
     const pagosList = await db.query.pagos.findMany({
       where: (p, { eq }) => eq(p.perfilId, perfil.id),
       with: {
-        perfil: { with: { usuario: true, circuito: true } },
+        perfil: { with: { usuario: true, fraccionamiento: true } },
       },
       orderBy: (p, { desc }) => [desc(p.anio), desc(p.mes)],
     });
@@ -131,7 +128,7 @@ export const pagosRouter = router({
       estado:       p.estado,
       esReconexion: p.esReconexion,
       fechaPago:    p.fechaPago,
-      circuito:     p.perfil?.circuito?.nombre || 'Sin circuito',
+      fraccionamiento: p.perfil?.fraccionamiento?.nombre || 'Sin fraccionamiento',
       residente:    p.perfil?.usuario?.name    || 'Sin nombre',
     }));
   }),
@@ -289,7 +286,6 @@ export const pagosRouter = router({
         return {
           perfilId:               perfil.id,
           fraccionamientoId:      perfil.fraccionamientoId ?? undefined,
-          circuitoId:             null,
           representanteId:        fraccionamiento.representanteId ?? null,
           mes:                    periodo.mes,
           anio:                   periodo.anio,
@@ -387,7 +383,6 @@ export const pagosRouter = router({
         return {
           perfilId:               perfil.id,
           fraccionamientoId:      perfil.fraccionamientoId ?? undefined,
-          circuitoId:             null,
           representanteId:        fraccionamiento.representanteId ?? null,
           mes,
           anio,

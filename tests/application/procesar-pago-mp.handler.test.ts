@@ -3,7 +3,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { ProcesarPagoMpHandler } from '@/src/application/pagos/commands/procesar-pago-mp.handler';
 import { MercadoPagoPeriodConflictError } from '@/src/application/pagos/errors/mercado-pago-period-conflict.error';
 import { calcularDesglosePago } from '@/src/domain/pagos/calculator';
-import type { CircuitoRepository } from '@/src/application/ports/circuito.repository';
 import type {
   CrearPagosMercadoPagoBatchInput,
   PagoData,
@@ -13,7 +12,6 @@ import type { ResidenteRepository } from '@/src/application/ports/residente.repo
 
 const CMD = {
   perfilId: 'perf-001',
-  circuitoId: 'circ-001',
   periodos: [{ mes: 6, anio: 2025, monto: '100.00', esReconexion: false }],
   metodo: 'mercado_pago' as const,
   mercadoPagoPaymentId: '12345',
@@ -21,14 +19,8 @@ const CMD = {
 };
 
 const PERFIL = {
-  id: 'perf-001', userId: 'user-001', circuitoId: 'circ-001',
+  id: 'perf-001', userId: 'user-001', fraccionamientoId: 'fracc-001',
   edificio: 'A', departamento: '101', estadoAgua: 'activo' as const, creadoEn: null,
-};
-
-const CIRCUITO = {
-  id: 'circ-001', nombre: 'Circuito A', representanteId: 'rep-001', tesoreraId: null,
-  montoMensual: '100.00', montoReconexion: '300.00', diaCorte: 5,
-  mercadoPagoAccessToken: null, mercadoPagoCollectorId: 'col-circuito', activo: true,
 };
 
 const CASOS_MESES_TOTAL = [
@@ -53,7 +45,6 @@ function pagoDesdeInput(
   return {
     ...input,
     id: `pago-${index}`,
-    circuitoId: input.circuitoId ?? null,
     mercadoPagoPaymentId: input.mercadoPagoPaymentId ?? null,
     mercadoPagoCollectorId: input.mercadoPagoCollectorId ?? null,
     creadoEn: new Date(),
@@ -85,32 +76,14 @@ function makeDeps() {
   const residenteRepo: ResidenteRepository = {
     findById: vi.fn().mockResolvedValue(PERFIL),
     findByUserId: vi.fn(),
-    findByCircuito: vi.fn(),
     findAll: vi.fn(),
     findByEstado: vi.fn(),
-    findByCircuitoYEstado: vi.fn(),
     create: vi.fn(),
     updateEstado: vi.fn(),
     marcarMorososDelMes: vi.fn(),
     findAllPaginated: vi.fn(),
-    findByCircuitoPaginated: vi.fn(),
   };
-  const circuitoRepo: CircuitoRepository = {
-    findById: vi.fn().mockResolvedValue(CIRCUITO),
-    findByRepresentante: vi.fn(),
-    findByTesorera: vi.fn(),
-    findAll: vi.fn(),
-    findActivos: vi.fn(),
-    updateActivo: vi.fn(),
-    updateMontos: vi.fn(),
-    updateRepresentante: vi.fn(),
-    updateTesorera: vi.fn(),
-    updateRepresentanteWithMp: vi.fn(),
-    updateTesoreraWithMp: vi.fn(),
-    clearRepresentanteByUserId: vi.fn(),
-    clearTesoreraByUserId: vi.fn(),
-  };
-  return { pagoRepo, residenteRepo, circuitoRepo, createMercadoPagoBatchWithLock };
+  return { pagoRepo, residenteRepo, createMercadoPagoBatchWithLock };
 }
 
 describe('ProcesarPagoMpHandler', () => {
@@ -150,7 +123,6 @@ describe('ProcesarPagoMpHandler', () => {
     const existing: PagoData = {
       id: 'pago-existente',
       perfilId: 'perf-001',
-      circuitoId: 'circ-001',
       representanteId: 'rep-001',
       mes: 6,
       anio: 2025,
@@ -227,15 +199,13 @@ describe('ProcesarPagoMpHandler', () => {
     await expect(new ProcesarPagoMpHandler(deps).execute(CMD)).rejects.toThrow('Perfil no encontrado');
   });
 
-  it('no consulta circuito aunque el perfil conserve una referencia heredada', async () => {
+  it('no depende de referencias heredadas en el perfil', async () => {
     const deps = makeDeps();
     vi.mocked(deps.residenteRepo.findById).mockResolvedValueOnce({
       ...PERFIL,
-      circuitoId: 'circ-movido',
     });
 
     await expect(new ProcesarPagoMpHandler(deps).execute(CMD)).resolves.toMatchObject({ yaRegistrado: false });
-    expect(deps.circuitoRepo.findById).not.toHaveBeenCalled();
     expect(deps.createMercadoPagoBatchWithLock).toHaveBeenCalledOnce();
   });
 });

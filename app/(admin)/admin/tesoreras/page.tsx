@@ -115,7 +115,7 @@ export default function AdminTesorerasPage() {
             Para añadir un tesorero/a, cambia el rol de un residente a{' '}
             <strong>Tesorera/o</strong> desde la pestaña{' '}
             <strong>Personal</strong> en el panel de administrador.
-            Después aparecerá aquí para asignarle un circuito y sus credenciales de Mercado Pago.
+            Después aparecerá aquí para asignarle un fraccionamiento y sus credenciales de Mercado Pago.
           </p>
         </div>
 
@@ -207,7 +207,7 @@ export default function AdminTesorerasPage() {
                   onChange={e => setForm(p => ({ ...p, fraccionamientoId: e.target.value }))}
                   className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm"
                 >
-                  <option value="">Sin circuito</option>
+                  <option value="">Sin fraccionamiento</option>
                   {fraccionamientosDisponibles.map(f => (
                     <option key={f.id} value={f.id}>{f.nombre}</option>
                   ))}

@@ -32,7 +32,7 @@ export function PendientesTab({ pendientesCorte, pendientesReconexion }: Props) 
               <div>
                 <p className="font-medium">{r.usuario?.name || 'Sin nombre'}</p>
                 <p className="text-sm text-muted-foreground">
-                  {r.circuito?.nombre || 'Sin circuito'} · {r.edificio} · {r.departamento}
+                  {r.fraccionamiento?.nombre || 'Sin fraccionamiento'} · {r.edificio} · {r.departamento}
                 </p>
                 <EstadoAguaBadge estado="pendiente_corte" className="mt-1" />
               </div>
@@ -64,7 +64,7 @@ export function PendientesTab({ pendientesCorte, pendientesReconexion }: Props) 
               <div>
                 <p className="font-medium">{r.usuario?.name || 'Sin nombre'}</p>
                 <p className="text-sm text-muted-foreground">
-                  {r.circuito?.nombre || 'Sin circuito'} · {r.edificio} · {r.departamento}
+                  {r.fraccionamiento?.nombre || 'Sin fraccionamiento'} · {r.edificio} · {r.departamento}
                 </p>
                 <EstadoAguaBadge estado="pendiente_reconexion" className="mt-1" />
               </div>

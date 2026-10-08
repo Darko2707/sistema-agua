@@ -48,7 +48,7 @@ export type ResidenteCompleto = {
   esMoroso?:            boolean;
   corteActivo?:         boolean;
   usuario?:             { id?: string; name?: string; email?: string; role?: string } | null;
-  circuito?:            { id: string; nombre: string } | null;
+  fraccionamiento?:     { id: string; nombre: string; activo?: boolean } | null;
 };
 
 export type PaginaMeta = { total: number; page: number; pageSize: number; totalPages: number };
@@ -170,7 +170,7 @@ export function useAdmin() {
   const residentesFiltrados = residentes.filter((r) => {
     const porEstado   = filtroEstado   === 'todos' || r.estadoAgua   === filtroEstado;
     const termino = busquedaResidentes.trim().toLowerCase();
-    const texto = [r.usuario?.name, r.usuario?.email, r.edificio, r.departamento, r.circuito?.nombre]
+    const texto = [r.usuario?.name, r.usuario?.email, r.edificio, r.departamento, r.fraccionamiento?.nombre]
       .filter(Boolean).join(' ').toLowerCase();
     return porEstado && (!termino || texto.includes(termino));
   });

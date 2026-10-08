@@ -127,6 +127,18 @@ export function ResidentesTab({
     return Array.from(mapa.entries()).sort((a, b) => b[0] - a[0]);
   }, []);
 
+  const residentesPorFraccionamiento = useMemo(() => {
+    const grupos = new Map<string, { nombre: string; residentes: ResidenteCompleto[] }>();
+    for (const residente of residentesFiltrados) {
+      const id = residente.fraccionamiento?.id ?? 'sin-fraccionamiento';
+      const nombre = residente.fraccionamiento?.nombre ?? 'Sin fraccionamiento asignado';
+      const grupo = grupos.get(id) ?? { nombre, residentes: [] };
+      grupo.residentes.push(residente);
+      grupos.set(id, grupo);
+    }
+    return [...grupos.entries()].sort(([, a], [, b]) => a.nombre.localeCompare(b.nombre, 'es'));
+  }, [residentesFiltrados]);
+
   return (
     <>
       <Card>
@@ -176,12 +188,21 @@ export function ResidentesTab({
               No hay residentes que coincidan con los filtros.
             </p>
           )}
-          {residentesFiltrados.map((r) => {
+          {residentesPorFraccionamiento.map(([fraccionamientoId, grupo]) => (
+            <section key={fraccionamientoId} className="overflow-hidden rounded-xl border">
+              <header className="flex items-center justify-between border-b bg-muted/40 px-4 py-3">
+                <div>
+                  <h3 className="font-semibold">{grupo.nombre}</h3>
+                  <p className="text-xs text-muted-foreground">{grupo.residentes.length} {grupo.residentes.length === 1 ? 'residente' : 'residentes'} en esta página</p>
+                </div>
+              </header>
+              <div className="divide-y">
+          {grupo.residentes.map((r) => {
             const usuarioId = r.usuario?.id || r.id;
             return (
               <div
                 key={r.id}
-                className="flex flex-col gap-4 rounded-xl border p-4 md:flex-row md:items-center md:justify-between"
+                className="flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between"
               >
                 <div className="flex-1">
                   <p className="font-medium">{r.usuario?.name || 'Sin nombre'}</p>
@@ -243,6 +264,9 @@ export function ResidentesTab({
               </div>
             );
           })}
+              </div>
+            </section>
+          ))}
         </CardContent>
         {paginaMeta.totalPages > 1 && (
           <div className="flex items-center justify-between border-t px-6 py-4">

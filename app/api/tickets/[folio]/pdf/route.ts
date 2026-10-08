@@ -2,7 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { headers } from 'next/headers';
 
 import { db } from '@/db';
-import { cargosServicios, circuitos, fraccionamientoServicios, perfilesResidente, servicios, tickets, user } from '@/db/schema';
+import { cargosServicios, fraccionamientos, fraccionamientoServicios, perfilesResidente, servicios, tickets, user } from '@/db/schema';
 import { auth } from '@/lib/auth';
 import { logger } from '@/lib/logger';
 import { guardTicketPdf } from '@/lib/ticket-pdf-guard';
@@ -68,7 +68,7 @@ export async function GET(
           esReconexion: true,
         },
         with: {
-          circuito: {
+          fraccionamiento: {
             columns: {
               nombre: true,
               representanteId: true,
@@ -108,12 +108,11 @@ export async function GET(
   if (ticket.pago?.perfil) {
     const esDuenio = ticket.pago.perfil.userId === session.user.id;
     const esAdmin = role === 'admin';
-    const esRepresentante = role === 'representante' && ticket.pago.circuito?.representanteId === session.user.id;
+    const esRepresentante = role === 'representante' && ticket.pago.fraccionamiento?.representanteId === session.user.id;
     if (!esDuenio && !esAdmin && !esRepresentante) return Response.json({ error: 'No autorizado' }, { status: 403 });
     pdfInput = {
       folio: ticket.folio,
-      fraccionamiento: process.env.NEXT_PUBLIC_FRACCIONAMIENTO_NOMBRE ?? 'SISCO',
-      circuito: ticket.pago.circuito?.nombre,
+      fraccionamiento: ticket.pago.fraccionamiento?.nombre ?? 'SISCO',
       nombre: ticket.pago.perfil.usuario?.name ?? 'Residente',
       edificio: ticket.pago.perfil.edificio,
       departamento: ticket.pago.perfil.departamento,
@@ -138,8 +137,8 @@ export async function GET(
       anio: cargosServicios.anio,
       monto: cargosServicios.monto,
       servicioNombre: servicios.nombre,
-      circuitoNombre: circuitos.nombre,
-      circuitoRepresentanteId: circuitos.representanteId,
+      fraccionamientoNombre: fraccionamientos.nombre,
+      fraccionamientoRepresentanteId: fraccionamientos.representanteId,
       userId: perfilesResidente.userId,
       nombre: user.name,
       edificio: perfilesResidente.edificio,
@@ -147,7 +146,7 @@ export async function GET(
     }).from(cargosServicios)
       .innerJoin(perfilesResidente, eq(perfilesResidente.id, cargosServicios.perfilId))
       .innerJoin(user, eq(user.id, perfilesResidente.userId))
-      .innerJoin(circuitos, eq(circuitos.id, perfilesResidente.circuitoId))
+      .innerJoin(fraccionamientos, eq(fraccionamientos.id, cargosServicios.fraccionamientoId))
       .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, cargosServicios.fraccionamientoServicioId))
       .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
       .where(and(eq(cargosServicios.id, ticket.cargoServicio.id), eq(cargosServicios.fraccionamientoId, perfilesResidente.fraccionamientoId)))
@@ -155,12 +154,11 @@ export async function GET(
     if (!cargo) return Response.json({ error: 'Folio no encontrado' }, { status: 404 });
     const esDuenio = cargo.userId === session.user.id;
     const esAdmin = role === 'admin';
-    const esRepresentante = role === 'representante' && cargo.circuitoRepresentanteId === session.user.id;
+    const esRepresentante = role === 'representante' && cargo.fraccionamientoRepresentanteId === session.user.id;
     if (!esDuenio && !esAdmin && !esRepresentante) return Response.json({ error: 'No autorizado' }, { status: 403 });
     pdfInput = {
       folio: ticket.folio,
-      fraccionamiento: process.env.NEXT_PUBLIC_FRACCIONAMIENTO_NOMBRE ?? 'SISCO',
-      circuito: cargo.circuitoNombre,
+      fraccionamiento: cargo.fraccionamientoNombre ?? 'SISCO',
       nombre: cargo.nombre ?? 'Residente',
       edificio: cargo.edificio,
       departamento: cargo.departamento,

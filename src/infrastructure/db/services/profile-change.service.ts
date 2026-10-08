@@ -117,11 +117,11 @@ export class ProfileChangeService {
   }
 
   async listPending(input: { actorId: string; tenantId: string }) {
-    const circuito = await db.query.circuitos.findFirst({
-      where: (c, { eq, and }) => and(eq(c.representanteId, input.actorId), eq(c.fraccionamientoId, input.tenantId)),
+    const fraccionamiento = await db.query.fraccionamientos.findFirst({
+      where: (f, { eq, and }) => and(eq(f.representanteId, input.actorId), eq(f.id, input.tenantId), eq(f.activo, true)),
       columns: { id: true },
     });
-    if (!circuito) return [];
+    if (!fraccionamiento) return [];
 
     const rows = await db
       .select({

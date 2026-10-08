@@ -152,7 +152,6 @@ function assertPaymentIntentMatches(
 
   if (intent.perfilId !== input.perfilId) conflict('profile_mismatch');
   if (input.fraccionamientoId && intent.fraccionamientoId !== input.fraccionamientoId) conflict('circuit_mismatch');
-  if (intent.circuitoId !== input.circuitoId) conflict('circuit_mismatch');
   if (intent.currency !== 'MXN') conflict('currency_mismatch');
   if (
     intent.mercadoPagoPaymentId &&
@@ -434,10 +433,10 @@ export class DrizzlePagoRepository implements PagoRepository {
         );
 
         if (input.politica.tipo === 'tesorera_escalonada') {
-          if (input.pagos.some(pago => pago.circuitoId !== perfil.circuitoId)) {
+          if (input.pagos.some(pago => pago.fraccionamientoId !== perfil.fraccionamientoId)) {
             throw new TRPCError({
               code: 'CONFLICT',
-              message: 'El residente cambio de circuito; actualiza la lista antes de registrar el pago',
+              message: 'El residente cambio de fraccionamiento; actualiza la lista antes de registrar el pago',
             });
           }
 
@@ -576,7 +575,6 @@ export class DrizzlePagoRepository implements PagoRepository {
       if (
         pago.perfilId !== input.perfilId ||
         (input.fraccionamientoId && pago.fraccionamientoId !== input.fraccionamientoId) ||
-        pago.circuitoId !== input.circuitoId ||
         pago.mercadoPagoPaymentId !== input.mercadoPagoPaymentId
       ) {
         throw new Error('Todos los periodos deben pertenecer al mismo perfil, fraccionamiento y paymentId');
@@ -642,13 +640,6 @@ export class DrizzlePagoRepository implements PagoRepository {
       if (input.fraccionamientoId && perfil.fraccionamientoId !== input.fraccionamientoId) {
         throw new TRPCError({ code: 'CONFLICT', message: 'El perfil cambio de fraccionamiento durante la confirmacion del pago' });
       }
-      if (perfil.circuitoId !== input.circuitoId) {
-        throw new TRPCError({
-          code: 'CONFLICT',
-          message: 'El perfil cambio de circuito durante la confirmacion del pago',
-        });
-      }
-
       const existentesRelevantes = await tx.query.pagos.findMany({
         // La identidad externa es inmutable aunque el estado contable cambie.
         // Un pago reversado no debe desaparecer de la deteccion de replay.
