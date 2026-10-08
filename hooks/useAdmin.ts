@@ -32,6 +32,8 @@ export type Personal = {
   name:  string;
   email: string;
   role:  string;
+  fraccionamientoId?: string | null;
+  fraccionamientoNombre?: string | null;
 };
 
 export type ResidenteCompleto = {

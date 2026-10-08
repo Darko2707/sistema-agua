@@ -13,6 +13,7 @@ import {
   consentimientosLegales,
   circuitos,
   cortes,
+  fraccionamientos,
   notificaciones,
   pagos,
   perfilesResidente,
@@ -500,28 +501,28 @@ export const operacionRouter = router({
 
   dashboardEjecutivo: roleProcedure('admin', 'representante').query(async ({ ctx }) => {
     const periodo = PeriodoVO.vigente();
-    const circuito = ctx.user.role === 'representante' ? await circuitoRepo.findByRepresentante(ctx.user.id) : null;
-    if (ctx.user.role === 'representante' && !circuito) {
-      throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes un circuito asignado' });
+    const fraccionamientoId = ctx.user.role === 'representante' ? ctx.user.fraccionamientoId : null;
+    if (ctx.user.role === 'representante' && !fraccionamientoId) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes un fraccionamiento asignado' });
     }
-    const circuitoFilter = circuito ? eq(perfilesResidente.circuitoId, circuito.id) : undefined;
-    const pagoCircuitoFilter = circuito ? eq(pagos.circuitoId, circuito.id) : undefined;
+    const fraccionamientoFilter = fraccionamientoId ? eq(perfilesResidente.fraccionamientoId, fraccionamientoId) : undefined;
+    const pagoFraccionamientoFilter = fraccionamientoId ? eq(pagos.fraccionamientoId, fraccionamientoId) : undefined;
 
-    const [residentesRow] = await db.select({ total: sql<number>`count(*)::int` }).from(perfilesResidente).where(circuitoFilter);
+    const [residentesRow] = await db.select({ total: sql<number>`count(*)::int` }).from(perfilesResidente).where(fraccionamientoFilter);
     const [pagosRow] = await db.select({
       total: sql<number>`count(*)::int`,
       monto: sql<number>`coalesce(sum(${pagos.montoBase}::numeric), 0)::float`,
       efectivo: sql<number>`count(*) filter (where ${pagos.metodo} = 'efectivo')::int`,
       transferencia: sql<number>`count(*) filter (where ${pagos.metodo} = 'transferencia')::int`,
       mercadoPago: sql<number>`count(*) filter (where ${pagos.metodo} = 'mercado_pago')::int`,
-    }).from(pagos).where(and(eq(pagos.estado, 'pagado'), eq(pagos.mes, periodo.mes), eq(pagos.anio, periodo.anio), pagoCircuitoFilter));
-    const [cortesPendientes] = await db.select({ total: sql<number>`count(*)::int` }).from(perfilesResidente).where(and(eq(perfilesResidente.estadoAgua, 'pendiente_corte'), circuitoFilter));
-    const [reconexionesPendientes] = await db.select({ total: sql<number>`count(*)::int` }).from(perfilesResidente).where(and(eq(perfilesResidente.estadoAgua, 'pendiente_reconexion'), circuitoFilter));
-    const porCircuitoRows = ctx.user.role === 'admin'
+    }).from(pagos).where(and(eq(pagos.estado, 'pagado'), eq(pagos.mes, periodo.mes), eq(pagos.anio, periodo.anio), pagoFraccionamientoFilter));
+    const [cortesPendientes] = await db.select({ total: sql<number>`count(*)::int` }).from(perfilesResidente).where(and(eq(perfilesResidente.estadoAgua, 'pendiente_corte'), fraccionamientoFilter));
+    const [reconexionesPendientes] = await db.select({ total: sql<number>`count(*)::int` }).from(perfilesResidente).where(and(eq(perfilesResidente.estadoAgua, 'pendiente_reconexion'), fraccionamientoFilter));
+    const porFraccionamientoRows = ctx.user.role === 'admin'
       ? await db
         .select({
-          circuitoId: circuitos.id,
-          nombre: circuitos.nombre,
+          fraccionamientoId: fraccionamientos.id,
+          nombre: fraccionamientos.nombre,
           residentes: sql<number>`count(distinct ${perfilesResidente.id})::int`,
           pagosMes: sql<number>`count(${pagos.id})::int`,
           ingresosMes: sql<number>`coalesce(sum(${pagos.montoBase}::numeric), 0)::float`,
@@ -531,19 +532,21 @@ export const operacionRouter = router({
           cortesPendientes: sql<number>`count(distinct ${perfilesResidente.id}) filter (where ${perfilesResidente.estadoAgua} = 'pendiente_corte')::int`,
           reconexionesPendientes: sql<number>`count(distinct ${perfilesResidente.id}) filter (where ${perfilesResidente.estadoAgua} = 'pendiente_reconexion')::int`,
         })
-        .from(circuitos)
-        .leftJoin(perfilesResidente, eq(perfilesResidente.circuitoId, circuitos.id))
+        .from(fraccionamientos)
+        .leftJoin(perfilesResidente, eq(perfilesResidente.fraccionamientoId, fraccionamientos.id))
         .leftJoin(
           pagos,
           and(
             eq(pagos.perfilId, perfilesResidente.id),
+            eq(pagos.fraccionamientoId, fraccionamientos.id),
             eq(pagos.estado, 'pagado'),
             eq(pagos.mes, periodo.mes),
             eq(pagos.anio, periodo.anio),
           ),
         )
-        .groupBy(circuitos.id, circuitos.nombre)
-        .orderBy(circuitos.nombre)
+        .where(eq(fraccionamientos.activo, true))
+        .groupBy(fraccionamientos.id, fraccionamientos.nombre)
+        .orderBy(fraccionamientos.nombre)
       : [];
 
     const totalResidentes = residentesRow?.total ?? 0;
@@ -561,8 +564,8 @@ export const operacionRouter = router({
       },
       cortesPendientes: cortesPendientes?.total ?? 0,
       reconexionesPendientes: reconexionesPendientes?.total ?? 0,
-      porCircuito: porCircuitoRows.map((row) => ({
-        circuitoId: row.circuitoId,
+      porFraccionamiento: porFraccionamientoRows.map((row) => ({
+        fraccionamientoId: row.fraccionamientoId,
         nombre: row.nombre,
         ingresosMes: row.ingresosMes ?? 0,
         residentesActivos: row.residentes ?? 0,

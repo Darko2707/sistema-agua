@@ -1,10 +1,21 @@
 /* eslint-disable no-restricted-imports -- legacy router boundary; migrate queries to repositories incrementally. */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, count, eq, inArray, sql } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 
 import { db } from '@/db';
-import { auditoria, circuitos, fraccionamientoMetodosPago, fraccionamientos } from '@/db/schema';
+import {
+  auditoria,
+  cargosServicios,
+  fraccionamientoMetodosPago,
+  fraccionamientos,
+  ordenesTrabajo,
+  pagos,
+  perfilesResidente,
+  session,
+  suscripcionesFraccionamiento,
+  user,
+} from '@/db/schema';
 import { encryptToken } from '@/lib/crypto';
 import { router, publicProcedure, roleProcedure } from '../trpc';
 
@@ -37,13 +48,10 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 export const fraccionamientosRouter = router({
-  // During the transition, only expose tenants that have an active legacy
-  // circuit equivalent. This prevents registrations without operations.
   listarPublicos: publicProcedure.query(async () => db
     .select({ id: fraccionamientos.id, nombre: fraccionamientos.nombre })
     .from(fraccionamientos)
-    .innerJoin(circuitos, eq(circuitos.fraccionamientoId, fraccionamientos.id))
-    .where(and(eq(fraccionamientos.activo, true), eq(circuitos.activo, true)))
+    .where(eq(fraccionamientos.activo, true))
     .orderBy(fraccionamientos.nombre)),
 
   listar: roleProcedure('admin').query(async () => db
@@ -65,7 +73,6 @@ export const fraccionamientosRouter = router({
       eq(fraccionamientoMetodosPago.proveedor, 'mercado_pago'),
       eq(fraccionamientoMetodosPago.activo, true),
     ))
-    .where(eq(fraccionamientos.activo, true))
     .orderBy(fraccionamientos.nombre)),
 
   crear: roleProcedure('admin')
@@ -168,6 +175,69 @@ export const fraccionamientosRouter = router({
       });
       return { ok: true };
     }),
+
+  cambiarEstado: roleProcedure('admin')
+    .input(z.object({ fraccionamientoId: z.string().uuid(), activo: z.boolean() }))
+    .mutation(async ({ ctx, input }) => db.transaction(async (tx) => {
+      const [updated] = await tx.update(fraccionamientos).set({
+        activo: input.activo,
+        updatedAt: new Date(),
+      }).where(eq(fraccionamientos.id, input.fraccionamientoId)).returning({
+        id: fraccionamientos.id,
+        nombre: fraccionamientos.nombre,
+        activo: fraccionamientos.activo,
+      });
+      if (!updated) throw new TRPCError({ code: 'NOT_FOUND', message: 'Fraccionamiento no encontrado' });
+      if (!input.activo) {
+        const usuariosDelFraccionamiento = tx.select({ id: user.id })
+          .from(user)
+          .where(eq(user.fraccionamientoId, updated.id));
+        await tx.delete(session).where(inArray(session.userId, usuariosDelFraccionamiento));
+      }
+      await tx.insert(auditoria).values({
+        actorId: ctx.user.id,
+        accion: input.activo ? 'fraccionamiento.activado' : 'fraccionamiento.desactivado',
+        entidad: 'fraccionamientos',
+        entidadId: updated.id,
+        detalle: { nombre: updated.nombre },
+      });
+      return updated;
+    })),
+
+  eliminar: roleProcedure('admin')
+    .input(z.object({ fraccionamientoId: z.string().uuid() }))
+    .mutation(async ({ ctx, input }) => db.transaction(async (tx) => {
+      const [tenant] = await tx.select({ id: fraccionamientos.id, nombre: fraccionamientos.nombre })
+        .from(fraccionamientos).where(eq(fraccionamientos.id, input.fraccionamientoId)).limit(1);
+      if (!tenant) throw new TRPCError({ code: 'NOT_FOUND', message: 'Fraccionamiento no encontrado' });
+
+      const [[usuarios], [perfiles], [pagosExistentes], [cargos], [ordenes]] = await Promise.all([
+        tx.select({ total: count() }).from(user).where(eq(user.fraccionamientoId, tenant.id)),
+        tx.select({ total: count() }).from(perfilesResidente).where(eq(perfilesResidente.fraccionamientoId, tenant.id)),
+        tx.select({ total: count() }).from(pagos).where(eq(pagos.fraccionamientoId, tenant.id)),
+        tx.select({ total: count() }).from(cargosServicios).where(eq(cargosServicios.fraccionamientoId, tenant.id)),
+        tx.select({ total: count() }).from(ordenesTrabajo).where(eq(ordenesTrabajo.fraccionamientoId, tenant.id)),
+      ]);
+      if ([usuarios, perfiles, pagosExistentes, cargos, ordenes].some(row => Number(row?.total ?? 0) > 0)) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'No se puede eliminar un fraccionamiento con usuarios u operaciones. Desactivalo para bloquearlo.',
+        });
+      }
+
+      await tx.delete(suscripcionesFraccionamiento).where(eq(suscripcionesFraccionamiento.fraccionamientoId, tenant.id));
+      const [deleted] = await tx.delete(fraccionamientos).where(eq(fraccionamientos.id, tenant.id))
+        .returning({ id: fraccionamientos.id });
+      if (!deleted) throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'No se pudo eliminar el fraccionamiento' });
+      await tx.insert(auditoria).values({
+        actorId: ctx.user.id,
+        accion: 'fraccionamiento.eliminado',
+        entidad: 'fraccionamientos',
+        entidadId: tenant.id,
+        detalle: { nombre: tenant.nombre },
+      });
+      return { ok: true };
+    })),
 
   actualizarMercadoPago: roleProcedure('admin')
     .input(z.object({

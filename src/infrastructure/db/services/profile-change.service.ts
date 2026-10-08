@@ -196,14 +196,14 @@ export class ProfileChangeService {
     const nuevos = proposed(snapshot(perfil), parsed.data);
     validateOwnership(nuevos);
 
-    const circuitoActual = await db.query.circuitos.findFirst({
-      where: (c, { eq }) => eq(c.id, perfil.circuitoId),
-      columns: { id: true, representanteId: true, fraccionamientoId: true },
+    const fraccionamientoActual = await db.query.fraccionamientos.findFirst({
+      where: (f, { eq }) => eq(f.id, perfil.fraccionamientoId!),
+      columns: { id: true, representanteId: true, activo: true },
     });
-    if (!circuitoActual) {
+    if (!fraccionamientoActual?.activo) {
       throw new TRPCError({ code: 'CONFLICT', message: 'El fraccionamiento de la solicitud ya no es valido' });
     }
-    if (input.actorRole === 'representante' && circuitoActual.representanteId !== input.actorId) {
+    if (input.actorRole === 'representante' && fraccionamientoActual.representanteId !== input.actorId) {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'Solo el representante del fraccionamiento puede aprobar cambios' });
     }
 

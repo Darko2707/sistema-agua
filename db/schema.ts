@@ -294,7 +294,8 @@ export const perfilesResidente = pgTable('perfiles_residente', {
   telefono:     text('telefono').notNull(),
   sexo:         sexoEnum('sexo').notNull(),
   tenencia:     tenenciaEnum('tenencia').notNull(),
-  circuitoId:   uuid('circuito_id').notNull().references(() => circuitos.id),
+  // Los perfiles nuevos pertenecen directamente al fraccionamiento.
+  circuitoId:   uuid('circuito_id').references(() => circuitos.id),
   edificio:             text('edificio').notNull(),
   departamento:         text('departamento').notNull(),
   nombrePropietario:    text('nombre_propietario'),
@@ -395,7 +396,7 @@ export const mercadoPagoPaymentIntents = pgTable('mercado_pago_payment_intents',
   // retirar los fixtures heredados que todavia representan datos previos.
   fraccionamientoId:    uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
   perfilId:             uuid('perfil_id').notNull().references(() => perfilesResidente.id),
-  circuitoId:           uuid('circuito_id').notNull().references(() => circuitos.id),
+  circuitoId:           uuid('circuito_id').references(() => circuitos.id),
   cargoServicioId:      uuid('cargo_servicio_id').references(() => cargosServicios.id, { onDelete: 'restrict' }),
   periodos:             jsonb('periodos').$type<MercadoPagoPaymentIntentPeriodo[]>().notNull(),
   total:                decimal('total', { precision: 10, scale: 2 }).notNull(),
@@ -436,7 +437,7 @@ export const pagos = pgTable('pagos', {
   // retirar los fixtures heredados que todavia representan datos previos.
   fraccionamientoId:      uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
   perfilId:               uuid('perfil_id').references(() => perfilesResidente.id).notNull(),
-  circuitoId:             uuid('circuito_id').references(() => circuitos.id).notNull(),
+  circuitoId:             uuid('circuito_id').references(() => circuitos.id),
   representanteId:        text('representante_id').references(() => user.id, { onDelete: 'set null' }),
   mes:                    integer('mes').notNull(),
   anio:                   integer('anio').notNull(),

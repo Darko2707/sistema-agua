@@ -1,6 +1,9 @@
 import { cache } from 'react';
 import { initTRPC, TRPCError } from '@trpc/server';
 import { auth } from '@/lib/auth';
+import { db } from '@/db';
+import { fraccionamientos } from '@/db/schema';
+import { eq } from 'drizzle-orm';
 import { residenteRepo, circuitoRepo, userRepo } from '@/src/infrastructure/db/repositories';
 import {
   VerificarAccesoService,
@@ -102,6 +105,15 @@ export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
   if (!ctx.user) throw new TRPCError({ code: 'UNAUTHORIZED' });
   if (ctx.user.role !== 'admin' && !ctx.user.fraccionamientoId) {
     throw new TRPCError({ code: 'FORBIDDEN', message: 'La cuenta aún no tiene un fraccionamiento asignado' });
+  }
+  if (ctx.user.role !== 'admin' && ctx.user.fraccionamientoId) {
+    const [fraccionamiento] = await db.select({ activo: fraccionamientos.activo })
+      .from(fraccionamientos)
+      .where(eq(fraccionamientos.id, ctx.user.fraccionamientoId))
+      .limit(1);
+    if (!fraccionamiento?.activo) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'Tu fraccionamiento esta desactivado. Contacta al administrador.' });
+    }
   }
   try {
     await verificarAcceso(ctx.user.id, ctx.user.role);

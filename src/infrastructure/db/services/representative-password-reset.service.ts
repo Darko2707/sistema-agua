@@ -357,16 +357,12 @@ export class RepresentativePasswordResetService {
         .select({ id: perfilesResidente.id })
         .from(perfilesResidente)
         .innerJoin(users, eq(users.id, perfilesResidente.userId))
-        .innerJoin(circuitos, eq(circuitos.id, perfilesResidente.circuitoId))
         .where(and(
           eq(perfilesResidente.id, preliminaryChallenge.perfilId),
           eq(perfilesResidente.userId, preliminaryChallenge.userId),
-          eq(perfilesResidente.circuitoId, preliminaryChallenge.circuitoId),
           eq(users.id, preliminaryChallenge.userId),
           eligibleResidentAccountCondition(),
           isNull(users.deletedAt),
-          eq(circuitos.id, preliminaryChallenge.circuitoId),
-          eq(circuitos.activo, true),
         ))
         .limit(1)
         .for('update');

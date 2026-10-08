@@ -141,7 +141,7 @@ export async function processServiceCargoPayment(input: { reference: string; pay
         mercadoPagoPaymentId: pagos.mercadoPagoPaymentId,
       }).from(pagos).where(and(
         eq(pagos.perfilId, row.cargo.perfilId),
-        eq(pagos.circuitoId, row.perfil.circuitoId),
+        eq(pagos.fraccionamientoId, row.cargo.fraccionamientoId),
         eq(pagos.mes, row.cargo.mes),
         eq(pagos.anio, row.cargo.anio),
         eq(pagos.estado, 'pagado'),

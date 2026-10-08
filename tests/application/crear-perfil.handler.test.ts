@@ -64,6 +64,8 @@ const command: CrearPerfilCommand = {
   sexo: 'femenino',
   tenencia: 'propietario',
   circuitoId: circuitoActivo.id,
+  fraccionamientoId: '00000000-0000-4000-8000-000000000001',
+  diaCorte: 5,
   edificio: '  08  ',
   departamento: '  0314a  ',
 };
@@ -143,6 +145,7 @@ describe('CrearPerfilHandler', () => {
     expect(residenteRepo.create).toHaveBeenCalledWith({
       userId: 'user-new',
       circuitoId: circuitoActivo.id,
+      fraccionamientoId: '00000000-0000-4000-8000-000000000001',
       edificio: '8',
       departamento: '314A',
       estadoAgua: 'activo',

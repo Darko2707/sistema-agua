@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Building2, CheckCircle2, KeyRound, Loader2, Plus, Save, TriangleAlert, X } from 'lucide-react';
+import { ArrowLeft, Building2, CheckCircle2, KeyRound, Loader2, Plus, Power, Save, Trash2, TriangleAlert, X } from 'lucide-react';
 
 import { trpcReact } from '@/lib/trpc-react';
 import { Button } from '@/components/ui/button';
@@ -26,6 +26,8 @@ export default function FraccionamientosAdminPage() {
   const fraccionamientosQuery = trpcReact.fraccionamientos.listar.useQuery();
   const crearMutation = trpcReact.fraccionamientos.crear.useMutation();
   const mercadoPagoMutation = trpcReact.fraccionamientos.actualizarMercadoPago.useMutation();
+  const cambiarEstadoMutation = trpcReact.fraccionamientos.cambiarEstado.useMutation();
+  const eliminarMutation = trpcReact.fraccionamientos.eliminar.useMutation();
 
   async function crearFraccionamiento(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -70,6 +72,33 @@ export default function FraccionamientosAdminPage() {
       await fraccionamientosQuery.refetch();
     } catch (cause: unknown) {
       setErrorConfiguracion(cause instanceof Error ? cause.message : 'No se pudo guardar Mercado Pago');
+    }
+  }
+
+  async function cambiarEstado(fraccionamiento: { id: string; nombre: string; activo: boolean }) {
+    const accion = fraccionamiento.activo ? 'desactivar' : 'activar';
+    if (!window.confirm(`¿Deseas ${accion} “${fraccionamiento.nombre}”?${fraccionamiento.activo ? ' Sus usuarios no podrán ingresar, pagar ni crear cuentas.' : ''}`)) return;
+    setError(null);
+    setMensaje(null);
+    try {
+      await cambiarEstadoMutation.mutateAsync({ fraccionamientoId: fraccionamiento.id, activo: !fraccionamiento.activo });
+      setMensaje(`Fraccionamiento ${fraccionamiento.activo ? 'desactivado' : 'activado'} correctamente`);
+      await fraccionamientosQuery.refetch();
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : 'No se pudo actualizar el fraccionamiento');
+    }
+  }
+
+  async function eliminarFraccionamiento(fraccionamiento: { id: string; nombre: string }) {
+    if (!window.confirm(`¿Eliminar permanentemente “${fraccionamiento.nombre}”? Esta acción no se puede deshacer.`)) return;
+    setError(null);
+    setMensaje(null);
+    try {
+      await eliminarMutation.mutateAsync({ fraccionamientoId: fraccionamiento.id });
+      setMensaje('Fraccionamiento eliminado correctamente');
+      await fraccionamientosQuery.refetch();
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : 'No se pudo eliminar el fraccionamiento');
     }
   }
 
@@ -156,13 +185,13 @@ export default function FraccionamientosAdminPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Fraccionamientos activos</CardTitle>
+            <CardTitle>Fraccionamientos</CardTitle>
           </CardHeader>
           <CardContent>
             {fraccionamientosQuery.isLoading ? (
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
             ) : fraccionamientos.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No hay fraccionamientos activos.</p>
+              <p className="text-sm text-muted-foreground">No hay fraccionamientos registrados.</p>
             ) : (
               <div className="divide-y rounded-lg border">
                 {fraccionamientos.map((fraccionamiento) => (
@@ -172,7 +201,9 @@ export default function FraccionamientosAdminPage() {
                       <p className="text-sm text-muted-foreground">/{fraccionamiento.slug}</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-medium text-emerald-700">Activo</span>
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${fraccionamiento.activo ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-700'}`}>
+                        {fraccionamiento.activo ? 'Activo' : 'Inactivo'}
+                      </span>
                       <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${
                         fraccionamiento.mercadoPagoConfigurado
                           ? 'bg-sky-100 text-sky-700'
@@ -184,6 +215,7 @@ export default function FraccionamientosAdminPage() {
                         type="button"
                         variant="outline"
                         size="sm"
+                        disabled={!fraccionamiento.activo}
                         onClick={() => {
                           setConfigurando({ id: fraccionamiento.id, nombre: fraccionamiento.nombre });
                           setAccessToken('');
@@ -192,6 +224,24 @@ export default function FraccionamientosAdminPage() {
                         }}
                       >
                         <KeyRound className="mr-2 h-4 w-4" />Configurar pago
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={cambiarEstadoMutation.isPending || eliminarMutation.isPending}
+                        onClick={() => cambiarEstado(fraccionamiento)}
+                      >
+                        <Power className="mr-2 h-4 w-4" />{fraccionamiento.activo ? 'Desactivar' : 'Activar'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        disabled={cambiarEstadoMutation.isPending || eliminarMutation.isPending}
+                        onClick={() => eliminarFraccionamiento(fraccionamiento)}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />Eliminar
                       </Button>
                     </div>
                   </div>

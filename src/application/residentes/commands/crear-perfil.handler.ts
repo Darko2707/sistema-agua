@@ -43,7 +43,9 @@ export type CrearPerfilCommand = {
   telefono: string;
   sexo: 'masculino' | 'femenino' | 'otro';
   tenencia: 'propietario' | 'inquilino';
-  circuitoId: string;
+  circuitoId?: string | null;
+  fraccionamientoId: string;
+  diaCorte: number;
   edificio: string;
   departamento: string;
   nombrePropietario?: string;
@@ -71,8 +73,8 @@ export class CrearPerfilHandler {
       throw error;
     }
 
-    const circuito = await circuitoRepo.findById(cmd.circuitoId);
-    if (!circuito?.activo) {
+    const circuito = cmd.circuitoId ? await circuitoRepo.findById(cmd.circuitoId) : null;
+    if (cmd.circuitoId && !circuito?.activo) {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'Este circuito está inhabilitado temporalmente.' });
     }
 
@@ -83,13 +85,14 @@ export class CrearPerfilHandler {
 
     // Si el alta ocurre después del corte mensual, el residente ya debe
     // aparecer en la lista operativa de cortes sin esperar al siguiente cron.
-    const estadoInicial = fechaNegocio().dia > getDiaCorte(circuito)
+    const estadoInicial = fechaNegocio().dia > (circuito ? getDiaCorte(circuito) : cmd.diaCorte)
       ? 'pendiente_corte'
       : 'activo';
     try {
       const perfil = await residenteRepo.create({
         userId:              cmd.userId,
-        circuitoId:          cmd.circuitoId,
+        circuitoId:          cmd.circuitoId ?? null,
+        fraccionamientoId:   cmd.fraccionamientoId,
         edificio:            vivienda.edificio,
         departamento:        vivienda.departamento,
         estadoAgua:          estadoInicial,

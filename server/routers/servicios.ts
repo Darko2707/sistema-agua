@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { db } from '@/db';
-import { auditoria, cargosServicios, circuitos, fraccionamientoServicios, perfilesResidente, perfilesServicios, servicios, tickets } from '@/db/schema';
+import { auditoria, cargosServicios, circuitos, fraccionamientos, fraccionamientoServicios, perfilesResidente, perfilesServicios, servicios, tickets } from '@/db/schema';
 import { subscriptionService } from '@/src/infrastructure/db/services/subscription.service';
 import { generateMonthlyServiceCharges } from '@/src/infrastructure/db/services/service-charge.service';
 import { residenteRepo } from '@/src/infrastructure/db/repositories';
@@ -279,11 +279,11 @@ export const serviciosRouter = router({
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Cargo fuera de tu fraccionamiento' });
       }
       if (ctx.user.role !== 'admin') {
-        const [circuito] = await db.select({ id: circuitos.id }).from(circuitos).where(and(
-          eq(circuitos.id, cargo.circuitoId),
-          ctx.user.role === 'representante' ? eq(circuitos.representanteId, ctx.user.id) : eq(circuitos.tesoreraId, ctx.user.id),
+        const [fraccionamiento] = await db.select({ id: fraccionamientos.id }).from(fraccionamientos).where(and(
+          eq(fraccionamientos.id, cargo.fraccionamientoId),
+          ctx.user.role === 'representante' ? eq(fraccionamientos.representanteId, ctx.user.id) : eq(fraccionamientos.tesoreraId, ctx.user.id),
         )).limit(1);
-        if (!circuito) throw new TRPCError({ code: 'FORBIDDEN', message: 'No puedes registrar cargos de este circuito' });
+        if (!fraccionamiento) throw new TRPCError({ code: 'FORBIDDEN', message: 'No puedes registrar cargos de este fraccionamiento' });
       }
       if (cargo.estado !== 'pendiente') throw new TRPCError({ code: 'CONFLICT', message: 'El cargo ya fue resuelto' });
       if (cargo.servicioClave === 'agua') {

@@ -3,7 +3,7 @@ import type { EstadoAgua } from '@/src/domain/agua/state-machine';
 export type ResidenteData = {
   id: string;
   userId: string;
-  circuitoId: string;
+  circuitoId?: string | null;
   fraccionamientoId?: string | null;
   edificio: string;
   departamento: string;

@@ -13,7 +13,7 @@ import { residenteRepo } from '@/src/infrastructure/db/repositories';
 import { calcularDesglosePago, calcularMontoServicio } from '@/src/domain/pagos/calculator';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
 import { db } from '@/db';
-import { cargosServicios, fraccionamientoServicios, servicios } from '@/db/schema';
+import { cargosServicios, fraccionamientoMetodosPago, fraccionamientoServicios, fraccionamientos, servicios } from '@/db/schema';
 import {
   persistMercadoPagoPaymentIntent,
   type MercadoPagoPaymentIntentPeriod,
@@ -176,13 +176,21 @@ export async function POST(request: Request) {
   } catch {
     return Response.json({ error: 'El fraccionamiento no tiene una suscripcion operativa vigente' }, { status: 403 });
   }
-  if (!perfil.circuito?.activo) {
-    return Response.json({ error: 'Tu circuito esta inhabilitado' }, { status: 403 });
-  }
-  if (!perfil.circuito?.representanteId) return Response.json({ error: 'Tu circuito no tiene representante asignado' }, { status: 400 });
-  const accessToken = decryptTokenSafe(perfil.circuito.mercadoPagoAccessToken);
+  const [configuracionCobro] = await db.select({
+    activo: fraccionamientos.activo,
+    montoMensual: fraccionamientos.montoMensual,
+    montoReconexion: fraccionamientos.montoReconexion,
+    accessToken: fraccionamientoMetodosPago.accessTokenCifrado,
+    collectorId: fraccionamientoMetodosPago.collectorId,
+  }).from(fraccionamientos).leftJoin(fraccionamientoMetodosPago, and(
+    eq(fraccionamientoMetodosPago.fraccionamientoId, fraccionamientos.id),
+    eq(fraccionamientoMetodosPago.proveedor, 'mercado_pago'),
+    eq(fraccionamientoMetodosPago.activo, true),
+  )).where(eq(fraccionamientos.id, perfil.fraccionamientoId)).limit(1);
+  if (!configuracionCobro?.activo) return Response.json({ error: 'El fraccionamiento esta desactivado' }, { status: 403 });
+  const accessToken = decryptTokenSafe(configuracionCobro.accessToken);
   if (!accessToken) {
-    return Response.json({ error: 'El representante de tu circuito aun no tiene Mercado Pago configurado' }, { status: 400 });
+    return Response.json({ error: 'El fraccionamiento aun no tiene Mercado Pago configurado' }, { status: 400 });
   }
 
   const mesesAdelantados = body.data.mesesAdelantados ?? 1;
@@ -196,8 +204,8 @@ export async function POST(request: Request) {
     ? await residenteRepo.findWaterServiceConfig(perfil.id)
     : null;
   const configAgua = servicioAgua ?? {
-    montoMensual: perfil.circuito.montoMensual,
-    montoReconexion: perfil.circuito.montoReconexion,
+    montoMensual: configuracionCobro.montoMensual,
+    montoReconexion: configuracionCobro.montoReconexion,
     conCorteFisico: true,
   };
   const montoMensual = calcularMontoServicio(configAgua);
@@ -221,7 +229,7 @@ export async function POST(request: Request) {
     fraccionamientoId: perfil.fraccionamientoId,
     periodos: intentPeriodos,
     total: desglose.total,
-    collectorId: perfil.circuito.mercadoPagoCollectorId,
+    collectorId: configuracionCobro.collectorId,
     now: checkoutNow,
   });
   const baseUrl = appUrl.replace(/\/$/, '');
@@ -242,7 +250,7 @@ export async function POST(request: Request) {
     perfilId: perfil.id,
     periodos: intentPeriodos,
     total: desglose.total,
-    collectorId: perfil.circuito.mercadoPagoCollectorId,
+    collectorId: configuracionCobro.collectorId,
     expiresAt: new Date(checkoutMetadata.expirationDateTo),
   });
 

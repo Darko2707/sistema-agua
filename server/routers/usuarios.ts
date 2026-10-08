@@ -80,21 +80,21 @@ export const usuariosRouter = router({
       if (ctx.user.role !== 'residente') {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Solo una cuenta de residente puede completar este registro' });
       }
-      const [circuito] = await db.select({ id: circuitos.id, fraccionamientoId: circuitos.fraccionamientoId })
-        .from(circuitos)
+      const [fraccionamiento] = await db.select({ id: fraccionamientos.id, diaCorte: fraccionamientos.diaCorte })
+        .from(fraccionamientos)
         .where(and(
-          eq(circuitos.fraccionamientoId, input.fraccionamientoId),
-          eq(circuitos.activo, true),
+          eq(fraccionamientos.id, input.fraccionamientoId),
+          eq(fraccionamientos.activo, true),
         ))
         .limit(1);
-      if (!circuito?.fraccionamientoId) {
+      if (!fraccionamiento) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'El fraccionamiento no está disponible para registro' });
       }
       if (ctx.user.fraccionamientoId && ctx.user.fraccionamientoId !== input.fraccionamientoId) {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'El fraccionamiento pertenece a otra cuenta' });
       }
       await subscriptionService.requireOperational(input.fraccionamientoId);
-      return crearPerfilHandler.execute({ userId: ctx.user.id, ...input, circuitoId: circuito.id });
+      return crearPerfilHandler.execute({ userId: ctx.user.id, ...input, diaCorte: fraccionamiento.diaCorte });
     }),
 
   miPerfil: authenticatedProcedure.query(async ({ ctx }) => {

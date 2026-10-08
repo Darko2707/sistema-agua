@@ -63,10 +63,19 @@ export const auth = betterAuth({
               eq(row.id, newSession.userId),
               isNull(row.deletedAt),
             ),
-            columns: { id: true },
+            columns: { id: true, role: true, fraccionamientoId: true },
           });
           if (!activeUser) {
             throw new APIError('FORBIDDEN', { message: 'Cuenta no disponible' });
+          }
+          if (activeUser.role !== 'admin' && activeUser.fraccionamientoId) {
+            const fraccionamiento = await db.query.fraccionamientos.findFirst({
+              where: (row, { eq }) => eq(row.id, activeUser.fraccionamientoId!),
+              columns: { activo: true },
+            });
+            if (!fraccionamiento?.activo) {
+              throw new APIError('FORBIDDEN', { message: 'El fraccionamiento esta desactivado' });
+            }
           }
         },
       },

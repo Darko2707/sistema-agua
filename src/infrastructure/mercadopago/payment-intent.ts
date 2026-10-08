@@ -96,7 +96,6 @@ export async function persistMercadoPagoPaymentIntent(
   if ((tipo === 'agua') !== input.externalReference.startsWith('agua_')) {
     throw new Error('El tipo no coincide con la referencia de la intencion');
   }
-  if (!perfil.circuitoId) throw new Error('El perfil no tiene circuito legado asignado');
   if (tipo === 'agua' && input.cargoServicioId) throw new Error('Una intencion de agua no puede tener cargo de servicio');
   if (tipo === 'servicio' && !input.cargoServicioId) throw new Error('La intencion de servicio requiere un cargo');
   if (tipo === 'servicio' && input.cargoServicioId) {
@@ -124,7 +123,7 @@ export async function persistMercadoPagoPaymentIntent(
       tipo,
       fraccionamientoId: perfil.fraccionamientoId,
       perfilId: input.perfilId,
-      circuitoId: perfil.circuitoId,
+      circuitoId: perfil.circuitoId ?? null,
       cargoServicioId: input.cargoServicioId ?? null,
       periodos: input.periodos,
       total: input.total,

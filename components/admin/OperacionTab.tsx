@@ -14,8 +14,8 @@ type Ejecutivo = {
   cortesPendientes: number;
   reconexionesPendientes: number;
   pagosPorMetodo: { efectivo: number; transferencia: number; mercadoPago: number };
-  porCircuito?: Array<{
-    circuitoId: string;
+  porFraccionamiento?: Array<{
+    fraccionamientoId: string;
     nombre: string;
     ingresosMes: number;
     residentesActivos: number;
@@ -140,15 +140,15 @@ export function OperacionTab() {
         </div>
       )}
 
-      {dashboard?.porCircuito && dashboard.porCircuito.length > 0 && (
+      {dashboard?.porFraccionamiento && dashboard.porFraccionamiento.length > 0 && (
         <Card>
-          <CardHeader><CardTitle>Operacion por circuito</CardTitle></CardHeader>
+          <CardHeader><CardTitle>Operacion por fraccionamiento</CardTitle></CardHeader>
           <CardContent>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b text-left text-xs text-muted-foreground">
-                    <th className="pb-2 pr-4 font-medium">Circuito</th>
+                    <th className="pb-2 pr-4 font-medium">Fraccionamiento</th>
                     <th className="pb-2 pr-4 text-right font-medium">Ingresos</th>
                     <th className="pb-2 pr-4 text-right font-medium">Pagos</th>
                     <th className="pb-2 pr-4 text-right font-medium">Residentes</th>
@@ -159,17 +159,17 @@ export function OperacionTab() {
                   </tr>
                 </thead>
                 <tbody>
-                  {dashboard.porCircuito.map((circuito) => (
-                    <tr key={circuito.circuitoId} className="border-b last:border-0">
-                      <td className="py-2 pr-4 font-medium">{circuito.nombre}</td>
-                      <td className="py-2 pr-4 text-right">${circuito.ingresosMes.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                      <td className="py-2 pr-4 text-right">{circuito.pagosMes}</td>
-                      <td className="py-2 pr-4 text-right">{circuito.residentesActivos}</td>
-                      <td className="py-2 pr-4 text-right">{circuito.morosidadPct}%</td>
-                      <td className="py-2 pr-4 text-right">{circuito.cortesPendientes}</td>
-                      <td className="py-2 pr-4 text-right">{circuito.reconexionesPendientes}</td>
+                  {dashboard.porFraccionamiento.map((fraccionamiento) => (
+                    <tr key={fraccionamiento.fraccionamientoId} className="border-b last:border-0">
+                      <td className="py-2 pr-4 font-medium">{fraccionamiento.nombre}</td>
+                      <td className="py-2 pr-4 text-right">${fraccionamiento.ingresosMes.toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                      <td className="py-2 pr-4 text-right">{fraccionamiento.pagosMes}</td>
+                      <td className="py-2 pr-4 text-right">{fraccionamiento.residentesActivos}</td>
+                      <td className="py-2 pr-4 text-right">{fraccionamiento.morosidadPct}%</td>
+                      <td className="py-2 pr-4 text-right">{fraccionamiento.cortesPendientes}</td>
+                      <td className="py-2 pr-4 text-right">{fraccionamiento.reconexionesPendientes}</td>
                       <td className="py-2 text-right">
-                        E {circuito.pagosPorMetodo.efectivo} / T {circuito.pagosPorMetodo.transferencia} / MP {circuito.pagosPorMetodo.mercadoPago}
+                        E {fraccionamiento.pagosPorMetodo.efectivo} / T {fraccionamiento.pagosPorMetodo.transferencia} / MP {fraccionamiento.pagosPorMetodo.mercadoPago}
                       </td>
                     </tr>
                   ))}

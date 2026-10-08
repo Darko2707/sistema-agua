@@ -6,6 +6,7 @@ export type UserData = {
   email: string;
   role:  UserRole;
   fraccionamientoId?: string | null;
+  fraccionamientoNombre?: string | null;
 };
 
 export type RepresentanteData = UserData & {

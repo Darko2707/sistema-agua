@@ -1,6 +1,6 @@
 import { and, count, eq, sql } from 'drizzle-orm';
 import { db } from '@/db';
-import { circuitos, fraccionamientoMetodosPago, fraccionamientoServicios, perfilesResidente, perfilesServicios, servicios, user } from '@/db/schema';
+import { circuitos, fraccionamientoMetodosPago, fraccionamientoServicios, fraccionamientos, perfilesResidente, perfilesServicios, servicios, user } from '@/db/schema';
 import type { EstadoAgua } from '@/src/domain/agua/state-machine';
 import type {
   ResidenteRepository,
@@ -46,7 +46,7 @@ function toData(row: typeof perfilesResidente.$inferSelect): ResidenteData {
   return {
     id:                  row.id,
     userId:              row.userId,
-    circuitoId:          row.circuitoId,
+    circuitoId:          row.circuitoId ?? null,
     fraccionamientoId:   row.fraccionamientoId ?? null,
     edificio:            row.edificio,
     departamento:        row.departamento,
@@ -232,19 +232,22 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
 
   async create(data: Omit<ResidenteData, 'id' | 'creadoEn'>): Promise<ResidenteData> {
     const row = await db.transaction(async (tx) => {
-      const [circuito] = await tx
-        .select({ fraccionamientoId: circuitos.fraccionamientoId })
-        .from(circuitos)
-        .where(eq(circuitos.id, data.circuitoId))
+      if (!data.fraccionamientoId) {
+        throw new Error('El fraccionamiento es obligatorio');
+      }
+      const [fraccionamiento] = await tx
+        .select({ id: fraccionamientos.id, activo: fraccionamientos.activo })
+        .from(fraccionamientos)
+        .where(eq(fraccionamientos.id, data.fraccionamientoId))
         .limit(1);
-      if (!circuito?.fraccionamientoId) {
-        throw new Error('El circuito no tiene fraccionamiento asignado');
+      if (!fraccionamiento?.activo) {
+        throw new Error('El fraccionamiento no esta disponible');
       }
 
       const [inserted] = await tx.insert(perfilesResidente).values({
         userId:              data.userId,
-        fraccionamientoId:   circuito.fraccionamientoId,
-        circuitoId:          data.circuitoId,
+        fraccionamientoId:   fraccionamiento.id,
+        circuitoId:          data.circuitoId ?? null,
         edificio:            data.edificio,
         departamento:        data.departamento,
         estadoAgua:          data.estadoAgua,
@@ -258,7 +261,7 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
       // El signup de Better Auth no conoce el circuito todavía. El alta del
       // perfil fija ambos vínculos en una sola transacción.
       await tx.update(user)
-        .set({ fraccionamientoId: circuito.fraccionamientoId, updatedAt: new Date() })
+        .set({ fraccionamientoId: fraccionamiento.id, updatedAt: new Date() })
         .where(eq(user.id, data.userId));
 
       // Agua es el servicio base: cada perfil nuevo lo recibe al registrarse.
@@ -267,7 +270,7 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
         .from(fraccionamientoServicios)
         .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
         .where(and(
-          eq(fraccionamientoServicios.fraccionamientoId, circuito.fraccionamientoId),
+          eq(fraccionamientoServicios.fraccionamientoId, fraccionamiento.id),
           eq(fraccionamientoServicios.estado, 'activo'),
           eq(servicios.clave, 'agua'),
         ))
@@ -275,7 +278,7 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
       if (agua) {
         await tx.insert(perfilesServicios).values({
           perfilId: inserted.id,
-          fraccionamientoId: circuito.fraccionamientoId,
+          fraccionamientoId: fraccionamiento.id,
           fraccionamientoServicioId: agua.id,
           estadoAgua: data.estadoAgua,
           activo: true,

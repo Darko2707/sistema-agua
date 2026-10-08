@@ -1,8 +1,8 @@
-import { eq, asc, isNull, and } from 'drizzle-orm';
+import { eq, asc, isNull, and, ne } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { TRPCError } from '@trpc/server';
 import { db } from '@/db';
-import { user, account, session, circuitos, fraccionamientoMetodosPago } from '@/db/schema';
+import { user, account, session, circuitos, fraccionamientos, fraccionamientoMetodosPago } from '@/db/schema';
 import { hashAccountPassword } from '@/lib/password';
 import type {
   UserRepository,
@@ -196,11 +196,29 @@ export class DrizzleUserRepository implements UserRepository {
   }
 
   async listarNonResidente(): Promise<UserData[]> {
-    const rows = await db.query.user.findMany({
-      where: (u, { ne, and, isNull }) => and(ne(u.role, 'residente'), isNull(u.deletedAt)),
-      orderBy: (u, { desc }) => [desc(u.createdAt)],
-    });
-    return rows.map(toData);
+    const rows = await db.select({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      fraccionamientoId: user.fraccionamientoId,
+      fraccionamientoNombre: fraccionamientos.nombre,
+    }).from(user)
+      .leftJoin(fraccionamientos, eq(fraccionamientos.id, user.fraccionamientoId))
+      .where(and(
+        ne(user.role, 'residente'),
+        ne(user.role, 'admin'),
+        isNull(user.deletedAt),
+      ))
+      .orderBy(asc(fraccionamientos.nombre), asc(user.name));
+    return rows.map(row => ({
+      id: row.id,
+      name: row.name,
+      email: row.email,
+      role: row.role as UserRole,
+      fraccionamientoId: row.fraccionamientoId ?? null,
+      fraccionamientoNombre: row.fraccionamientoNombre ?? null,
+    }));
   }
 
   async listarPorCircuito(circuitoId: string): Promise<UserData[]> {

@@ -55,6 +55,13 @@ export class SubscriptionService {
   }
 
   async requireOperational(fraccionamientoId: string): Promise<SubscriptionView> {
+    const [fraccionamiento] = await db.select({ activo: fraccionamientos.activo })
+      .from(fraccionamientos)
+      .where(eq(fraccionamientos.id, fraccionamientoId))
+      .limit(1);
+    if (!fraccionamiento?.activo) {
+      throw new TRPCError({ code: 'FORBIDDEN', message: 'El fraccionamiento esta desactivado' });
+    }
     const current = await this.current(fraccionamientoId);
     if (!current || !current.puedeOperar) {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'El fraccionamiento no tiene una suscripcion operativa vigente' });
