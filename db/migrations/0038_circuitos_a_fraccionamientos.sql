@@ -24,13 +24,15 @@ BEGIN
     RAISE EXCEPTION 'No se puede migrar: hay residentes con tenant distinto a su perfil';
   END IF;
 
-  -- Las credenciales legacy de circuito no se copian a una fila cifrada.
+  -- Solo se puede trasladar un token legacy si ya esta cifrado. Nunca se
+  -- copia texto plano entre tenants durante una migracion.
   IF EXISTS (
     SELECT 1 FROM circuitos
     WHERE mercado_pago_access_token IS NOT NULL
       AND btrim(mercado_pago_access_token) <> ''
+      AND mercado_pago_access_token !~ '^[0-9a-f]{24}:[0-9a-f]{32}:[0-9a-f]+$'
   ) THEN
-    RAISE EXCEPTION 'No se puede migrar: hay credenciales legacy de Mercado Pago por circuito';
+    RAISE EXCEPTION 'No se puede migrar: hay una credencial legacy de Mercado Pago sin cifrar';
   END IF;
 END $$;
 --> statement-breakpoint
@@ -106,8 +108,8 @@ JOIN "fraccionamientos" f ON f."slug" = 'fracc-' || replace(c."id"::text, '-', '
 ON CONFLICT ("circuito_id") DO NOTHING;
 --> statement-breakpoint
 
--- Replica la configuración del fraccionamiento origen para que cada nuevo
--- fraccionamiento mantenga los servicios y el medio de pago que ya usaba.
+-- Replica la configuracion de servicios del fraccionamiento origen para que
+-- cada nuevo fraccionamiento mantenga su catalogo operativo.
 INSERT INTO "fraccionamiento_servicios" (
   "fraccionamiento_id", "servicio_id", "estado", "monto_mensual", "monto_reconexion", "configuracion", "creado_en", "actualizado_en"
 )
@@ -120,10 +122,41 @@ ON CONFLICT ("fraccionamiento_id", "servicio_id") DO NOTHING;
 INSERT INTO "fraccionamiento_metodos_pago" (
   "fraccionamiento_id", "proveedor", "access_token_cifrado", "collector_id", "activo", "creado_en", "actualizado_en"
 )
-SELECT m."fraccionamiento_id", mp."proveedor", mp."access_token_cifrado", mp."collector_id", mp."activo", now(), now()
+SELECT
+  m."fraccionamiento_id",
+  'mercado_pago',
+  c."mercado_pago_access_token",
+  c."mercado_pago_collector_id",
+  true,
+  now(),
+  now()
 FROM "circuitos_fraccionamientos_migracion" m
-JOIN "fraccionamiento_metodos_pago" mp ON mp."fraccionamiento_id" = m."fraccionamiento_origen_id"
-ON CONFLICT ("fraccionamiento_id", "proveedor") DO NOTHING;
+JOIN "circuitos" c ON c."id" = m."circuito_id"
+WHERE c."mercado_pago_access_token" IS NOT NULL
+  AND btrim(c."mercado_pago_access_token") <> ''
+ON CONFLICT ("fraccionamiento_id", "proveedor") DO UPDATE SET
+  "access_token_cifrado" = EXCLUDED."access_token_cifrado",
+  "collector_id" = EXCLUDED."collector_id",
+  "activo" = true,
+  "actualizado_en" = now();
+--> statement-breakpoint
+
+-- Una vez que el valor cifrado y el collector estan en el fraccionamiento
+-- destino, se elimina la copia legacy del circuito para evitar credenciales
+-- compartidas entre los nuevos tenants.
+UPDATE "circuitos" c
+SET "mercado_pago_access_token" = NULL,
+    "mercado_pago_collector_id" = NULL,
+    "updated_at" = now()
+FROM "circuitos_fraccionamientos_migracion" m
+JOIN "fraccionamiento_metodos_pago" mp
+  ON mp."fraccionamiento_id" = m."fraccionamiento_id"
+ AND mp."proveedor" = 'mercado_pago'
+WHERE m."circuito_id" = c."id"
+  AND c."mercado_pago_access_token" IS NOT NULL
+  AND btrim(c."mercado_pago_access_token") <> ''
+  AND mp."access_token_cifrado" = c."mercado_pago_access_token"
+  AND mp."collector_id" IS NOT DISTINCT FROM c."mercado_pago_collector_id";
 --> statement-breakpoint
 
 INSERT INTO "suscripciones_fraccionamiento" (
