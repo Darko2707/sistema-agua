@@ -26,7 +26,7 @@ import { profileChangeService } from '@/src/infrastructure/db/services/profile-c
 import { subscriptionService } from '@/src/infrastructure/db/services/subscription.service';
 import { db } from '@/db';
 import { and, eq, inArray } from 'drizzle-orm';
-import { asignacionesCircuito, auditoria, circuitos, fraccionamientos, fraccionamientoServicios, perfilesResidente, user } from '@/db/schema';
+import { asignacionesCircuito, auditoria, fraccionamientos, fraccionamientoServicios, perfilesResidente, user } from '@/db/schema';
 
 const telefono10 = z.string().regex(/^\d{10}$/, 'El telefono debe contener exactamente 10 digitos');
 

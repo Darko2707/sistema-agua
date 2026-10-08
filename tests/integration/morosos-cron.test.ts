@@ -21,7 +21,7 @@ import { nanoid } from 'nanoid';
 import { eq, and, inArray, notInArray } from 'drizzle-orm';
 
 import { db } from '@/db';
-import { user, circuitos, perfilesResidente, pagos } from '@/db/schema';
+import { user, fraccionamientos, perfilesResidente, pagos } from '@/db/schema';
 import { residenteRepo, pagoRepo } from '@/src/infrastructure/db/repositories';
 
 // ── Fixture IDs ────────────────────────────────────────────────────────────────
@@ -30,7 +30,7 @@ const suffix = nanoid(8);
 const FX = {
   repId:    `test-rep-${suffix}`,
   repEmail: `rep.${suffix}@integration-test.local`,
-  circId:   '' as string,
+  fraccionamientoId: '' as string,
 
   // Each resident covers a distinct edge case:
   resA_id: `test-resA-${suffix}`,  // activo, sin pago              → debe marcarse
@@ -60,11 +60,11 @@ beforeAll(async () => {
     id: FX.repId, name: 'Rep Morosos', email: FX.repEmail,
     role: 'representante',
   });
-  const [circ] = await db.insert(circuitos).values({
-    nombre: `Circ-Morosos-${suffix}`, representanteId: FX.repId,
+  const [fraccionamiento] = await db.insert(fraccionamientos).values({
+    nombre: `Fracc-Morosos-${suffix}`, slug: `fracc-morosos-${suffix}`, representanteId: FX.repId,
     montoMensual: '100.00', montoReconexion: '300.00', activo: true,
-  }).returning({ id: circuitos.id });
-  FX.circId = circ.id;
+  }).returning({ id: fraccionamientos.id });
+  FX.fraccionamientoId = fraccionamiento.id;
 
   async function seedRes(
     id: string,
@@ -73,10 +73,10 @@ beforeAll(async () => {
     depto: string,
   ) {
     await db.insert(user).values({
-      id, name: `Res ${depto}`, email, role: 'residente',
+      id, name: `Res ${depto}`, email, role: 'residente', fraccionamientoId: FX.fraccionamientoId,
     });
     const [p] = await db.insert(perfilesResidente).values({
-      userId: id, telefono: '5500000000', sexo: 'otro', tenencia: 'propietario',
+      userId: id, fraccionamientoId: FX.fraccionamientoId, telefono: '5500000000', sexo: 'otro', tenencia: 'propietario',
       edificio: '999991', departamento: String(Number(depto)), estadoAgua: estado,
     }).returning({ id: perfilesResidente.id });
     return p.id;
@@ -130,9 +130,8 @@ afterAll(async () => {
   try {
     if (perfIds.length) await db.delete(pagos).where(inArray(pagos.perfilId, perfIds));
     await db.delete(user).where(inArray(user.id, resIds));
-    await db.update(circuitos).set({ representanteId: null }).where(eq(circuitos.id, FX.circId));
     await db.delete(user).where(eq(user.id, FX.repId));
-    await db.delete(circuitos).where(eq(circuitos.id, FX.circId));
+    await db.delete(fraccionamientos).where(eq(fraccionamientos.id, FX.fraccionamientoId));
   } catch (e) {
     console.error('Teardown failed:', e);
   }

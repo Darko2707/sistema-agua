@@ -237,32 +237,6 @@ export const passwordResetCodes = pgTable('password_reset_codes', {
     .where(sql`${t.usedAt} IS NULL`),
   index('idx_password_reset_codes_representante').on(t.representanteId, t.createdAt),
 ]);
-export const circuitos = pgTable('circuitos', {
-  id:                     uuid('id').defaultRandom().primaryKey(),
-  nombre:                 text('nombre').notNull(),
-  // Nullable during the backfill window; migration 0024 enforces NOT NULL in DB.
-  // Nullable in the TypeScript model for isolated legacy/integration fixtures;
-  // migration 0030 enforces NOT NULL in the production database after backfill.
-  fraccionamientoId:      uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
-  representanteId:        text('representante_id').references(() => user.id),
-  tesoreraId:             text('tesorera_id').references(() => user.id),
-  montoMensual:           decimal('monto_mensual', { precision: 10, scale: 2 }).notNull().default('50.00'),
-  montoReconexion:        decimal('monto_reconexion', { precision: 10, scale: 2 }).notNull().default('300.00'),
-  diaCorte:               integer('dia_corte').notNull().default(5),
-  mercadoPagoAccessToken: text('mercado_pago_access_token'),
-  mercadoPagoCollectorId: text('mercado_pago_collector_id'),
-  activo:                 boolean('activo').notNull().default(true),
-  updatedAt:              timestamp('updated_at').notNull().defaultNow(),
-}, (t) => [
-  index('idx_circuitos_fraccionamiento').on(t.fraccionamientoId),
-  index('idx_circuitos_activos_dia_corte').on(t.diaCorte).where(sql`${t.activo} = true`),
-  uniqueIndex('uq_circuitos_representante_unico').on(t.representanteId).where(sql`${t.representanteId} IS NOT NULL`),
-  uniqueIndex('uq_circuitos_tesorera_unica').on(t.tesoreraId).where(sql`${t.tesoreraId} IS NOT NULL`),
-  uniqueIndex('uq_circuitos_tenant_nombre').on(t.fraccionamientoId, t.nombre),
-  uniqueIndex('uq_circuitos_tenant_id').on(t.id, t.fraccionamientoId),
-  check('chk_circuitos_dia_corte', sql`${t.diaCorte} BETWEEN 1 AND 28`),
-]);
-
 // Asignaciones explícitas para personal operativo. Un usuario puede tener
 // varios circuitos, pero únicamente dentro de su propio fraccionamiento.
 export const asignacionesCircuito = pgTable('asignaciones_circuito', {
@@ -694,15 +668,7 @@ export const userRelations = relations(user, ({ one, many }) => ({
   perfil: one(perfilesResidente, {
     fields: [user.id], references: [perfilesResidente.userId],
   }),
-  circuitoRepresentado: many(circuitos),
   pushSubscriptions: many(pushSubscriptions),
-}));
-
-export const circuitosRelations = relations(circuitos, ({ many, one }) => ({
-  representante: one(user, {
-    fields: [circuitos.representanteId],
-    references: [user.id],
-  }),
 }));
 
 export const gastosCircuitoRelations = relations(gastosCircuito, ({ one }) => ({

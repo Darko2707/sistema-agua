@@ -14,7 +14,7 @@ import { nanoid } from 'nanoid';
 import { eq, and, inArray } from 'drizzle-orm';
 
 import { db } from '@/db';
-import { user, circuitos, perfilesResidente, pagos, tickets } from '@/db/schema';
+import { user, fraccionamientos, perfilesResidente, pagos, tickets } from '@/db/schema';
 import { ProcesarPagoMpHandler } from '@/src/application/pagos/commands/procesar-pago-mp.handler';
 import { residenteRepo, pagoRepo } from '@/src/infrastructure/db/repositories';
 import { parseExternalReference } from '@/src/infrastructure/mercadopago/parser';
@@ -28,7 +28,7 @@ const FX = {
   resId:     `test-res-${suffix}`,
   repEmail:  `test.rep.${suffix}@integration-test.local`,
   resEmail:  `test.res.${suffix}@integration-test.local`,
-  circId:    '' as string,
+  fraccionamientoId: '' as string,
   perfilId:  '' as string,
 };
 
@@ -43,23 +43,23 @@ beforeAll(async () => {
     role: 'representante',
   });
 
-  const [circ] = await db.insert(circuitos).values({
-    nombre:                 `Circuito Integ-${suffix}`,
+  const [fraccionamiento] = await db.insert(fraccionamientos).values({
+    nombre:                 `Fraccionamiento Integ-${suffix}`,
+    slug:                   `fracc-integ-${suffix}`,
     representanteId:        FX.repId,
     montoMensual:           '100.00',
     montoReconexion:        '300.00',
-    mercadoPagoCollectorId: `col-${suffix}`,
     activo:                  true,
-  }).returning({ id: circuitos.id });
-  FX.circId = circ.id;
+  }).returning({ id: fraccionamientos.id });
+  FX.fraccionamientoId = fraccionamiento.id;
 
   await db.insert(user).values({
     id: FX.resId, name: 'Test Residente', email: FX.resEmail,
-    role: 'residente',
+    role: 'residente', fraccionamientoId: FX.fraccionamientoId,
   });
 
   const [perfil] = await db.insert(perfilesResidente).values({
-    userId:       FX.resId,
+    userId:       FX.resId, fraccionamientoId: FX.fraccionamientoId,
     telefono:     '5500000000',
     sexo:         'otro',
     tenencia:     'propietario',
@@ -89,12 +89,8 @@ afterAll(async () => {
     // 2. Residente user → cascades to perfilesResidente
     await db.delete(user).where(eq(user.id, FX.resId));
 
-    // 3. Clear FK before deleting representante
-    await db.update(circuitos).set({ representanteId: null }).where(eq(circuitos.id, FX.circId));
     await db.delete(user).where(eq(user.id, FX.repId));
-
-    // 4. Circuito (now has no FK references)
-    await db.delete(circuitos).where(eq(circuitos.id, FX.circId));
+    await db.delete(fraccionamientos).where(eq(fraccionamientos.id, FX.fraccionamientoId));
   } catch (e) {
     console.error('Integration test teardown failed:', e);
   }
