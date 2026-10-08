@@ -16,20 +16,20 @@ type Tesorera = {
   id: string;
   name: string;
   email: string;
-  circuito: {
+  fraccionamiento: {
     id: string;
     nombre: string | null;
   } | null;
 };
 
 type FormState = {
-  circuitoId: string;
+  fraccionamientoId: string;
   mercadoPagoAccessToken: string;
   mercadoPagoCollectorId: string;
 };
 
 const emptyForm: FormState = {
-  circuitoId: '',
+  fraccionamientoId: '',
   mercadoPagoAccessToken: '',
   mercadoPagoCollectorId: '',
 };
@@ -44,23 +44,20 @@ export default function AdminTesorerasPage() {
   const [mensaje,  setMensaje]  = useState<string | null>(null);
 
   const tesorerasQuery = trpcReact.usuarios.listarTesoreras.useQuery();
-  const circuitosQuery = trpcReact.circuitos.listar.useQuery();
+  const fraccionamientosQuery = trpcReact.fraccionamientos.listar.useQuery();
 
   const tesoreras = tesorerasQuery.data ?? [];
   const cargando  = tesorerasQuery.isLoading;
 
   // Circuitos disponibles: sin tesorera o el circuito actual de la que se edita
-  const circuitosDisponibles = useMemo(() => {
-    const circuitos = circuitosQuery.data ?? [];
-    return circuitos.filter(c => !c.tesoreraId || c.tesoreraId === editando?.id);
-  }, [circuitosQuery.data, editando]);
+  const fraccionamientosDisponibles = useMemo(() => fraccionamientosQuery.data ?? [], [fraccionamientosQuery.data]);
 
-  const actualizarMut = trpcReact.usuarios.actualizarTesorera.useMutation();
+  const asignarMut = trpcReact.usuarios.asignarTesorera.useMutation();
 
   function abrirEditar(tes: Tesorera) {
     setEditando(tes);
     setForm({
-      circuitoId: tes.circuito?.id ?? '',
+      fraccionamientoId: tes.fraccionamiento?.id ?? '',
       mercadoPagoAccessToken: '',
       mercadoPagoCollectorId: '',
     });
@@ -81,14 +78,15 @@ export default function AdminTesorerasPage() {
       return;
     }
     try {
-      await actualizarMut.mutateAsync({
-        id:         editando.id,
-        circuitoId: form.circuitoId || null,
+      if (!form.fraccionamientoId) throw new Error('Selecciona un fraccionamiento');
+      await asignarMut.mutateAsync({
+        userId: editando.id,
+        fraccionamientoId: form.fraccionamientoId,
       });
       setMensaje('Configuración guardada correctamente');
       setEditando(null);
       void utils.usuarios.listarTesoreras.invalidate();
-      void utils.circuitos.listar.invalidate();
+      void utils.fraccionamientos.listar.invalidate();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Error al guardar');
     }
@@ -102,7 +100,7 @@ export default function AdminTesorerasPage() {
           <div>
             <h1 className="text-3xl font-bold">Tesorera/o</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Asigna circuitos para cada tesorero/a.
+              Asigna fraccionamientos para cada tesorero/a.
             </p>
           </div>
           <Button variant="outline" onClick={() => router.push('/admin')}>
@@ -141,24 +139,24 @@ export default function AdminTesorerasPage() {
                   <TableRow>
                     <TableHead>Nombre</TableHead>
                     <TableHead>Email</TableHead>
-                    <TableHead>Circuito</TableHead>
+                    <TableHead>Fraccionamiento</TableHead>
                     <TableHead className="w-28 text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {tesoreras.map((tes) => {
-                    const tieneMp = !!tes.circuito?.mercadoPagoCollectorId;
+                    const tieneMp = !!tes.fraccionamiento?.mercadoPagoCollectorId;
                     return (
                       <TableRow key={tes.id}>
                         <TableCell className="font-medium">{tes.name}</TableCell>
                         <TableCell className="text-muted-foreground">{tes.email}</TableCell>
                         <TableCell>
-                          {tes.circuito?.nombre ?? (
+                          {tes.fraccionamiento?.nombre ?? (
                             <span className="text-muted-foreground italic">Sin asignar</span>
                           )}
                         </TableCell>
                         <TableCell>
-                          {tes.circuito ? (
+                          {tes.fraccionamiento ? (
                             tieneMp ? (
                               <span className="inline-flex items-center gap-1 text-sm text-green-700">
                                 <CheckCircle className="h-4 w-4" />Configurado
@@ -203,15 +201,15 @@ export default function AdminTesorerasPage() {
 
             <div className="space-y-4">
               <div>
-                <label className="mb-2 block text-sm font-medium">Circuito asignado</label>
+                <label className="mb-2 block text-sm font-medium">Fraccionamiento asignado</label>
                 <select
-                  value={form.circuitoId}
-                  onChange={e => setForm(p => ({ ...p, circuitoId: e.target.value }))}
+                  value={form.fraccionamientoId}
+                  onChange={e => setForm(p => ({ ...p, fraccionamientoId: e.target.value }))}
                   className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm"
                 >
                   <option value="">Sin circuito</option>
-                  {circuitosDisponibles.map(c => (
-                    <option key={c.id} value={c.id}>{c.fraccionamientoNombre ? `${c.fraccionamientoNombre} · ` : ''}{c.nombre}</option>
+                  {fraccionamientosDisponibles.map(f => (
+                    <option key={f.id} value={f.id}>{f.nombre}</option>
                   ))}
                 </select>
               </div>
@@ -251,9 +249,9 @@ export default function AdminTesorerasPage() {
 
             <div className="mt-6 flex justify-end gap-2">
               <Button variant="outline" onClick={cerrarModal}>Cancelar</Button>
-              <Button onClick={guardar} disabled={actualizarMut.isPending}>
+              <Button onClick={guardar} disabled={asignarMut.isPending}>
                 <Save className="mr-2 h-4 w-4" />
-                {actualizarMut.isPending ? 'Guardando...' : 'Guardar'}
+                {asignarMut.isPending ? 'Guardando...' : 'Guardar'}
               </Button>
             </div>
           </div>

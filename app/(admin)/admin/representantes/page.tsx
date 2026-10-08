@@ -15,7 +15,7 @@ type Representante = {
   id: string;
   name: string;
   email: string;
-  circuito: {
+  fraccionamiento: {
     id: string;
     nombre: string | null;
   } | null;
@@ -26,27 +26,24 @@ export default function AdminRepresentantesPage() {
   const utils  = trpcReact.useUtils();
 
   const [editando,     setEditando]     = useState<Representante | null>(null);
-  const [circuitoSel,  setCircuitoSel]  = useState('');
+  const [fraccionamientoSel, setFraccionamientoSel] = useState('');
   const [error,        setError]        = useState<string | null>(null);
   const [mensaje,      setMensaje]      = useState<string | null>(null);
 
   const repsQuery      = trpcReact.usuarios.listarRepresentantes.useQuery();
-  const circuitosQuery = trpcReact.circuitos.listar.useQuery();
+  const fraccionamientosQuery = trpcReact.fraccionamientos.listar.useQuery();
 
   const representantes = repsQuery.data      ?? [];
   const cargando       = repsQuery.isLoading;
 
   // Circuitos libres + el circuito actual del representante que se edita
-  const circuitosDisponibles = useMemo(() => {
-    const circuitos = circuitosQuery.data ?? [];
-    return circuitos.filter(c => !c.representanteId || c.representanteId === editando?.id);
-  }, [circuitosQuery.data, editando]);
+  const fraccionamientosDisponibles = useMemo(() => fraccionamientosQuery.data ?? [], [fraccionamientosQuery.data]);
 
-  const actualizarMut = trpcReact.usuarios.actualizarRepresentante.useMutation();
+  const asignarMut = trpcReact.usuarios.asignarRepresentante.useMutation();
 
   function abrirEditar(rep: Representante) {
     setEditando(rep);
-    setCircuitoSel(rep.circuito?.id ?? '');
+    setFraccionamientoSel(rep.fraccionamiento?.id ?? '');
     setError(null);
     setMensaje(null);
   }
@@ -61,14 +58,15 @@ export default function AdminRepresentantesPage() {
     setError(null);
     setMensaje(null);
     try {
-      await actualizarMut.mutateAsync({
-        id: editando.id,
-        circuitoId: circuitoSel || null,
+      if (!fraccionamientoSel) throw new Error('Selecciona un fraccionamiento');
+      await asignarMut.mutateAsync({
+        userId: editando.id,
+        fraccionamientoId: fraccionamientoSel,
       });
-      setMensaje('Circuito asignado correctamente');
+      setMensaje('Fraccionamiento asignado correctamente');
       setEditando(null);
       void utils.usuarios.listarRepresentantes.invalidate();
-      void utils.circuitos.listar.invalidate();
+      void utils.fraccionamientos.listar.invalidate();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Error al guardar');
     }
@@ -82,7 +80,7 @@ export default function AdminRepresentantesPage() {
           <div>
             <h1 className="text-3xl font-bold">Representantes</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Asigna circuitos a los representantes del sistema.
+              Asigna fraccionamientos a los representantes del sistema.
             </p>
           </div>
           <Button variant="outline" onClick={() => router.push('/admin')}>
@@ -121,7 +119,7 @@ export default function AdminRepresentantesPage() {
                   <TableRow>
                     <TableHead>Nombre</TableHead>
                     <TableHead>Email</TableHead>
-                    <TableHead>Circuito asignado</TableHead>
+                    <TableHead>Fraccionamiento asignado</TableHead>
                     <TableHead className="w-28 text-right">Acciones</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -131,13 +129,13 @@ export default function AdminRepresentantesPage() {
                       <TableCell className="font-medium">{rep.name}</TableCell>
                       <TableCell className="text-muted-foreground">{rep.email}</TableCell>
                       <TableCell>
-                        {rep.circuito?.nombre ?? (
+                        {rep.fraccionamiento?.nombre ?? (
                           <span className="text-muted-foreground italic">Sin asignar</span>
                         )}
                       </TableCell>
                       <TableCell className="text-right">
                         <Button size="sm" variant="outline" onClick={() => abrirEditar(rep)}>
-                          Asignar circuito
+                          Asignar fraccionamiento
                         </Button>
                       </TableCell>
                     </TableRow>
@@ -155,7 +153,7 @@ export default function AdminRepresentantesPage() {
           <div className="w-full max-w-md rounded-lg bg-background p-6 shadow-xl">
             <div className="mb-5 flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-semibold">Asignar circuito</h2>
+                <h2 className="text-lg font-semibold">Asignar fraccionamiento</h2>
                 <p className="text-sm text-muted-foreground">{editando.name}</p>
               </div>
               <Button size="icon" variant="ghost" onClick={cerrarModal}>
@@ -165,15 +163,15 @@ export default function AdminRepresentantesPage() {
 
             <div className="space-y-4">
               <div>
-                <label className="mb-2 block text-sm font-medium">Circuito</label>
+                <label className="mb-2 block text-sm font-medium">Fraccionamiento</label>
                 <select
-                  value={circuitoSel}
-                  onChange={e => setCircuitoSel(e.target.value)}
+                  value={fraccionamientoSel}
+                  onChange={e => setFraccionamientoSel(e.target.value)}
                   className="h-9 w-full rounded-lg border border-input bg-background px-3 text-sm"
                 >
                   <option value="">Sin circuito</option>
-                  {circuitosDisponibles.map(c => (
-                    <option key={c.id} value={c.id}>{c.fraccionamientoNombre ? `${c.fraccionamientoNombre} · ` : ''}{c.nombre}</option>
+                  {fraccionamientosDisponibles.map(f => (
+                    <option key={f.id} value={f.id}>{f.nombre}</option>
                   ))}
                 </select>
               </div>
@@ -185,9 +183,9 @@ export default function AdminRepresentantesPage() {
 
             <div className="mt-6 flex justify-end gap-2">
               <Button variant="outline" onClick={cerrarModal}>Cancelar</Button>
-              <Button onClick={guardar} disabled={actualizarMut.isPending}>
+              <Button onClick={guardar} disabled={asignarMut.isPending}>
                 <Save className="mr-2 h-4 w-4" />
-                {actualizarMut.isPending ? 'Guardando...' : 'Guardar'}
+                {asignarMut.isPending ? 'Guardando...' : 'Guardar'}
               </Button>
             </div>
           </div>

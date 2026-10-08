@@ -65,6 +65,7 @@ function toConRelaciones(row: WithRelaciones): ResidenteConRelaciones {
     ...toData(row),
     usuario: row.usuario ?? null,
     circuito: row.circuito ?? null,
+    fraccionamiento: row.fraccionamiento ?? null,
     pagos:    row.pagos ?? [],
     cortes:   row.cortes ?? [],
   };
@@ -147,7 +148,7 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
   async findByCircuito(circuitoId: string): Promise<ResidenteConRelaciones[]> {
     const rows = await db.query.perfilesResidente.findMany({
       where: (p, { eq }) => eq(p.circuitoId, circuitoId),
-      with: { usuario: true, circuito: { columns: circuitoSafeColumns }, pagos: true, cortes: true },
+      with: { usuario: true, circuito: { columns: circuitoSafeColumns }, fraccionamiento: { columns: fraccionamientoCobroColumns }, pagos: true, cortes: true },
       orderBy: (p, { desc }) => [desc(p.creadoEn)],
     });
     return rows.map(r => toConRelaciones(r as WithRelaciones));
@@ -155,7 +156,7 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
 
   async findAll(): Promise<ResidenteConRelaciones[]> {
     const rows = await db.query.perfilesResidente.findMany({
-      with: { usuario: true, circuito: { columns: circuitoSafeColumns }, pagos: true, cortes: true },
+      with: { usuario: true, circuito: { columns: circuitoSafeColumns }, fraccionamiento: { columns: fraccionamientoCobroColumns }, pagos: true, cortes: true },
       orderBy: (p, { desc }) => [desc(p.creadoEn)],
     });
     return rows.map(r => toConRelaciones(r as WithRelaciones));
@@ -289,15 +290,13 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
     return toData(row);
   }
 
-  async findByTenantPaginated(fraccionamientoId: string, circuitoId: string | undefined, page: number, pageSize: number): Promise<PaginatedResult<ResidenteConRelaciones>> {
+  async findByTenantPaginated(fraccionamientoId: string, page: number, pageSize: number): Promise<PaginatedResult<ResidenteConRelaciones>> {
     const offset = (page - 1) * pageSize;
-    const where = circuitoId
-      ? and(eq(perfilesResidente.fraccionamientoId, fraccionamientoId), eq(perfilesResidente.circuitoId, circuitoId))
-      : eq(perfilesResidente.fraccionamientoId, fraccionamientoId);
+    const where = eq(perfilesResidente.fraccionamientoId, fraccionamientoId);
     const [rows, [{ total }]] = await Promise.all([
       db.query.perfilesResidente.findMany({
-        where: (p, { and, eq }) => circuitoId ? and(eq(p.fraccionamientoId, fraccionamientoId), eq(p.circuitoId, circuitoId)) : eq(p.fraccionamientoId, fraccionamientoId),
-        with: { usuario: true, circuito: { columns: circuitoSafeColumns }, pagos: true, cortes: true },
+        where: (p, { eq }) => eq(p.fraccionamientoId, fraccionamientoId),
+        with: { usuario: true, fraccionamiento: true, pagos: true, cortes: true },
         orderBy: (p, { desc }) => [desc(p.creadoEn)],
         limit: pageSize,
         offset,
@@ -321,10 +320,10 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
       WITH candidatos AS MATERIALIZED (
         SELECT perfil.id
         FROM perfiles_residente AS perfil
-        INNER JOIN circuitos AS circuito ON circuito.id = perfil.circuito_id
+        INNER JOIN fraccionamientos AS fraccionamiento ON fraccionamiento.id = perfil.fraccionamiento_id
         WHERE perfil.estado_agua = 'activo'
-          AND circuito.activo = true
-          AND circuito.dia_corte < ${diaActual}
+          AND fraccionamiento.activo = true
+          AND fraccionamiento.dia_corte < ${diaActual}
           AND EXISTS (
             SELECT 1
             FROM perfiles_servicios AS perfil_servicio

@@ -675,7 +675,7 @@ export const pushDeliveries = pgTable('push_deliveries', {
 export const ingresosAdicionales = pgTable('ingresos_adicionales', {
   id:              uuid('id').defaultRandom().primaryKey(),
   fraccionamientoId: uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
-  circuitoId:      uuid('circuito_id').notNull().references(() => circuitos.id, { onDelete: 'cascade' }),
+  circuitoId:      uuid('circuito_id').references(() => circuitos.id, { onDelete: 'set null' }),
   representanteId: text('representante_id').notNull().references(() => user.id),
   concepto:        text('concepto').notNull(),
   monto:           decimal('monto', { precision: 10, scale: 2 }).notNull(),
@@ -690,7 +690,7 @@ export const ingresosAdicionales = pgTable('ingresos_adicionales', {
 export const gastosCircuito = pgTable('gastos_circuito', {
   id:              uuid('id').defaultRandom().primaryKey(),
   fraccionamientoId: uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
-  circuitoId:      uuid('circuito_id').notNull().references(() => circuitos.id, { onDelete: 'cascade' }),
+  circuitoId:      uuid('circuito_id').references(() => circuitos.id, { onDelete: 'set null' }),
   representanteId: text('representante_id').notNull().references(() => user.id),
   concepto:        text('concepto').notNull(),
   monto:           decimal('monto', { precision: 10, scale: 2 }).notNull(),

@@ -165,7 +165,7 @@ export function AdminDashboard() {
 
         {/* Paneles */}
         {tab === 'resumen' && (
-          <ResumenTab porCircuito={resumen?.porCircuito ?? []} />
+          <ResumenTab porFraccionamiento={resumen?.porFraccionamiento ?? []} />
         )}
         {tab === 'métricas' && <MetricasTab />}
         {tab === 'personal' && (

@@ -1,19 +1,19 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { Resumen } from '@/hooks/useAdmin';
 
-type Props = { porCircuito: Resumen['porCircuito'] };
+type Props = { porFraccionamiento: Resumen['porFraccionamiento'] };
 
-export function ResumenTab({ porCircuito }: Props) {
+export function ResumenTab({ porFraccionamiento }: Props) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Estado por circuito</CardTitle>
+        <CardTitle>Estado por fraccionamiento</CardTitle>
       </CardHeader>
       <CardContent className="space-y-5">
-        {porCircuito.length === 0 && (
-          <p className="py-8 text-center text-muted-foreground">Sin datos de circuitos.</p>
+        {porFraccionamiento.length === 0 && (
+          <p className="py-8 text-center text-muted-foreground">Sin datos de fraccionamientos.</p>
         )}
-        {porCircuito.map((c) => {
+        {porFraccionamiento.map((c) => {
           const pct = c.total > 0 ? Math.round((c.pagados / c.total) * 100) : 0;
           return (
             <div key={c.nombre} className="space-y-2">

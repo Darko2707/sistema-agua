@@ -114,8 +114,8 @@ export type MetricasAdmin = {
   totalResidentes: number;
   morosidadPct: number;
   reconexionesMes: number;
-  porCircuito: Array<{
-    circuitoId: string;
+  porFraccionamiento: Array<{
+    fraccionamientoId: string;
     nombre: string;
     totalRecaudado: number;
     pagosRecibidos: number;

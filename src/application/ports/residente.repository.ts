@@ -61,6 +61,7 @@ export type CorteRef = { activo: boolean | null };
 export type ResidenteConRelaciones = ResidenteData & {
   usuario?: UsuarioRef | null;
   circuito?: CircuitoRef | null;
+  fraccionamiento?: FraccionamientoCobroRef | null;
   pagos?: PagoRef[];
   cortes?: CorteRef[];
 };
@@ -83,7 +84,7 @@ export interface ResidenteRepository {
   findByCircuito(circuitoId: string): Promise<ResidenteConRelaciones[]>;
   findAll(): Promise<ResidenteConRelaciones[]>;
   findAllPaginated(page: number, pageSize: number): Promise<PaginatedResult<ResidenteConRelaciones>>;
-  findByTenantPaginated?(fraccionamientoId: string, circuitoId: string | undefined, page: number, pageSize: number): Promise<PaginatedResult<ResidenteConRelaciones>>;
+  findByTenantPaginated?(fraccionamientoId: string, page: number, pageSize: number): Promise<PaginatedResult<ResidenteConRelaciones>>;
   findByCircuitoPaginated(circuitoId: string, page: number, pageSize: number): Promise<PaginatedResult<ResidenteConRelaciones>>;
   findByEstado(estado: EstadoAgua): Promise<ResidenteConRelaciones[]>;
   findByCircuitoYEstado(circuitoId: string, estado: EstadoAgua): Promise<ResidenteConRelaciones[]>;

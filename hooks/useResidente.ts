@@ -9,12 +9,12 @@ export function useResidenteActual() {
   });
 }
 
-// Lista de residentes de un circuito (admin/rep), filtrada localmente por circuito
-export function useResidentesPorCircuito(circuitoId: string) {
-  const query = trpcReact.usuarios.listarResidentes.useQuery(undefined, {
-    enabled: !!circuitoId,
+// Lista de residentes de un fraccionamiento (admin/rep).
+export function useResidentesPorFraccionamiento(fraccionamientoId: string) {
+  const query = trpcReact.usuarios.listarResidentes.useQuery({ fraccionamientoId }, {
+    enabled: !!fraccionamientoId,
   });
-  const data = query.data?.items?.filter((r) => r.circuito?.id === circuitoId) ?? [];
+  const data = query.data?.items ?? [];
   return { ...query, data };
 }
 

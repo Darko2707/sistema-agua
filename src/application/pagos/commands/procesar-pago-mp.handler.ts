@@ -8,7 +8,8 @@ import type { ProcesarPagoMpCommand } from './procesar-pago-mp.command';
 type Deps = {
   residenteRepo: ResidenteRepository;
   pagoRepo: PagoRepository;
-  circuitoRepo: CircuitoRepository;
+  /** @deprecated Compatibility only; it is intentionally not consulted. */
+  circuitoRepo?: CircuitoRepository;
 };
 
 function toCents(value: string | number): number {
@@ -45,7 +46,7 @@ export class ProcesarPagoMpHandler {
   constructor(private deps: Deps) {}
 
   async execute(cmd: ProcesarPagoMpCommand): Promise<ProcesarPagoMpResult> {
-    const { residenteRepo, pagoRepo, circuitoRepo } = this.deps;
+    const { residenteRepo, pagoRepo } = this.deps;
 
     if (!cmd.mercadoPagoPaymentId.trim()) {
       throw new Error('El paymentId de Mercado Pago es obligatorio');
@@ -74,14 +75,8 @@ export class ProcesarPagoMpHandler {
     if (cmd.fraccionamientoId && perfil.fraccionamientoId !== cmd.fraccionamientoId) {
       throw new Error('El perfil cambio de fraccionamiento durante la confirmacion del pago');
     }
-    if (cmd.circuitoId && perfil.circuitoId !== cmd.circuitoId) {
-      throw new Error('El perfil cambio de circuito durante la confirmacion del pago');
-    }
-
-    const circuito = cmd.circuitoId ? await circuitoRepo.findById(cmd.circuitoId) : null;
-    if (cmd.circuitoId && !circuito) throw new Error('Circuito no encontrado');
-    const representanteId = cmd.representanteId ?? circuito?.representanteId ?? null;
-    const collectorId = cmd.mercadoPagoCollectorId ?? circuito?.mercadoPagoCollectorId ?? null;
+    const representanteId = cmd.representanteId ?? null;
+    const collectorId = cmd.mercadoPagoCollectorId ?? null;
 
     // En referencias nuevas los importes vienen congelados en la intencion
     // persistida; en referencias legacy fueron reconstruidos desde la
@@ -103,7 +98,7 @@ export class ProcesarPagoMpHandler {
       return {
         perfilId:               cmd.perfilId,
         fraccionamientoId:      perfil.fraccionamientoId ?? undefined,
-        circuitoId:             circuito?.id ?? null,
+        circuitoId:             null,
         representanteId,
         mes:                    periodo.mes,
         anio:                   periodo.anio,
@@ -127,7 +122,7 @@ export class ProcesarPagoMpHandler {
     const result = await pagoRepo.createMercadoPagoBatchWithLock({
       perfilId: cmd.perfilId,
       fraccionamientoId: perfil.fraccionamientoId ?? undefined,
-      circuitoId: circuito?.id ?? null,
+      circuitoId: null,
       paymentIntentReference: cmd.paymentIntentReference,
       mercadoPagoPaymentId: cmd.mercadoPagoPaymentId,
       pagos,

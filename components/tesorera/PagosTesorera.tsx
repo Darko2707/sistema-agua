@@ -98,7 +98,7 @@ export function PagosTesorera() {
     },
   });
 
-  const circuito   = query.data?.circuito;
+  const fraccionamiento = query.data?.fraccionamiento;
   const residentes = useMemo(() => query.data?.residentes ?? [], [query.data?.residentes]);
   const cargando   = query.isLoading;
   const periodoActual = query.data?.periodoActual;
@@ -217,10 +217,10 @@ export function PagosTesorera() {
     );
   }
 
-  if (!circuito) {
+  if (!fraccionamiento) {
     return (
       <div style={{ background: C.goldBg, border: `1px solid #F0D080`, borderRadius: 16, padding: '20px 22px', color: '#7A5800', fontWeight: 600, fontFamily: FM }}>
-        No tienes un circuito asignado. Contacta al administrador.
+        No tienes un fraccionamiento asignado. Contacta al administrador.
       </div>
     );
   }
@@ -251,10 +251,10 @@ export function PagosTesorera() {
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, justifyContent: 'space-between', alignItems: 'flex-start' }}>
           <div>
             <div style={{ fontFamily: FS, fontSize: 17, fontWeight: 800, color: C.green }}>
-              {circuito.nombre}
+              {fraccionamiento.nombre}
             </div>
             <div style={{ fontSize: 12.5, color: C.textMuted, marginTop: 3 }}>
-              {periodoActual ? `${MESES[periodoActual.mes - 1]} ${periodoActual.anio}` : 'Mes actual'} · Cuota ${circuito.montoMensual} · Reconexión ${circuito.montoReconexion}
+              {periodoActual ? `${MESES[periodoActual.mes - 1]} ${periodoActual.anio}` : 'Mes actual'} · Cuota ${fraccionamiento.montoMensual} · Reconexión ${fraccionamiento.montoReconexion}
             </div>
           </div>
 
@@ -375,7 +375,7 @@ export function PagosTesorera() {
                     <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                       {r.estadoAgua === 'cortado' && (
                         <span style={{ fontSize: 11, color: C.danger, fontWeight: 600 }}>
-                          +${Number(circuito.montoReconexion).toFixed(0)} reconexión
+                          +${Number(fraccionamiento.montoReconexion).toFixed(0)} reconexión
                         </span>
                       )}
                       {!r.periodos.some(periodo => periodo.estado === 'disponible') && (

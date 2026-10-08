@@ -4,10 +4,9 @@ import { auth } from '@/lib/auth';
 import { db } from '@/db';
 import { fraccionamientos } from '@/db/schema';
 import { eq } from 'drizzle-orm';
-import { residenteRepo, circuitoRepo, userRepo } from '@/src/infrastructure/db/repositories';
+import { residenteRepo, userRepo } from '@/src/infrastructure/db/repositories';
 import {
   VerificarAccesoService,
-  CircuitoInhabilitadoError,
   PerfilIncompletoError,
   RolNoConfiguradoError,
 } from '@/src/application/acceso/verificar-acceso.service';
@@ -36,9 +35,6 @@ export type AuthUser = {
 export function mapDomainError(err: unknown): never {
   if (err instanceof TRPCError) throw err;
 
-  if (err instanceof CircuitoInhabilitadoError) {
-    throw new TRPCError({ code: 'FORBIDDEN', message: err.message });
-  }
   if (err instanceof PerfilIncompletoError) {
     throw new TRPCError({ code: 'FORBIDDEN', message: err.message });
   }
@@ -62,7 +58,7 @@ export function mapDomainError(err: unknown): never {
 // ── Circuit access guard ───────────────────────────────────────────────────────
 // Instantiated once at module load; React.cache() deduplicates within one
 // HTTP request batch — the service call runs at most once per (userId, role) pair.
-const accesService = new VerificarAccesoService({ residenteRepo, circuitoRepo });
+const accesService = new VerificarAccesoService({ residenteRepo });
 const verificarAcceso = cache((userId: string, role: UserRole) =>
   accesService.execute(userId, role),
 );

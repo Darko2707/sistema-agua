@@ -25,9 +25,9 @@ export async function encolarProximosCorte(fecha = new Date()) {
     WITH candidatos AS MATERIALIZED (
       SELECT perfil.id AS perfil_id, perfil.user_id
       FROM perfiles_residente AS perfil
-      INNER JOIN circuitos AS circuito ON circuito.id = perfil.circuito_id
-      WHERE circuito.activo = true
-        AND circuito.dia_corte = ${periodoCobro.dia}
+      INNER JOIN fraccionamientos AS fraccionamiento ON fraccionamiento.id = perfil.fraccionamiento_id
+      WHERE fraccionamiento.activo = true
+        AND fraccionamiento.dia_corte = ${periodoCobro.dia}
         AND perfil.estado_agua = 'activo'
         AND EXISTS (
           SELECT 1

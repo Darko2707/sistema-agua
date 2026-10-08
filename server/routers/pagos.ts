@@ -28,7 +28,7 @@ import { schedulePushDispatch } from '@/lib/push-dispatcher';
 
 const resolverCircuitoTesoreraService = new ResolverCircuitoTesoreraService({ circuitoRepo });
 
-const registrarPagoManualHandler = new RegistrarPagoManualHandler({ residenteRepo, pagoRepo, circuitoRepo });
+const registrarPagoManualHandler = new RegistrarPagoManualHandler({ residenteRepo, pagoRepo });
 const historialPagosHandler = new HistorialPagosHandler({ pagoRepo, residenteRepo });
 const resumenMesHandler = new ResumenMesHandler({ pagoRepo, residenteRepo, circuitoRepo });
 const metricasAdminHandler = new MetricasAdminHandler({ pagoRepo });
@@ -75,10 +75,36 @@ export const pagosRouter = router({
       metodo:   z.enum(['efectivo', 'transferencia']),
     }))
     .mutation(async ({ ctx, input }) => {
+      if (!ctx.user.fraccionamientoId) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes fraccionamiento asignado' });
+      }
+      const fraccionamiento = await db.query.fraccionamientos.findFirst({
+        where: (f, { and, eq }) => and(
+          eq(f.id, ctx.user.fraccionamientoId!),
+          eq(f.representanteId, ctx.user.id),
+          eq(f.activo, true),
+        ),
+        columns: { montoMensual: true, montoReconexion: true },
+      });
+      if (!fraccionamiento) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Tu fraccionamiento no esta disponible para cobros' });
+      }
+      const metodoPago = await db.query.fraccionamientoMetodosPago.findFirst({
+        where: (m, { and, eq }) => and(
+          eq(m.fraccionamientoId, ctx.user.fraccionamientoId!),
+          eq(m.proveedor, 'mercado_pago'),
+          eq(m.activo, true),
+        ),
+        columns: { collectorId: true },
+      });
       const result = await registrarPagoManualHandler.execute({
         perfilId:        input.perfilId,
         metodo:          input.metodo,
         representanteId: ctx.user.id,
+        fraccionamientoId: ctx.user.fraccionamientoId,
+        montoMensual: fraccionamiento.montoMensual,
+        montoReconexion: fraccionamiento.montoReconexion,
+        mercadoPagoCollectorId: metodoPago?.collectorId ?? null,
       });
       schedulePushDispatch();
       return result;
@@ -111,7 +137,11 @@ export const pagosRouter = router({
   }),
 
   resumenMes: roleProcedure('admin', 'representante').query(async ({ ctx }) => {
-    return resumenMesHandler.execute({ rol: ctx.user.role as 'admin' | 'representante', userId: ctx.user.id });
+    return resumenMesHandler.execute({
+      rol: ctx.user.role as 'admin' | 'representante',
+      userId: ctx.user.id,
+      fraccionamientoId: ctx.user.fraccionamientoId,
+    });
   }),
 
   metricasAdmin: roleProcedure('admin')
@@ -167,8 +197,16 @@ export const pagosRouter = router({
   listarResidentesParaPago: roleProcedure('tesorera').query(async ({ ctx }) => {
     const periodo = PeriodoVO.vigente();
     const periodoActual = { mes: periodo.mes, anio: periodo.anio };
-    const circuito = await resolverCircuitoTesoreraService.execute(ctx.user.id);
-    if (!circuito || !ctx.user.fraccionamientoId) return { circuito: null, periodoActual, residentes: [] };
+    if (!ctx.user.fraccionamientoId) return { fraccionamiento: null, periodoActual, residentes: [] };
+    const fraccionamiento = await db.query.fraccionamientos.findFirst({
+      where: (f, { and, eq }) => and(
+        eq(f.id, ctx.user.fraccionamientoId!),
+        eq(f.tesoreraId, ctx.user.id),
+        eq(f.activo, true),
+      ),
+      columns: { id: true, nombre: true, montoMensual: true, montoReconexion: true, representanteId: true },
+    });
+    if (!fraccionamiento) return { fraccionamiento: null, periodoActual, residentes: [] };
 
     const perfiles = await db.query.perfilesResidente.findMany({
       where:  (p, { eq }) => eq(p.fraccionamientoId, ctx.user.fraccionamientoId!),
@@ -182,11 +220,11 @@ export const pagosRouter = router({
     });
 
     return {
-      circuito: {
-        id:               circuito.id,
-        nombre:           circuito.nombre,
-        montoMensual:     circuito.montoMensual,
-        montoReconexion:  circuito.montoReconexion,
+      fraccionamiento: {
+        id:               fraccionamiento.id,
+        nombre:           fraccionamiento.nombre,
+        montoMensual:     fraccionamiento.montoMensual,
+        montoReconexion:  fraccionamiento.montoReconexion,
       },
       periodoActual,
       residentes: perfiles.map((p) => {
@@ -222,12 +260,14 @@ export const pagosRouter = router({
       meses:    mesesTesoreraSchema,
     }).strict())
     .mutation(async ({ ctx, input }) => {
-      const circuito = await resolverCircuitoTesoreraService.execute(ctx.user.id);
-      if (!circuito)        throw new TRPCError({ code: 'FORBIDDEN',   message: 'No tienes circuito asignado' });
-      if (!circuito.activo) throw new TRPCError({ code: 'FORBIDDEN',   message: 'Tu circuito está inhabilitado' });
       if (!ctx.user.fraccionamientoId) {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes fraccionamiento asignado' });
       }
+      const fraccionamiento = await db.query.fraccionamientos.findFirst({
+        where: (f, { and, eq }) => and(eq(f.id, ctx.user.fraccionamientoId!), eq(f.tesoreraId, ctx.user.id), eq(f.activo, true)),
+        columns: { montoMensual: true, montoReconexion: true, representanteId: true },
+      });
+      if (!fraccionamiento) throw new TRPCError({ code: 'FORBIDDEN', message: 'Tu fraccionamiento no esta disponible para cobros' });
 
       const perfil = await residenteRepo.findById(input.perfilId);
       if (!perfil || perfil.fraccionamientoId !== ctx.user.fraccionamientoId) {
@@ -244,13 +284,13 @@ export const pagosRouter = router({
       const fechaPago = new Date();
       const pagosLote = periodos.map((periodo, index) => {
         const incluyeReconexion = index === 0 && esReconexion;
-        const montoBase  = calcularMontoServicio(servicioAgua ?? { montoMensual: circuito.montoMensual, montoReconexion: circuito.montoReconexion, conCorteFisico: true }, { incluyeReconexion });
+        const montoBase  = calcularMontoServicio(servicioAgua ?? { montoMensual: fraccionamiento.montoMensual, montoReconexion: fraccionamiento.montoReconexion, conCorteFisico: true }, { incluyeReconexion });
         const desglose   = calcularDesgloseServicio(montoBase, 'manual');
         return {
           perfilId:               perfil.id,
           fraccionamientoId:      perfil.fraccionamientoId ?? undefined,
-          circuitoId:             circuito.id,
-          representanteId:        circuito.representanteId ?? null,
+          circuitoId:             null,
+          representanteId:        fraccionamiento.representanteId ?? null,
           mes:                    periodo.mes,
           anio:                   periodo.anio,
           monto:                  desglose.total,
@@ -260,7 +300,7 @@ export const pagosRouter = router({
           retencionIsr:           desglose.retencionIsr,
           retencionIva:           desglose.retencionIva,
           montoNetoRepresentante: desglose.montoNetoRepresentante,
-          mercadoPagoCollectorId: circuito.mercadoPagoCollectorId,
+          mercadoPagoCollectorId: null,
           estado:                 'pagado' as const,
           metodo:                 input.metodo,
           folio:                  FolioVO.generate().toString(),
@@ -328,12 +368,13 @@ export const pagosRouter = router({
     .mutation(async ({ ctx, input }) => {
       const perfil = await residenteRepo.findById(input.perfilId);
       if (!perfil) throw new TRPCError({ code: 'NOT_FOUND', message: 'Residente no encontrado' });
-      if (!perfil.circuitoId) throw new TRPCError({ code: 'BAD_REQUEST', message: 'El residente no tiene circuito asignado' });
-
-      const circuito = await circuitoRepo.findById(perfil.circuitoId);
-      if (!circuito) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Circuito no encontrado' });
       if (!perfil.fraccionamientoId) throw new TRPCError({ code: 'FORBIDDEN', message: 'El residente no tiene fraccionamiento asignado' });
       await subscriptionService.requireOperational(perfil.fraccionamientoId);
+      const fraccionamiento = await db.query.fraccionamientos.findFirst({
+        where: (f, { and, eq }) => and(eq(f.id, perfil.fraccionamientoId!), eq(f.activo, true)),
+        columns: { montoMensual: true, montoReconexion: true, representanteId: true },
+      });
+      if (!fraccionamiento) throw new TRPCError({ code: 'FORBIDDEN', message: 'El fraccionamiento no esta disponible para cobros' });
       const servicioAgua = residenteRepo.findWaterServiceConfig
         ? await residenteRepo.findWaterServiceConfig(perfil.id)
         : null;
@@ -341,13 +382,13 @@ export const pagosRouter = router({
       const loteId = randomUUID();
       const fechaPago = new Date();
       const pagosLote = input.meses.map(({ mes, anio }) => {
-        const montoBase = calcularMontoServicio(servicioAgua ?? { montoMensual: circuito.montoMensual, montoReconexion: circuito.montoReconexion, conCorteFisico: true });
+        const montoBase = calcularMontoServicio(servicioAgua ?? { montoMensual: fraccionamiento.montoMensual, montoReconexion: fraccionamiento.montoReconexion, conCorteFisico: true });
         const desglose  = calcularDesgloseServicio(montoBase, 'manual');
         return {
           perfilId:               perfil.id,
           fraccionamientoId:      perfil.fraccionamientoId ?? undefined,
-          circuitoId:             circuito.id,
-          representanteId:        circuito.representanteId ?? null,
+          circuitoId:             null,
+          representanteId:        fraccionamiento.representanteId ?? null,
           mes,
           anio,
           monto:                  desglose.total,
@@ -357,7 +398,7 @@ export const pagosRouter = router({
           retencionIsr:           desglose.retencionIsr,
           retencionIva:           desglose.retencionIva,
           montoNetoRepresentante: desglose.montoNetoRepresentante,
-          mercadoPagoCollectorId: circuito.mercadoPagoCollectorId,
+          mercadoPagoCollectorId: null,
           estado:                 'pagado' as const,
           metodo:                 input.metodo,
           folio:                  FolioVO.generate().toString(),

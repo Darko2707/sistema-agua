@@ -26,7 +26,7 @@ function safeFilenamePart(value: string): string {
     .replace(/[\r\n"]/g, '')
     .replace(/[^a-zA-Z0-9._-]+/g, '-')
     .replace(/^-+|-+$/g, '')
-    .slice(0, 80) || 'circuito';
+    .slice(0, 80) || 'fraccionamiento';
 }
 
 function montoDisponibleCircuito(pago: {
@@ -63,10 +63,14 @@ export async function GET(req: Request) {
 
   try {
 
-  const circuito = await db.query.circuitos.findFirst({
-    where: (c, { eq, and }) => and(eq(c.tesoreraId, session.user.id), eq(c.fraccionamientoId, dbUser.fraccionamientoId!)),
+  const fraccionamiento = await db.query.fraccionamientos.findFirst({
+    where: (f, { eq, and }) => and(
+      eq(f.id, dbUser.fraccionamientoId!),
+      eq(f.tesoreraId, session.user.id),
+      eq(f.activo, true),
+    ),
   });
-  if (!circuito) return new Response('Sin circuito asignado', { status: 404 });
+  if (!fraccionamiento) return new Response('Sin fraccionamiento activo asignado', { status: 404 });
 
   const url    = new URL(req.url);
   const orden  = (url.searchParams.get('orden') ?? 'edificio') as 'edificio' | 'nombre' | 'estado';
@@ -80,7 +84,7 @@ export async function GET(req: Request) {
 
   const residentes = await db.query.perfilesResidente.findMany({
     where: (p, { eq, and }) => {
-      const conds = [eq(p.circuitoId, circuito.id), eq(p.fraccionamientoId, dbUser.fraccionamientoId!)];
+      const conds = [eq(p.fraccionamientoId, fraccionamiento.id)];
       if (estadoFiltro)   conds.push(eq(p.estadoAgua, estadoFiltro));
       if (edificioFiltro) conds.push(eq(p.edificio, edificioFiltro));
       return and(...conds as [ReturnType<typeof eq>]);
@@ -193,12 +197,12 @@ export async function GET(req: Request) {
   }
 
   const xlsxBuffer = await generarReporteResidentesExcel({
-    circuito:   circuito.nombre,
+    circuito:   fraccionamiento.nombre,
     generadoEn: new Date(),
     residentes: ordenados,
   });
 
-  const nombre = safeFilenamePart(circuito.nombre);
+  const nombre = safeFilenamePart(fraccionamiento.nombre);
   return new Response(new Uint8Array(xlsxBuffer), {
     headers: {
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

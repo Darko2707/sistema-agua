@@ -1,11 +1,9 @@
 import { TRPCError } from '@trpc/server';
 import type { ResidenteRepository } from '../../ports/residente.repository';
-import type { CircuitoRepository } from '../../ports/circuito.repository';
 import type { PendientesCortQuery } from './pendientes-corte.query';
 
 type Deps = {
   residenteRepo: ResidenteRepository;
-  circuitoRepo: CircuitoRepository;
   findFraccionamientosAsignados: (userId: string) => Promise<string[]>;
 };
 
@@ -13,7 +11,7 @@ export class PendientesCorteHandler {
   constructor(private deps: Deps) {}
 
   async execute(query: PendientesCortQuery) {
-    const { residenteRepo, circuitoRepo } = this.deps;
+    const { residenteRepo } = this.deps;
 
     if (query.rol === 'admin') {
       return query.tipo === 'reconexion'
@@ -22,19 +20,21 @@ export class PendientesCorteHandler {
     }
 
     if (query.rol === 'representante') {
-      const circ = await circuitoRepo.findByRepresentante(query.userId);
-      if (!circ?.fraccionamientoId) return [];
+      if (!query.fraccionamientoId) return [];
       if (!residenteRepo.findByFraccionamientoYEstado) {
         throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Repositorio de residentes sin consulta por fraccionamiento' });
       }
-      return residenteRepo.findByFraccionamientoYEstado(circ.fraccionamientoId, 'pendiente_corte');
+      return residenteRepo.findByFraccionamientoYEstado(
+        query.fraccionamientoId,
+        query.tipo === 'reconexion' ? 'pendiente_reconexion' : 'pendiente_corte',
+      );
     }
 
     const fraccionamientosAsignados = await this.deps.findFraccionamientosAsignados(query.userId);
     if (fraccionamientosAsignados.length === 0) {
       throw new TRPCError({
         code:    'FORBIDDEN',
-        message: 'Esta cuenta de cuadrilla no tiene un circuito asignado ni una asignación operativa activa.',
+        message: 'Esta cuenta de cuadrilla no tiene un fraccionamiento asignado ni una asignación operativa activa.',
       });
     }
     if (!residenteRepo.findByFraccionamientoYEstado) {

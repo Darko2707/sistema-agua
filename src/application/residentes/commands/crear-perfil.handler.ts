@@ -1,17 +1,15 @@
 import { TRPCError } from '@trpc/server';
 import type { ResidenteRepository } from '../../ports/residente.repository';
-import type { CircuitoRepository } from '../../ports/circuito.repository';
 import { logger } from '@/lib/logger';
 import {
   normalizarVivienda,
   ViviendaInvalidaError,
 } from '@/src/domain/residente/vivienda';
-import { getDiaCorte } from '@/src/domain/pagos/constants';
 import { fechaNegocio } from '@/src/domain/shared/fecha-negocio';
 
 const VIVIENDA_UNIQUE_CONSTRAINT = 'uq_perfiles_residente_ubicacion';
 const VIVIENDA_OCUPADA_MESSAGE =
-  'Ese edificio y departamento ya tienen una cuenta registrada en este circuito. Verifica los datos o solicita apoyo a la administracion.';
+  'Ese edificio y departamento ya tienen una cuenta registrada en este fraccionamiento. Verifica los datos o solicita apoyo a la administracion.';
 
 function esConflictoDeVivienda(error: unknown): boolean {
   let current: unknown = error;
@@ -43,7 +41,6 @@ export type CrearPerfilCommand = {
   telefono: string;
   sexo: 'masculino' | 'femenino' | 'otro';
   tenencia: 'propietario' | 'inquilino';
-  circuitoId?: string | null;
   fraccionamientoId: string;
   diaCorte: number;
   edificio: string;
@@ -54,14 +51,13 @@ export type CrearPerfilCommand = {
 
 type Deps = {
   residenteRepo: ResidenteRepository;
-  circuitoRepo: CircuitoRepository;
 };
 
 export class CrearPerfilHandler {
   constructor(private deps: Deps) {}
 
   async execute(cmd: CrearPerfilCommand) {
-    const { residenteRepo, circuitoRepo } = this.deps;
+    const { residenteRepo } = this.deps;
 
     let vivienda: ReturnType<typeof normalizarVivienda>;
     try {
@@ -73,11 +69,6 @@ export class CrearPerfilHandler {
       throw error;
     }
 
-    const circuito = cmd.circuitoId ? await circuitoRepo.findById(cmd.circuitoId) : null;
-    if (cmd.circuitoId && !circuito?.activo) {
-      throw new TRPCError({ code: 'FORBIDDEN', message: 'Este circuito está inhabilitado temporalmente.' });
-    }
-
     const existente = await residenteRepo.findByUserId(cmd.userId);
     if (existente) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'Ya tienes un perfil registrado' });
@@ -85,13 +76,13 @@ export class CrearPerfilHandler {
 
     // Si el alta ocurre después del corte mensual, el residente ya debe
     // aparecer en la lista operativa de cortes sin esperar al siguiente cron.
-    const estadoInicial = fechaNegocio().dia > (circuito ? getDiaCorte(circuito) : cmd.diaCorte)
+    const estadoInicial = fechaNegocio().dia > cmd.diaCorte
       ? 'pendiente_corte'
       : 'activo';
     try {
       const perfil = await residenteRepo.create({
         userId:              cmd.userId,
-        circuitoId:          cmd.circuitoId ?? null,
+        circuitoId:          null,
         fraccionamientoId:   cmd.fraccionamientoId,
         edificio:            vivienda.edificio,
         departamento:        vivienda.departamento,

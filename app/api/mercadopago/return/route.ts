@@ -2,13 +2,13 @@ import {
   fetchVerifiedMercadoPagoPayment,
   MercadoPagoPaymentValidationError,
 } from '@/src/infrastructure/mercadopago/payment-verification';
-import { residenteRepo, pagoRepo, circuitoRepo } from '@/src/infrastructure/db/repositories';
+import { residenteRepo, pagoRepo } from '@/src/infrastructure/db/repositories';
 import { ProcesarPagoMpHandler } from '@/src/application/pagos/commands/procesar-pago-mp.handler';
 import { logger } from '@/lib/logger';
 import { schedulePushDispatch } from '@/lib/push-dispatcher';
 import { isServiceCargoReference, processServiceCargoPayment } from '@/src/infrastructure/mercadopago/service-cargo-payment';
 
-const procesarPagoMpHandler = new ProcesarPagoMpHandler({ residenteRepo, pagoRepo, circuitoRepo });
+const procesarPagoMpHandler = new ProcesarPagoMpHandler({ residenteRepo, pagoRepo });
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -41,7 +41,6 @@ export async function GET(request: Request) {
       const result = await procesarPagoMpHandler.execute({
         perfilId: verified.perfilId,
         fraccionamientoId: verified.fraccionamientoId,
-        circuitoId: verified.circuitoId,
         representanteId: verified.representanteId,
         paymentIntentReference: verified.paymentIntentReference,
         periodos: verified.periodos,

@@ -5,14 +5,12 @@ import { FolioVO } from '@/src/domain/pagos/folio.vo';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
 import type { ResidenteRepository } from '../../ports/residente.repository';
 import type { PagoRepository } from '../../ports/pago.repository';
-import type { CircuitoRepository } from '../../ports/circuito.repository';
 import { logger } from '@/lib/logger';
 import type { RegistrarPagoManualCommand } from './registrar-pago-manual.command';
 
 type Deps = {
   residenteRepo: ResidenteRepository;
   pagoRepo: PagoRepository;
-  circuitoRepo: CircuitoRepository;
 };
 
 export type RegistrarPagoManualResult = {
@@ -25,21 +23,11 @@ export class RegistrarPagoManualHandler {
   constructor(private deps: Deps) {}
 
   async execute(cmd: RegistrarPagoManualCommand): Promise<RegistrarPagoManualResult> {
-    const { residenteRepo, pagoRepo, circuitoRepo } = this.deps;
-
-    const miCircuito = await circuitoRepo.findByRepresentante(cmd.representanteId);
-    if (!miCircuito) {
-      throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes circuito asignado' });
-    }
-    if (!miCircuito.activo) {
-      throw new TRPCError({ code: 'FORBIDDEN', message: 'Tu circuito esta inhabilitado' });
-    }
+    const { residenteRepo, pagoRepo } = this.deps;
 
     const perfil = await residenteRepo.findById(cmd.perfilId);
-    const mismaFraccionamiento = miCircuito.fraccionamientoId && perfil?.fraccionamientoId
-      ? perfil.fraccionamientoId === miCircuito.fraccionamientoId
-      : perfil?.circuitoId === miCircuito.id;
-    if (!perfil || !mismaFraccionamiento) {
+    const fraccionamientoId = cmd.fraccionamientoId ?? perfil?.fraccionamientoId;
+    if (!perfil || !fraccionamientoId || perfil.fraccionamientoId !== fraccionamientoId) {
       throw new TRPCError({ code: 'NOT_FOUND', message: 'Residente no encontrado en tu fraccionamiento' });
     }
 
@@ -49,8 +37,8 @@ export class RegistrarPagoManualHandler {
       ? await this.deps.residenteRepo.findWaterServiceConfig(perfil.id)
       : null;
     const montoBase = calcularMontoServicio(servicioAgua ?? {
-      montoMensual: miCircuito.montoMensual,
-      montoReconexion: miCircuito.montoReconexion,
+      montoMensual: cmd.montoMensual ?? '50.00',
+      montoReconexion: cmd.montoReconexion ?? '300.00',
       conCorteFisico: true,
     }, { incluyeReconexion: esReconexion });
     const desglose = calcularDesgloseServicio(montoBase, 'manual');
@@ -59,7 +47,7 @@ export class RegistrarPagoManualHandler {
     const pago = await pagoRepo.createWithLock(perfil.id, {
       perfilId:               perfil.id,
       fraccionamientoId:      perfil.fraccionamientoId ?? undefined,
-      circuitoId:             miCircuito.id,
+      circuitoId:             null,
       representanteId:        cmd.representanteId,
       mes:                    periodo.mes,
       anio:                   periodo.anio,
@@ -70,7 +58,7 @@ export class RegistrarPagoManualHandler {
       retencionIsr:           desglose.retencionIsr,
       retencionIva:           desglose.retencionIva,
       montoNetoRepresentante: desglose.montoNetoRepresentante,
-      mercadoPagoCollectorId: miCircuito.mercadoPagoCollectorId,
+      mercadoPagoCollectorId: cmd.mercadoPagoCollectorId ?? null,
       estado:                 'pagado',
       metodo:                 cmd.metodo,
       folio,

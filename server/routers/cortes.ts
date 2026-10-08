@@ -9,7 +9,7 @@ import { ConfirmarCorteHandler } from '@/src/application/cortes/commands/confirm
 import { ConfirmarReconexionHandler } from '@/src/application/cortes/commands/confirmar-reconexion.handler';
 import { PendientesCorteHandler } from '@/src/application/cortes/queries/pendientes-corte.handler';
 import { CorteOperacionService } from '@/src/application/cortes/services/corte-operacion.service';
-import { residenteRepo, circuitoRepo } from '@/src/infrastructure/db/repositories';
+import { residenteRepo } from '@/src/infrastructure/db/repositories';
 import { DrizzleCorteOperacionDatabase } from '@/src/infrastructure/db/services/drizzle-corte-operacion.database';
 // eslint-disable-next-line no-restricted-imports
 import { db } from '@/db';
@@ -38,7 +38,7 @@ async function findFraccionamientosAsignados(userId: string): Promise<string[]> 
   return rows.map((row) => row.fraccionamientoId!);
 }
 
-const pendientesCorteHandler = new PendientesCorteHandler({ residenteRepo, circuitoRepo, findFraccionamientosAsignados });
+const pendientesCorteHandler = new PendientesCorteHandler({ residenteRepo, findFraccionamientosAsignados });
 
 async function assertPerfilDeCuadrilla(userId: string, perfilId: string, tenantId?: string | null): Promise<void> {
   const perfilObjetivo = await residenteRepo.findById(perfilId);
@@ -65,7 +65,7 @@ async function assertPerfilDeCuadrilla(userId: string, perfilId: string, tenantI
     ))
     .limit(1);
   if (!assignment) {
-    throw new TRPCError({ code: 'FORBIDDEN', message: 'No puedes operar fuera de tu circuito' });
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'No puedes operar fuera de tu fraccionamiento' });
   }
 }
 
@@ -76,6 +76,7 @@ export const cortesRouter = router({
       return pendientesCorteHandler.execute({
         rol: ctx.user.role as 'representante' | 'cuadrilla_cortes' | 'admin',
         userId: ctx.user.id,
+        fraccionamientoId: ctx.user.fraccionamientoId,
         tipo: 'corte',
       });
     }),
@@ -85,6 +86,7 @@ export const cortesRouter = router({
       return pendientesCorteHandler.execute({
         rol: ctx.user.role as 'cuadrilla_cortes' | 'admin',
         userId: ctx.user.id,
+        fraccionamientoId: ctx.user.fraccionamientoId,
         tipo: 'reconexion',
       });
     }),

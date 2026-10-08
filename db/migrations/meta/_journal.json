@@ -316,6 +316,13 @@
       "when": 1791417600000,
       "tag": "0044_asignaciones_por_fraccionamiento",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1791504000000,
+      "tag": "0045_movimientos_financieros_por_fraccionamiento",
+      "breakpoints": true
     }
   ]
 }

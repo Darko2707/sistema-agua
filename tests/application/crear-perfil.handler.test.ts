@@ -8,10 +8,6 @@ import type {
   ResidenteData,
   ResidenteRepository,
 } from '@/src/application/ports/residente.repository';
-import type {
-  CircuitoData,
-  CircuitoRepository,
-} from '@/src/application/ports/circuito.repository';
 
 const loggerMocks = vi.hoisted(() => ({
   info: vi.fn(),
@@ -30,23 +26,10 @@ vi.mock('@/src/domain/shared/fecha-negocio', () => ({
 
 const UNIQUE_VIVIENDA = 'uq_perfiles_residente_ubicacion';
 
-const circuitoActivo: CircuitoData = {
-  id: '00000000-0000-4000-8000-000000000001',
-  nombre: 'Circuito Uno',
-  representanteId: null,
-  tesoreraId: null,
-  montoMensual: '100.00',
-  montoReconexion: '300.00',
-  diaCorte: 10,
-  mercadoPagoAccessToken: null,
-  mercadoPagoCollectorId: null,
-  activo: true,
-};
-
 const perfilCreado: ResidenteData = {
   id: '10000000-0000-4000-8000-000000000001',
   userId: 'user-new',
-  circuitoId: circuitoActivo.id,
+  circuitoId: null,
   edificio: '8',
   departamento: '314A',
   estadoAgua: 'activo',
@@ -63,7 +46,6 @@ const command: CrearPerfilCommand = {
   telefono: '2281234567',
   sexo: 'femenino',
   tenencia: 'propietario',
-  circuitoId: circuitoActivo.id,
   fraccionamientoId: '00000000-0000-4000-8000-000000000001',
   diaCorte: 5,
   edificio: '  08  ',
@@ -86,31 +68,11 @@ function makeResidenteRepo(): ResidenteRepository {
   };
 }
 
-function makeCircuitoRepo(): CircuitoRepository {
-  return {
-    findById: vi.fn().mockResolvedValue(circuitoActivo),
-    findByRepresentante: vi.fn(),
-    findByTesorera: vi.fn(),
-    findAll: vi.fn(),
-    findActivos: vi.fn(),
-    updateActivo: vi.fn(),
-    updateMontos: vi.fn(),
-    updateRepresentante: vi.fn(),
-    updateTesorera: vi.fn(),
-    updateRepresentanteWithMp: vi.fn(),
-    updateTesoreraWithMp: vi.fn(),
-    clearRepresentanteByUserId: vi.fn(),
-    clearTesoreraByUserId: vi.fn(),
-  };
-}
-
 function makeHandler() {
   const residenteRepo = makeResidenteRepo();
-  const circuitoRepo = makeCircuitoRepo();
   return {
     residenteRepo,
-    circuitoRepo,
-    handler: new CrearPerfilHandler({ residenteRepo, circuitoRepo }),
+    handler: new CrearPerfilHandler({ residenteRepo }),
   };
 }
 
@@ -144,7 +106,7 @@ describe('CrearPerfilHandler', () => {
     expect(result).toBe(perfilCreado);
     expect(residenteRepo.create).toHaveBeenCalledWith({
       userId: 'user-new',
-      circuitoId: circuitoActivo.id,
+      circuitoId: null,
       fraccionamientoId: '00000000-0000-4000-8000-000000000001',
       edificio: '8',
       departamento: '314A',
@@ -177,34 +139,15 @@ describe('CrearPerfilHandler', () => {
     });
   });
 
-  it('respeta el día de corte particular del circuito', async () => {
+  it('respeta el día de corte configurado en el fraccionamiento', async () => {
     fechaNegocioMock.value = { dia: 6, mes: 8, anio: 2026 };
-    const { handler, residenteRepo, circuitoRepo } = makeHandler();
-    vi.mocked(circuitoRepo.findById).mockResolvedValue({
-      ...circuitoActivo,
-      diaCorte: 5,
-    });
+    const { handler, residenteRepo } = makeHandler();
 
     await handler.execute(command);
 
     expect(residenteRepo.create).toHaveBeenCalledWith(expect.objectContaining({
       estadoAgua: 'pendiente_corte',
     }));
-  });
-
-  it('rechaza un circuito inactivo sin consultar ni crear un perfil', async () => {
-    const { handler, circuitoRepo, residenteRepo } = makeHandler();
-    vi.mocked(circuitoRepo.findById).mockResolvedValue({
-      ...circuitoActivo,
-      activo: false,
-    });
-
-    await expect(handler.execute(command)).rejects.toMatchObject({
-      code: 'FORBIDDEN',
-    });
-    expect(residenteRepo.findByUserId).not.toHaveBeenCalled();
-    expect(residenteRepo.create).not.toHaveBeenCalled();
-    expect(loggerMocks.info).not.toHaveBeenCalled();
   });
 
   it('rechaza al usuario que ya tiene perfil sin intentar otro insert', async () => {

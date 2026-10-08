@@ -2,7 +2,7 @@ import { InvalidWebhookSignatureError, WebhookSignatureValidator } from 'mercado
 import * as Sentry from '@sentry/nextjs';
 import { z } from 'zod';
 
-import { residenteRepo, pagoRepo, circuitoRepo } from '@/src/infrastructure/db/repositories';
+import { residenteRepo, pagoRepo } from '@/src/infrastructure/db/repositories';
 import { ProcesarPagoMpHandler } from '@/src/application/pagos/commands/procesar-pago-mp.handler';
 import { MercadoPagoPaymentIntentConflictError } from '@/src/application/pagos/errors/mercado-pago-payment-intent-conflict.error';
 import { MercadoPagoPeriodConflictError } from '@/src/application/pagos/errors/mercado-pago-period-conflict.error';
@@ -18,7 +18,7 @@ import {
   ServiceCargoPaymentValidationError,
 } from '@/src/infrastructure/mercadopago/service-cargo-payment';
 
-const procesarPagoMpHandler = new ProcesarPagoMpHandler({ residenteRepo, pagoRepo, circuitoRepo });
+const procesarPagoMpHandler = new ProcesarPagoMpHandler({ residenteRepo, pagoRepo });
 
 const paymentIdSchema = z.union([
   z.string(),
@@ -112,7 +112,6 @@ export async function POST(request: Request) {
       const result = await procesarPagoMpHandler.execute({
         perfilId: verified.perfilId,
         fraccionamientoId: verified.fraccionamientoId,
-        circuitoId: verified.circuitoId,
         representanteId: verified.representanteId,
         paymentIntentReference: verified.paymentIntentReference,
         periodos: verified.periodos,

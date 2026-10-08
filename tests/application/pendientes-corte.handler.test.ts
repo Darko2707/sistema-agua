@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { PendientesCorteHandler } from '@/src/application/cortes/queries/pendientes-corte.handler';
-import type { CircuitoRepository } from '@/src/application/ports/circuito.repository';
 import type { ResidenteRepository } from '@/src/application/ports/residente.repository';
 
 function createDeps() {
@@ -17,23 +16,17 @@ function createDeps() {
     findByFraccionamientoYEstado: ReturnType<typeof vi.fn>;
   };
 
-  const circuitoRepo = {
-    findByRepresentante: vi.fn(),
-  } as unknown as CircuitoRepository & {
-    findByRepresentante: ReturnType<typeof vi.fn>;
-  };
-
   const findFraccionamientosAsignados = vi.fn();
 
-  return { residenteRepo, circuitoRepo, findFraccionamientosAsignados };
+  return { residenteRepo, findFraccionamientosAsignados };
 }
 
 describe('PendientesCorteHandler', () => {
   it('limita los pendientes de cuadrilla a sus asignaciones operativas explicitas', async () => {
-    const { residenteRepo, circuitoRepo, findFraccionamientosAsignados } = createDeps();
+    const { residenteRepo, findFraccionamientosAsignados } = createDeps();
     findFraccionamientosAsignados.mockResolvedValue(['fraccionamiento-1']);
     residenteRepo.findByFraccionamientoYEstado.mockResolvedValue([{ id: 'perfil-corte' }]);
-    const handler = new PendientesCorteHandler({ residenteRepo, circuitoRepo, findFraccionamientosAsignados });
+    const handler = new PendientesCorteHandler({ residenteRepo, findFraccionamientosAsignados });
 
     const result = await handler.execute({
       rol: 'cuadrilla_cortes',
@@ -49,10 +42,10 @@ describe('PendientesCorteHandler', () => {
   });
 
   it('limita reconexiones de cuadrilla a la asignacion explicita', async () => {
-    const { residenteRepo, circuitoRepo, findFraccionamientosAsignados } = createDeps();
+    const { residenteRepo, findFraccionamientosAsignados } = createDeps();
     findFraccionamientosAsignados.mockResolvedValue(['fraccionamiento-2']);
     residenteRepo.findByFraccionamientoYEstado.mockResolvedValue([]);
-    const handler = new PendientesCorteHandler({ residenteRepo, circuitoRepo, findFraccionamientosAsignados });
+    const handler = new PendientesCorteHandler({ residenteRepo, findFraccionamientosAsignados });
 
     await handler.execute({ rol: 'cuadrilla_cortes', userId: 'trab-1', tipo: 'reconexion' });
 
@@ -61,9 +54,9 @@ describe('PendientesCorteHandler', () => {
     expect(residenteRepo.findByFraccionamientoYEstado).toHaveBeenCalledWith('fraccionamiento-2', 'pendiente_reconexion');
   });
   it('falla cerrado si la cuadrilla no tiene una asignacion operativa activa', async () => {
-    const { residenteRepo, circuitoRepo, findFraccionamientosAsignados } = createDeps();
+    const { residenteRepo, findFraccionamientosAsignados } = createDeps();
     findFraccionamientosAsignados.mockResolvedValue([]);
-    const handler = new PendientesCorteHandler({ residenteRepo, circuitoRepo, findFraccionamientosAsignados });
+    const handler = new PendientesCorteHandler({ residenteRepo, findFraccionamientosAsignados });
 
     await expect(handler.execute({
       rol: 'cuadrilla_cortes',
@@ -75,5 +68,22 @@ describe('PendientesCorteHandler', () => {
     });
     expect(residenteRepo.findByUserId).not.toHaveBeenCalled();
     expect(residenteRepo.findByFraccionamientoYEstado).not.toHaveBeenCalled();
+  });
+
+  it('limita los pendientes del representante a su fraccionamiento de sesion', async () => {
+    const { residenteRepo, findFraccionamientosAsignados } = createDeps();
+    residenteRepo.findByFraccionamientoYEstado.mockResolvedValue([{ id: 'perfil-representante' }]);
+    const handler = new PendientesCorteHandler({ residenteRepo, findFraccionamientosAsignados });
+
+    const result = await handler.execute({
+      rol: 'representante',
+      userId: 'representante-1',
+      fraccionamientoId: 'fraccionamiento-1',
+      tipo: 'corte',
+    });
+
+    expect(result).toEqual([{ id: 'perfil-representante' }]);
+    expect(residenteRepo.findByFraccionamientoYEstado).toHaveBeenCalledWith('fraccionamiento-1', 'pendiente_corte');
+    expect(findFraccionamientosAsignados).not.toHaveBeenCalled();
   });
 });

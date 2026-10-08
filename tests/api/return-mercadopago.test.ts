@@ -73,6 +73,7 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 import { GET } from '@/app/api/mercadopago/return/route';
+import { db } from '@/db';
 
 const REFERENCE = 'agua2|perfil-001|7|2025|12|0|100.00|0.00';
 
@@ -84,6 +85,10 @@ function request(reference = REFERENCE) {
 
 beforeEach(() => {
   mockFindPaymentIntent.mockResolvedValue(null);
+  vi.mocked(db.query.fraccionamientoMetodosPago.findFirst).mockResolvedValue({
+    accessTokenCifrado: 'token-cifrado',
+    collectorId: '98765',
+  } as never);
   mockDecryptTokenSafe.mockReturnValue('token-plano');
   mockPaymentGet.mockResolvedValue({
     id: 12345,
@@ -106,7 +111,6 @@ describe('GET /api/mercadopago/return', () => {
     expect(mockPaymentGet).toHaveBeenCalledWith({ id: '12345' });
     expect(mockExecute).toHaveBeenCalledWith(expect.objectContaining({
       perfilId: 'perfil-001',
-      circuitoId: 'circuito-001',
       mercadoPagoPaymentId: '12345',
       metodo: 'mercado_pago',
     }));

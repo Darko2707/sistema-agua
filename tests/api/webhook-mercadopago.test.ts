@@ -145,6 +145,10 @@ beforeEach(() => {
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any);
+  vi.mocked(db.query.fraccionamientoMetodosPago.findFirst).mockResolvedValue({
+    accessTokenCifrado: 'encrypted-token',
+    collectorId: '98765',
+  } as any);
 
   vi.mocked(decryptTokenSafe).mockReturnValue('access-token-plain');
 
@@ -273,7 +277,6 @@ describe('POST /api/mercadopago/webhook', () => {
       expect(mockExecute).toHaveBeenCalledWith(
         expect.objectContaining({
           perfilId: 'perf-001',
-          circuitoId: 'circuito-001',
           periodos: [{ mes: 6, anio: 2025, monto: '100.00', esReconexion: false }],
           mercadoPagoPaymentId: '12345',
         }),
@@ -344,7 +347,6 @@ describe('POST /api/mercadopago/webhook', () => {
       mockFindPaymentIntent.mockResolvedValue({
         externalReference: reference,
         perfilId: 'perf-001',
-        circuitoId: 'circuito-001',
         fraccionamientoId: 'fraccionamiento-001',
         periodos,
         total: '1399.84',
@@ -369,7 +371,6 @@ describe('POST /api/mercadopago/webhook', () => {
       expect(reference.length).toBeLessThanOrEqual(64);
       expect(mockExecute).toHaveBeenCalledWith(expect.objectContaining({
         perfilId: 'perf-001',
-        circuitoId: 'circuito-001',
         periodos,
         mercadoPagoPaymentId: '12345',
         paymentIntentReference: reference,

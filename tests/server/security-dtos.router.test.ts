@@ -79,16 +79,17 @@ describe('DTOs de procedimientos administrativos', () => {
     expect(query.columns).not.toHaveProperty('mercadoPagoCollectorId');
   });
 
-  it('exportacionCompleta usa selecciones explicitas y excluye secretos e IDs de proveedor', async () => {
+  it('exportacionCompleta usa selecciones por fraccionamiento y excluye secretos e IDs de proveedor', async () => {
     await operacionRouter.createCaller(adminContext).exportacionCompleta();
 
     const residentesQuery = mocks.exportarResidentes.mock.calls[0]?.[0];
     expect(residentesQuery.columns).toBeDefined();
     expect(residentesQuery.with.usuario.columns).toBeDefined();
-    expect(residentesQuery.with.circuito.columns).not.toHaveProperty('mercadoPagoAccessToken');
-    expect(residentesQuery.with.circuito.columns).not.toHaveProperty('mercadoPagoCollectorId');
+    expect(residentesQuery.columns).not.toHaveProperty('circuitoId');
+    expect(residentesQuery.with).not.toHaveProperty('circuito');
 
     const pagosQuery = mocks.exportarPagos.mock.calls[0]?.[0];
+    expect(pagosQuery.columns).not.toHaveProperty('circuitoId');
     expect(pagosQuery.columns).not.toHaveProperty('mercadoPagoPaymentId');
     expect(pagosQuery.columns).not.toHaveProperty('mercadoPagoCollectorId');
 

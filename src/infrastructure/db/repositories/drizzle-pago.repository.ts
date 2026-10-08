@@ -6,7 +6,7 @@ import {
   cortes,
   tickets,
   perfilesResidente,
-  circuitos,
+  fraccionamientos,
   notificaciones,
   mercadoPagoPaymentIntents,
 } from '@/db/schema';
@@ -859,19 +859,19 @@ export class DrizzlePagoRepository implements PagoRepository {
       .select({ total: sql<number>`count(*)::int` })
       .from(perfilesResidente);
 
-    const porCircuitoRows = await db
+    const porFraccionamientoRows = await db
       .select({
-        circuitoId: circuitos.id,
-        nombre: circuitos.nombre,
-        cuota: sql<number>`${circuitos.montoMensual}::numeric`,
+        fraccionamientoId: fraccionamientos.id,
+        nombre: fraccionamientos.nombre,
+        cuota: sql<number>`${fraccionamientos.montoMensual}::numeric`,
         totalResidentes: sql<number>`count(distinct ${perfilesResidente.id})::int`,
         residentesAlCorriente: sql<number>`count(distinct ${pagos.perfilId}) filter (where ${pagos.id} is not null)::int`,
         pagosRecibidos: sql<number>`count(${pagos.id})::int`,
         totalRecaudado: sql<number>`coalesce(sum(${pagos.montoBase}::numeric), 0)::float`,
         comisionesOnline: sql<number>`coalesce(sum((${pagos.comisionMercadoPago}::numeric + ${pagos.retencionIsr}::numeric + ${pagos.retencionIva}::numeric)) filter (where ${pagos.metodo} = 'mercado_pago'), 0)::float`,
       })
-      .from(circuitos)
-      .leftJoin(perfilesResidente, eq(perfilesResidente.circuitoId, circuitos.id))
+      .from(fraccionamientos)
+      .leftJoin(perfilesResidente, eq(perfilesResidente.fraccionamientoId, fraccionamientos.id))
       .leftJoin(
         pagos,
         and(
@@ -881,8 +881,8 @@ export class DrizzlePagoRepository implements PagoRepository {
           eq(pagos.anio, anio),
         ),
       )
-      .groupBy(circuitos.id, circuitos.nombre, circuitos.montoMensual)
-      .orderBy(circuitos.nombre);
+      .groupBy(fraccionamientos.id, fraccionamientos.nombre, fraccionamientos.montoMensual)
+      .orderBy(fraccionamientos.nombre);
 
     const totalResidentes = totalRow?.total ?? 0;
     const totalPagadosMes = mesRow?.pagados ?? 0;
@@ -897,10 +897,10 @@ export class DrizzlePagoRepository implements PagoRepository {
       totalResidentes,
       morosidadPct,
       reconexionesMes: mesRow?.reconexiones ?? 0,
-      porCircuito: porCircuitoRows.map((row) => {
+      porFraccionamiento: porFraccionamientoRows.map((row) => {
         const residentesConAdeudos = Math.max((row.totalResidentes ?? 0) - (row.residentesAlCorriente ?? 0), 0);
         return {
-          circuitoId: row.circuitoId,
+          fraccionamientoId: row.fraccionamientoId,
           nombre: row.nombre,
           totalRecaudado: row.totalRecaudado ?? 0,
           pagosRecibidos: row.pagosRecibidos ?? 0,

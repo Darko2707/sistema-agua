@@ -24,7 +24,7 @@ export type Resumen = {
   totalDeptos: number;
   pagados:     number;
   recaudado:   number;
-  porCircuito: { nombre: string; total: number; pagados: number }[];
+  porFraccionamiento: { nombre: string; total: number; pagados: number }[];
 };
 
 export type Personal = {
@@ -141,12 +141,12 @@ export function useAdmin() {
     }
   }
 
-  async function asignarRepresentante(circuitoId: string, userId: string) {
+  async function asignarRepresentante(fraccionamientoId: string, userId: string) {
     if (!userId) return;
-    setActualizando(circuitoId);
+    setActualizando(fraccionamientoId);
     setError(null);
     try {
-      await trpc.usuarios.asignarRepresentante.mutate({ circuitoId, userId });
+      await trpc.usuarios.asignarRepresentante.mutate({ fraccionamientoId, userId });
       await cargarDatos();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Error al asignar representante');

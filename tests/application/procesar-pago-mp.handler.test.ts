@@ -204,11 +204,11 @@ describe('ProcesarPagoMpHandler', () => {
     expect(pago.mercadoPagoCollectorId).toBe('collector-payment');
   });
 
-  it('usa el collector del circuito como fallback', async () => {
+  it('no usa el collector legado de circuito como fallback', async () => {
     const deps = makeDeps();
     await new ProcesarPagoMpHandler(deps).execute(CMD);
     expect(deps.createMercadoPagoBatchWithLock.mock.calls[0][0].pagos[0].mercadoPagoCollectorId)
-      .toBe('col-circuito');
+      .toBeNull();
   });
 
   it('rechaza lotes vacios, repetidos o sin paymentId antes de consultar repositorios', async () => {
@@ -221,26 +221,21 @@ describe('ProcesarPagoMpHandler', () => {
     expect(deps.residenteRepo.findById).not.toHaveBeenCalled();
   });
 
-  it('lanza si no existen el perfil o el circuito', async () => {
+  it('lanza si no existe el perfil', async () => {
     const deps = makeDeps();
     vi.mocked(deps.residenteRepo.findById).mockResolvedValueOnce(null);
     await expect(new ProcesarPagoMpHandler(deps).execute(CMD)).rejects.toThrow('Perfil no encontrado');
-
-    vi.mocked(deps.residenteRepo.findById).mockResolvedValueOnce(PERFIL);
-    vi.mocked(deps.circuitoRepo.findById).mockResolvedValueOnce(null);
-    await expect(new ProcesarPagoMpHandler(deps).execute(CMD)).rejects.toThrow('Circuito no encontrado');
   });
 
-  it('rechaza si el perfil ya no pertenece al circuito verificado', async () => {
+  it('no consulta circuito aunque el perfil conserve una referencia heredada', async () => {
     const deps = makeDeps();
     vi.mocked(deps.residenteRepo.findById).mockResolvedValueOnce({
       ...PERFIL,
       circuitoId: 'circ-movido',
     });
 
-    await expect(new ProcesarPagoMpHandler(deps).execute(CMD))
-      .rejects.toThrow('cambio de circuito');
+    await expect(new ProcesarPagoMpHandler(deps).execute(CMD)).resolves.toMatchObject({ yaRegistrado: false });
     expect(deps.circuitoRepo.findById).not.toHaveBeenCalled();
-    expect(deps.createMercadoPagoBatchWithLock).not.toHaveBeenCalled();
+    expect(deps.createMercadoPagoBatchWithLock).toHaveBeenCalledOnce();
   });
 });

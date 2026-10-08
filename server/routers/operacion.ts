@@ -11,7 +11,6 @@ import {
   auditoria,
   bitacoraCortes,
   consentimientosLegales,
-  circuitos,
   cortes,
   fraccionamientos,
   notificaciones,
@@ -21,7 +20,7 @@ import {
   fraccionamientoServicios,
   servicios,
 } from '@/db/schema';
-import { circuitoRepo, residenteRepo } from '@/src/infrastructure/db/repositories';
+import { residenteRepo } from '@/src/infrastructure/db/repositories';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
 import { schedulePushDispatch } from '@/lib/push-dispatcher';
 import { clientIpFromHeaders } from '@/lib/request-security';
@@ -37,7 +36,12 @@ function getRequestMeta(headers?: Headers) {
   };
 }
 
-async function assertPerfilVisible(userId: string, role: string, perfilId: string) {
+async function assertPerfilVisible(
+  userId: string,
+  role: string,
+  perfilId: string,
+  fraccionamientoId?: string | null,
+) {
   const perfil = await residenteRepo.findById(perfilId);
   if (!perfil) throw new TRPCError({ code: 'NOT_FOUND', message: 'Residente no encontrado' });
   if (role === 'admin') return;
@@ -46,16 +50,10 @@ async function assertPerfilVisible(userId: string, role: string, perfilId: strin
     return;
   }
 
-  if (role === 'representante') {
-    const circuito = await circuitoRepo.findByRepresentante(userId);
-    if (!circuito || perfil.circuitoId !== circuito.id) throw new TRPCError({ code: 'FORBIDDEN' });
-    return;
-  }
-
-  if (role === 'tesorera') {
-    const circuitos = await circuitoRepo.findAll();
-    const circuito = circuitos.find(c => c.tesoreraId === userId);
-    if (!circuito || perfil.circuitoId !== circuito.id) throw new TRPCError({ code: 'FORBIDDEN' });
+  if (role === 'representante' || role === 'tesorera') {
+    if (!fraccionamientoId || perfil.fraccionamientoId !== fraccionamientoId) {
+      throw new TRPCError({ code: 'FORBIDDEN' });
+    }
     return;
   }
 
@@ -142,16 +140,16 @@ export const operacionRouter = router({
       }
       if (ctx.user.role === 'representante') {
         const entidadRepresentante: 'pago' | 'corte' = entidad === 'pago' ? 'pago' : 'corte';
-        const circuito = await circuitoRepo.findByRepresentante(ctx.user.id);
-        if (!circuito) return [];
+        const fraccionamientoId = ctx.user.fraccionamientoId;
+        if (!fraccionamientoId) return [];
         const pagoIds = entidadRepresentante === 'pago'
-          ? await db.select({ id: pagos.id }).from(pagos).where(eq(pagos.circuitoId, circuito.id))
+          ? await db.select({ id: pagos.id }).from(pagos).where(eq(pagos.fraccionamientoId, fraccionamientoId))
           : [];
         const corteIds = entidadRepresentante === 'corte'
           ? await db.select({ id: bitacoraCortes.corteId })
             .from(bitacoraCortes)
             .innerJoin(perfilesResidente, eq(perfilesResidente.id, bitacoraCortes.perfilId))
-            .where(eq(perfilesResidente.circuitoId, circuito.id))
+            .where(eq(perfilesResidente.fraccionamientoId, fraccionamientoId))
           : [];
         const ids = (entidadRepresentante === 'pago' ? pagoIds : corteIds)
           .map(row => row.id)
@@ -184,7 +182,7 @@ export const operacionRouter = router({
         ? await residenteRepo.findById(input.perfilId)
         : await residenteRepo.findByUserId(ctx.user.id);
       if (!perfil) throw new TRPCError({ code: 'NOT_FOUND', message: 'Perfil no encontrado' });
-      if (input?.perfilId) await assertPerfilVisible(ctx.user.id, ctx.user.role, perfil.id);
+      if (input?.perfilId) await assertPerfilVisible(ctx.user.id, ctx.user.role, perfil.id, ctx.user.fraccionamientoId);
 
       const periodo = PeriodoVO.vigente();
       const rows = await db.query.pagos.findMany({
@@ -205,11 +203,16 @@ export const operacionRouter = router({
         if (offset > 0 && paid.has(key)) adelantados.push({ mes, anio });
       }
 
-      const circuito = perfil.circuitoId ? await circuitoRepo.findById(perfil.circuitoId) : null;
+      const fraccionamiento = perfil.fraccionamientoId
+        ? await db.query.fraccionamientos.findFirst({
+          where: eq(fraccionamientos.id, perfil.fraccionamientoId),
+          columns: { montoMensual: true },
+        })
+        : null;
       const agua = residenteRepo.findWaterServiceConfig
         ? await residenteRepo.findWaterServiceConfig(perfil.id)
         : null;
-      const saldoPendiente = atrasados.length * Number(agua?.montoMensual ?? circuito?.montoMensual ?? 0);
+      const saldoPendiente = atrasados.length * Number(agua?.montoMensual ?? fraccionamiento?.montoMensual ?? 0);
       return {
         perfilId: perfil.id,
         periodoActual: periodo,
@@ -248,7 +251,7 @@ export const operacionRouter = router({
   bitacoraCorte: roleProcedure('admin', 'cuadrilla_cortes', 'representante')
     .input(z.object({ perfilId: z.string().uuid() }))
     .query(async ({ ctx, input }) => {
-      await assertPerfilVisible(ctx.user.id, ctx.user.role, input.perfilId);
+      await assertPerfilVisible(ctx.user.id, ctx.user.role, input.perfilId, ctx.user.fraccionamientoId);
       return db.query.bitacoraCortes.findMany({
         where: eq(bitacoraCortes.perfilId, input.perfilId),
         orderBy: [desc(bitacoraCortes.creadoEn)],
@@ -271,7 +274,6 @@ export const operacionRouter = router({
         const [perfil] = await tx.select({
           id: perfilesResidente.id,
           fraccionamientoId: perfilesResidente.fraccionamientoId,
-          circuitoId: perfilesResidente.circuitoId,
         })
           .from(perfilesResidente)
           .where(eq(perfilesResidente.id, input.perfilId))
@@ -356,11 +358,11 @@ export const operacionRouter = router({
       let visibilityFilter = estadoFilter;
 
       if (ctx.user.role === 'representante') {
-        const circuito = await circuitoRepo.findByRepresentante(ctx.user.id);
-        if (!circuito) return [];
+        const fraccionamientoId = ctx.user.fraccionamientoId;
+        if (!fraccionamientoId) return [];
         visibilityFilter = and(
           estadoFilter,
-          eq(perfilesResidente.circuitoId, circuito.id),
+          eq(perfilesResidente.fraccionamientoId, fraccionamientoId),
         );
       }
 
@@ -390,7 +392,6 @@ export const operacionRouter = router({
           telefono: true,
           sexo: true,
           tenencia: true,
-          circuitoId: true,
           edificio: true,
           departamento: true,
           nombrePropietario: true,
@@ -411,20 +412,6 @@ export const operacionRouter = router({
               updatedAt: true,
             },
           },
-          circuito: {
-            columns: {
-              id: true,
-              nombre: true,
-              fraccionamientoId: true,
-              representanteId: true,
-              tesoreraId: true,
-              montoMensual: true,
-              montoReconexion: true,
-              diaCorte: true,
-              activo: true,
-              updatedAt: true,
-            },
-          },
         },
       }),
       db.query.pagos.findMany({
@@ -432,7 +419,6 @@ export const operacionRouter = router({
           id: true,
           fraccionamientoId: true,
           perfilId: true,
-          circuitoId: true,
           representanteId: true,
           mes: true,
           anio: true,

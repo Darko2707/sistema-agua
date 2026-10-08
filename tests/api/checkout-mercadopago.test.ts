@@ -5,6 +5,7 @@ const {
   mockFindByUserIdWithPaymentConfig,
   mockFindPagos,
   mockFindCargosAgua,
+  mockFindConfiguracionCobro,
   mockPreferenceCreate,
   mockDecryptTokenSafe,
   mockPersistPaymentIntent,
@@ -15,6 +16,7 @@ const {
   mockFindByUserIdWithPaymentConfig: vi.fn(),
   mockFindPagos: vi.fn(),
   mockFindCargosAgua: vi.fn(),
+  mockFindConfiguracionCobro: vi.fn(),
   mockPreferenceCreate: vi.fn(),
   mockDecryptTokenSafe: vi.fn(),
   mockPersistPaymentIntent: vi.fn(),
@@ -39,6 +41,9 @@ vi.mock('@/db', () => ({
     query: { pagos: { findMany: mockFindPagos } },
     select: () => ({
       from: () => ({
+        leftJoin: () => ({
+          where: () => ({ limit: mockFindConfiguracionCobro }),
+        }),
         innerJoin: () => ({
           innerJoin: () => ({
             where: mockFindCargosAgua,
@@ -137,6 +142,13 @@ beforeEach(() => {
   mockFindByUserIdWithPaymentConfig.mockResolvedValue(PERFIL);
   mockFindPagos.mockResolvedValue([]);
   mockFindCargosAgua.mockResolvedValue([]);
+  mockFindConfiguracionCobro.mockResolvedValue([{
+    activo: true,
+    montoMensual: '100.00',
+    montoReconexion: '300.00',
+    accessToken: 'token-cifrado',
+    collectorId: 'collector-001',
+  }]);
   mockDecryptTokenSafe.mockReturnValue('token-plano');
   mockPersistPaymentIntent.mockResolvedValue(undefined);
   mockCheckoutAccountLimit.mockResolvedValue({
@@ -219,11 +231,14 @@ describe('POST /api/mercadopago/checkout', () => {
     expect(mockPreferenceCreate).not.toHaveBeenCalled();
   });
 
-  it('rechaza el checkout cuando el circuito esta inhabilitado', async () => {
-    mockFindByUserIdWithPaymentConfig.mockResolvedValue({
-      ...PERFIL,
-      circuito: { ...PERFIL.circuito, activo: false },
-    });
+  it('rechaza el checkout cuando el fraccionamiento esta desactivado', async () => {
+    mockFindConfiguracionCobro.mockResolvedValueOnce([{
+      activo: false,
+      montoMensual: '100.00',
+      montoReconexion: '300.00',
+      accessToken: 'token-cifrado',
+      collectorId: 'collector-001',
+    }]);
 
     const response = await POST(request());
 

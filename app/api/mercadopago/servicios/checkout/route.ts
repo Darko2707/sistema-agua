@@ -49,9 +49,9 @@ export async function POST(request: Request) {
     .from(fraccionamientoMetodosPago)
     .where(and(eq(fraccionamientoMetodosPago.fraccionamientoId, perfil.fraccionamientoId), eq(fraccionamientoMetodosPago.proveedor, 'mercado_pago'), eq(fraccionamientoMetodosPago.activo, true)))
     .limit(1);
-  const accessToken = decryptTokenSafe(method?.accessToken ?? perfil.circuito?.mercadoPagoAccessToken);
+  const accessToken = decryptTokenSafe(method?.accessToken);
   if (!accessToken) return Response.json({ error: 'Mercado Pago no configurado' }, { status: 503 });
-  const collectorId = method?.collectorId ?? perfil.circuito?.mercadoPagoCollectorId ?? null;
+  const collectorId = method?.collectorId ?? null;
   const reference = `serv_${cargo.id}`;
   const checkoutWindowMs = 20 * 60 * 1000;
   const checkoutWindowStart = Math.floor(Date.now() / checkoutWindowMs) * checkoutWindowMs;

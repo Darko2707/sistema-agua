@@ -10,11 +10,11 @@ export type UserData = {
 };
 
 export type RepresentanteData = UserData & {
-  circuito: { id: string; nombre: string | null } | null;
+  fraccionamiento: { id: string; nombre: string | null } | null;
 };
 
 export type TesoreraData = UserData & {
-  circuito: { id: string; nombre: string | null; mercadoPagoCollectorId: string | null } | null;
+  fraccionamiento: { id: string; nombre: string | null; mercadoPagoCollectorId: string | null } | null;
 };
 
 export type CreatePersonalInput = {
@@ -43,10 +43,10 @@ export type CambiarRolInput = {
   nuevoRol: UserRole;
 };
 
-export type CambiarRolEnCircuitoInput = {
+export type CambiarRolEnFraccionamientoInput = {
   userId:     string;
   nuevoRol:   'residente' | 'tesorera' | 'cuadrilla_cortes' | 'operador_pozo';
-  circuitoId: string;
+  fraccionamientoId: string;
 };
 
 export interface UserRepository {
@@ -68,5 +68,5 @@ export interface UserRepository {
 
   // Atomic role transitions (DB transaction encapsulated internally)
   cambiarRol(input: CambiarRolInput): Promise<void>;
-  cambiarRolEnCircuito(input: CambiarRolEnCircuitoInput): Promise<void>;
+  cambiarRolEnFraccionamiento(input: CambiarRolEnFraccionamientoInput): Promise<void>;
 }

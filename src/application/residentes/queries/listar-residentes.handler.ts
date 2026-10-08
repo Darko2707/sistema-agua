@@ -3,7 +3,6 @@ import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
 import { fechaNegocio } from '@/src/domain/shared/fecha-negocio';
 import { TRPCError } from '@trpc/server';
 import type { ResidenteRepository, ResidenteConRelaciones } from '../../ports/residente.repository';
-import type { CircuitoRepository } from '../../ports/circuito.repository';
 
 export type ListarResidentesQuery = {
   rol: 'admin' | 'representante';
@@ -11,12 +10,10 @@ export type ListarResidentesQuery = {
   page?: number;
   pageSize?: number;
   fraccionamientoId?: string;
-  circuitoId?: string;
 };
 
 type Deps = {
   residenteRepo: ResidenteRepository;
-  circuitoRepo: CircuitoRepository;
 };
 
 function mapPerfil(p: ResidenteConRelaciones, periodo: ReturnType<typeof PeriodoVO.vigente>, diaActual: number) {
@@ -38,9 +35,9 @@ function mapPerfil(p: ResidenteConRelaciones, periodo: ReturnType<typeof Periodo
       email: p.usuario?.email,
       role:  p.usuario?.role,
     },
-    circuito:    p.circuito,
+    fraccionamiento: p.fraccionamiento,
     pagoEsteMes,
-    esMoroso:    diaActual > getDiaCorte(p.circuito ?? undefined) && !pagoEsteMes,
+    esMoroso:    diaActual > getDiaCorte(p.fraccionamiento ?? undefined) && !pagoEsteMes,
     corteActivo: p.cortes?.some(c => c.activo) ?? false,
   };
 }
@@ -49,7 +46,7 @@ export class ListarResidentesHandler {
   constructor(private deps: Deps) {}
 
   async execute(query: ListarResidentesQuery) {
-    const { residenteRepo, circuitoRepo } = this.deps;
+    const { residenteRepo } = this.deps;
     const periodo = PeriodoVO.vigente();
     const diaActual = fechaNegocio().dia;
 
@@ -57,16 +54,9 @@ export class ListarResidentesHandler {
     const pageSize = query.pageSize ?? 50;
 
     if (query.rol === 'admin') {
-      const circuito = query.circuitoId ? await circuitoRepo.findById(query.circuitoId) : null;
-      if (query.circuitoId && !circuito) {
-        throw new TRPCError({ code: 'NOT_FOUND', message: 'Circuito no encontrado' });
-      }
-      if (query.fraccionamientoId && circuito?.fraccionamientoId && circuito.fraccionamientoId !== query.fraccionamientoId) {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'El circuito no pertenece al fraccionamiento seleccionado' });
-      }
-      const tenantId = query.fraccionamientoId ?? circuito?.fraccionamientoId ?? undefined;
+      const tenantId = query.fraccionamientoId;
       const result = tenantId && residenteRepo.findByTenantPaginated
-        ? await residenteRepo.findByTenantPaginated(tenantId, query.circuitoId, page, pageSize)
+        ? await residenteRepo.findByTenantPaginated(tenantId, page, pageSize)
         : await residenteRepo.findAllPaginated(page, pageSize);
       return {
         items:      result.items.map(p => mapPerfil(p, periodo, diaActual)),
@@ -77,12 +67,12 @@ export class ListarResidentesHandler {
       };
     }
 
-    const miCircuito = await circuitoRepo.findByRepresentante(query.userId);
-    if (!miCircuito) {
+    const fraccionamientoId = query.fraccionamientoId;
+    if (!fraccionamientoId || !residenteRepo.findByTenantPaginated) {
       return { items: [], total: 0, page, pageSize, totalPages: 0 };
     }
 
-    const result = await residenteRepo.findByCircuitoPaginated(miCircuito.id, page, pageSize);
+    const result = await residenteRepo.findByTenantPaginated(fraccionamientoId, page, pageSize);
     return {
       items:      result.items.map(p => mapPerfil(p, periodo, diaActual)),
       total:      result.total,

@@ -50,11 +50,11 @@ function montoDisponibleCircuito(pago: {
   return Number(pago.montoNetoRepresentante ?? pago.montoBase ?? pago.monto);
 }
 
-async function resolverCircuito(userId: string, tenantId: string) {
-  const circuito = await db.query.circuitos.findFirst({
-    where: (c, { eq, and }) => and(eq(c.tesoreraId, userId), eq(c.fraccionamientoId, tenantId)),
+async function resolverFraccionamiento(userId: string, fraccionamientoId: string) {
+  const fraccionamiento = await db.query.fraccionamientos.findFirst({
+    where: (f, { eq, and }) => and(eq(f.id, fraccionamientoId), eq(f.tesoreraId, userId), eq(f.activo, true)),
   });
-  return circuito ?? null;
+  return fraccionamiento ?? null;
 }
 
 export async function GET(req: Request) {
@@ -72,8 +72,8 @@ export async function GET(req: Request) {
 
   try {
 
-  const circuito = await resolverCircuito(session.user.id, dbUser.fraccionamientoId);
-  if (!circuito) return new Response('Sin circuito asignado', { status: 404 });
+  const fraccionamiento = await resolverFraccionamiento(session.user.id, dbUser.fraccionamientoId);
+  if (!fraccionamiento) return new Response('Sin fraccionamiento activo asignado', { status: 404 });
 
   const url      = new URL(req.url);
   const mesDesdeRaw  = url.searchParams.get('mesDesde');
@@ -102,12 +102,11 @@ export async function GET(req: Request) {
 
     const [residentes, pagosTodos, gastosTodos, ingresosTodos] = await Promise.all([
       db.query.perfilesResidente.findMany({
-        where: (p, { eq, and }) => and(eq(p.circuitoId, circuito.id), eq(p.fraccionamientoId, dbUser.fraccionamientoId!)),
+        where: (p, { eq }) => eq(p.fraccionamientoId, fraccionamiento.id),
       }),
       db.query.pagos.findMany({
         where: (p, { eq, and, or }) => and(
-          eq(p.circuitoId, circuito.id),
-          eq(p.fraccionamientoId, dbUser.fraccionamientoId!),
+          eq(p.fraccionamientoId, fraccionamiento.id),
           eq(p.estado, 'pagado'),
           or(...mesesLista.map(m => and(eq(p.mes, m.mes), eq(p.anio, m.anio)))),
         ),
@@ -115,16 +114,14 @@ export async function GET(req: Request) {
       }),
       db.query.gastosCircuito.findMany({
         where: (g, { eq, and, or }) => and(
-          eq(g.circuitoId, circuito.id),
-          eq(g.fraccionamientoId, dbUser.fraccionamientoId!),
+          eq(g.fraccionamientoId, fraccionamiento.id),
           or(...mesesLista.map(m => and(eq(g.mes, m.mes), eq(g.anio, m.anio)))),
         ),
         orderBy: (g, { desc }) => [desc(g.anio), desc(g.mes), desc(g.fecha)],
       }),
       db.query.ingresosAdicionales.findMany({
         where: (i, { eq, and, or }) => and(
-          eq(i.circuitoId, circuito.id),
-          eq(i.fraccionamientoId, dbUser.fraccionamientoId!),
+          eq(i.fraccionamientoId, fraccionamiento.id),
           or(...mesesLista.map(m => and(eq(i.mes, m.mes), eq(i.anio, m.anio)))),
         ),
         orderBy: (i, { desc }) => [desc(i.anio), desc(i.mes), desc(i.fecha)],
@@ -182,7 +179,7 @@ export async function GET(req: Request) {
     }));
 
     const xlsxBuffer = await generarReporteFinancieroRangoExcel({
-      circuito:    circuito.nombre,
+      circuito:    fraccionamiento.nombre,
       mesDesde, anioDesde, mesHasta, anioHasta,
       generadoEn:  new Date(),
       totalRecaudado, totalPagos, totalIngresosAdicionales, totalGastos, saldo,
@@ -215,18 +212,18 @@ export async function GET(req: Request) {
 
   const [residentes, pagosPeriodo, gastosPeriodo, ingresosPeriodo] = await Promise.all([
     db.query.perfilesResidente.findMany({
-      where: (p, { eq, and }) => and(eq(p.circuitoId, circuito.id), eq(p.fraccionamientoId, dbUser.fraccionamientoId!)),
+      where: (p, { eq }) => eq(p.fraccionamientoId, fraccionamiento.id),
     }),
     db.query.pagos.findMany({
-      where: (p, { eq, and }) => and(eq(p.circuitoId, circuito.id), eq(p.fraccionamientoId, dbUser.fraccionamientoId!), eq(p.mes, mes), eq(p.anio, anio), eq(p.estado, 'pagado')),
+      where: (p, { eq, and }) => and(eq(p.fraccionamientoId, fraccionamiento.id), eq(p.mes, mes), eq(p.anio, anio), eq(p.estado, 'pagado')),
       with: { perfil: true },
     }),
     db.query.gastosCircuito.findMany({
-      where: (g, { eq, and }) => and(eq(g.circuitoId, circuito.id), eq(g.fraccionamientoId, dbUser.fraccionamientoId!), eq(g.mes, mes), eq(g.anio, anio)),
+      where: (g, { eq, and }) => and(eq(g.fraccionamientoId, fraccionamiento.id), eq(g.mes, mes), eq(g.anio, anio)),
       orderBy: (g, { desc }) => [desc(g.fecha)],
     }),
     db.query.ingresosAdicionales.findMany({
-      where: (i, { eq, and }) => and(eq(i.circuitoId, circuito.id), eq(i.fraccionamientoId, dbUser.fraccionamientoId!), eq(i.mes, mes), eq(i.anio, anio)),
+      where: (i, { eq, and }) => and(eq(i.fraccionamientoId, fraccionamiento.id), eq(i.mes, mes), eq(i.anio, anio)),
       orderBy: (i, { desc }) => [desc(i.fecha)],
     }),
   ]);
@@ -256,7 +253,7 @@ export async function GET(req: Request) {
   });
 
   const xlsxBuffer = await generarReporteFinancieroExcel({
-    circuito:           circuito.nombre,
+    circuito:           fraccionamiento.nombre,
     mes, anio,
     generadoEn:         new Date(),
     totalRecaudado,

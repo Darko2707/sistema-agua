@@ -5,7 +5,6 @@ import { db } from '@/db';
 import {
   account,
   auditoria,
-  circuitos,
   fraccionamientos,
   passwordResetCodes,
   passwordResetRequests,
@@ -99,12 +98,12 @@ export class RepresentativePasswordResetService {
       })
       .from(users)
       .innerJoin(perfilesResidente, eq(perfilesResidente.userId, users.id))
-      .innerJoin(circuitos, eq(circuitos.id, perfilesResidente.circuitoId))
+      .innerJoin(fraccionamientos, eq(fraccionamientos.id, perfilesResidente.fraccionamientoId))
       .where(and(
         sql`lower(${users.email}) = ${email}`,
         eligibleResidentAccountCondition(),
         isNull(users.deletedAt),
-        eq(circuitos.activo, true),
+        eq(fraccionamientos.activo, true),
       ))
       .limit(1);
 
@@ -152,11 +151,11 @@ export class RepresentativePasswordResetService {
         perfilesResidente,
         eq(perfilesResidente.id, passwordResetRequests.perfilId),
       )
-      .innerJoin(circuitos, eq(circuitos.id, perfilesResidente.circuitoId))
+      .innerJoin(fraccionamientos, eq(fraccionamientos.id, perfilesResidente.fraccionamientoId))
       .innerJoin(users, eq(users.id, passwordResetRequests.userId))
       .where(and(
-        eq(circuitos.representanteId, representanteId),
-        eq(circuitos.activo, true),
+        eq(fraccionamientos.representanteId, representanteId),
+        eq(fraccionamientos.activo, true),
         eligibleResidentAccountCondition(),
         isNull(users.deletedAt),
         isNull(passwordResetRequests.generatedAt),
@@ -184,14 +183,14 @@ export class RepresentativePasswordResetService {
         residenteNombre: users.name,
         residenteEmail:  users.email,
         residenteRole:   users.role,
-        circuitoNombre:  circuitos.nombre,
+        fraccionamientoNombre: fraccionamientos.nombre,
       })
       .from(perfilesResidente)
       .innerJoin(users, eq(users.id, perfilesResidente.userId))
-      .innerJoin(circuitos, eq(circuitos.id, perfilesResidente.circuitoId))
+      .innerJoin(fraccionamientos, eq(fraccionamientos.id, perfilesResidente.fraccionamientoId))
       .where(and(
         eq(perfilesResidente.id, input.perfilId),
-        eq(circuitos.representanteId, input.representanteId),
+        eq(fraccionamientos.representanteId, input.representanteId),
         isNull(users.deletedAt),
       ))
       .limit(1);
@@ -218,12 +217,12 @@ export class RepresentativePasswordResetService {
         })
         .from(perfilesResidente)
         .innerJoin(users, eq(users.id, perfilesResidente.userId))
-        .innerJoin(circuitos, eq(circuitos.id, perfilesResidente.circuitoId))
+        .innerJoin(fraccionamientos, eq(fraccionamientos.id, perfilesResidente.fraccionamientoId))
         .where(and(
           eq(perfilesResidente.id, input.perfilId),
           eq(perfilesResidente.userId, resident.userId),
-          eq(circuitos.representanteId, input.representanteId),
-          eq(circuitos.activo, true),
+          eq(fraccionamientos.representanteId, input.representanteId),
+          eq(fraccionamientos.activo, true),
           eligibleResidentAccountCondition(),
           isNull(users.deletedAt),
         ))
@@ -299,7 +298,7 @@ export class RepresentativePasswordResetService {
         email:        resident.residenteEmail,
         edificio:     resident.edificio,
         departamento: resident.departamento,
-        circuito:     resident.circuitoNombre,
+        fraccionamiento: resident.fraccionamientoNombre,
       },
     };
   }
@@ -321,17 +320,16 @@ export class RepresentativePasswordResetService {
         codeHash: passwordResetCodes.codeHash,
         userId:   users.id,
         perfilId: perfilesResidente.id,
-        circuitoId: perfilesResidente.circuitoId,
       })
       .from(users)
       .innerJoin(perfilesResidente, eq(perfilesResidente.userId, users.id))
-      .innerJoin(circuitos, eq(circuitos.id, perfilesResidente.circuitoId))
+      .innerJoin(fraccionamientos, eq(fraccionamientos.id, perfilesResidente.fraccionamientoId))
       .innerJoin(passwordResetCodes, eq(passwordResetCodes.userId, users.id))
       .where(and(
         sql`lower(${users.email}) = ${email}`,
         eligibleResidentAccountCondition(),
         isNull(users.deletedAt),
-        eq(circuitos.activo, true),
+        eq(fraccionamientos.activo, true),
         isNull(passwordResetCodes.usedAt),
         gt(passwordResetCodes.expiresAt, lookupNow),
       ))

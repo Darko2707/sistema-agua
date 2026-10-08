@@ -141,7 +141,7 @@ export function RepresentanteDashboard() {
   const solicitudesQuery = trpcReact.usuarios.listarSolicitudesRecuperacion.useQuery(undefined, {
     refetchInterval: 30_000,
   });
-  const cambiarRolMut   = trpcReact.usuarios.cambiarRolEnCircuito.useMutation();
+  const cambiarRolMut   = trpcReact.usuarios.cambiarRolEnFraccionamiento.useMutation();
   const generarCodigoMut = trpcReact.usuarios.generarCodigoRecuperacion.useMutation();
 
   const circuito   = circuitoQuery.data;

@@ -8,6 +8,7 @@ export type ProcesarPagoMpPeriodo = {
 export type ProcesarPagoMpCommand = {
   perfilId: string;
   fraccionamientoId?: string;
+  /** @deprecated Ignored; payments are scoped by fraccionamiento. */
   circuitoId?: string | null;
   representanteId?: string | null;
   paymentIntentReference?: string;

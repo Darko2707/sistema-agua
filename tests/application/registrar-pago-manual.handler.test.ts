@@ -11,12 +11,12 @@ const mockCircuitoActivo = {
 };
 
 const mockPerfil = {
-  id: 'perf-001', userId: 'user-001', circuitoId: 'circ-001',
+  id: 'perf-001', userId: 'user-001', circuitoId: null, fraccionamientoId: 'fracc-001',
   edificio: 'A', departamento: '101', estadoAgua: 'activo' as const, creadoEn: null,
 };
 
 const mockPagoCreado = {
-  id: 'pago-001', perfilId: 'perf-001', circuitoId: 'circ-001', representanteId: 'rep-001',
+  id: 'pago-001', perfilId: 'perf-001', circuitoId: null, representanteId: 'rep-001',
   mes: 6, anio: 2025, monto: '50.00', montoBase: '50.00',
   iva: '0.00', comisionMercadoPago: '0.00', retencionIsr: '0.00', retencionIva: '0.00',
   montoNetoRepresentante: '50.00', mercadoPagoPaymentId: null, mercadoPagoCollectorId: null,
@@ -114,24 +114,12 @@ describe('RegistrarPagoManualHandler', () => {
     });
   });
 
-  it('lanza si el circuito está inhabilitado', async () => {
+  it('lanza si el perfil no pertenece al fraccionamiento', async () => {
     const deps = makeDeps();
-    vi.mocked(deps.circuitoRepo.findByRepresentante).mockResolvedValue({ ...mockCircuitoActivo, activo: false });
+    vi.mocked(deps.residenteRepo.findById).mockResolvedValue({ ...mockPerfil, fraccionamientoId: 'otro-fracc' });
     const handler = new RegistrarPagoManualHandler(deps);
-    await expect(handler.execute({ perfilId: 'perf-001', metodo: 'efectivo', representanteId: 'rep-001' })).rejects.toThrow();
-  });
-
-  it('lanza si el representante no tiene circuito', async () => {
-    const deps = makeDeps();
-    vi.mocked(deps.circuitoRepo.findByRepresentante).mockResolvedValue(null);
-    const handler = new RegistrarPagoManualHandler(deps);
-    await expect(handler.execute({ perfilId: 'perf-001', metodo: 'efectivo', representanteId: 'rep-001' })).rejects.toThrow();
-  });
-
-  it('lanza si el perfil no pertenece al circuito', async () => {
-    const deps = makeDeps();
-    vi.mocked(deps.residenteRepo.findById).mockResolvedValue({ ...mockPerfil, circuitoId: 'otro-circ' });
-    const handler = new RegistrarPagoManualHandler(deps);
-    await expect(handler.execute({ perfilId: 'perf-001', metodo: 'efectivo', representanteId: 'rep-001' })).rejects.toThrow();
+    await expect(handler.execute({
+      perfilId: 'perf-001', metodo: 'efectivo', representanteId: 'rep-001', fraccionamientoId: 'fracc-001',
+    })).rejects.toThrow();
   });
 });

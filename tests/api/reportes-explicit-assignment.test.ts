@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   getSession: vi.fn(),
   findUser: vi.fn(),
-  findCircuito: vi.fn(),
+  findFraccionamiento: vi.fn(),
   findPerfil: vi.fn(),
   guardReportExport: vi.fn(),
   release: vi.fn(),
@@ -17,7 +17,7 @@ vi.mock('@/db', () => ({
   db: {
     query: {
       user: { findFirst: mocks.findUser },
-      circuitos: { findFirst: mocks.findCircuito },
+      fraccionamientos: { findFirst: mocks.findFraccionamiento },
       perfilesResidente: { findFirst: mocks.findPerfil },
     },
   },
@@ -44,7 +44,7 @@ beforeEach(() => {
     role: 'tesorera',
     fraccionamientoId: '11111111-1111-4111-8111-111111111111',
   });
-  mocks.findCircuito.mockResolvedValue(null);
+  mocks.findFraccionamiento.mockResolvedValue(null);
   mocks.guardReportExport.mockResolvedValue({
     allowed: true,
     release: mocks.release,
@@ -55,12 +55,12 @@ describe('reportes HTTP de tesoreria', () => {
   it.each([
     ['residentes', getReporteResidentes, 'https://app.example/api/reportes/residentes'],
     ['financiero', getReporteFinanciero, 'https://app.example/api/reportes/financiero'],
-  ])('el reporte %s exige circuitos.tesoreraId y no usa el perfil residencial', async (_name, handler, url) => {
+  ])('el reporte %s exige fraccionamiento activo asignado a la tesorera', async (_name, handler, url) => {
     const response = await handler(new Request(url));
 
     expect(response.status).toBe(404);
-    expect(await response.text()).toBe('Sin circuito asignado');
-    expect(mocks.findCircuito).toHaveBeenCalledTimes(1);
+    expect(await response.text()).toBe('Sin fraccionamiento activo asignado');
+    expect(mocks.findFraccionamiento).toHaveBeenCalledTimes(1);
     expect(mocks.findPerfil).not.toHaveBeenCalled();
     expect(mocks.release).toHaveBeenCalledTimes(1);
   });

@@ -87,7 +87,7 @@ describe('usuarios roles asignables', () => {
   });
 
   it('rechaza que un representante asigne el rol operador_pozo', async () => {
-    await expect(authenticatedCaller('representante').cambiarRolEnCircuito({
+    await expect(authenticatedCaller('representante').cambiarRolEnFraccionamiento({
       userId: 'usuario-1',
       rol: 'operador_pozo' as never,
     })).rejects.toMatchObject({ code: 'BAD_REQUEST' });

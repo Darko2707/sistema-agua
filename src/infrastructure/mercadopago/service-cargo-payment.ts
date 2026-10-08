@@ -4,7 +4,7 @@ import { db } from '@/db';
 import {
   auditoria,
   cargosServicios,
-  circuitos,
+  fraccionamientos,
   fraccionamientoMetodosPago,
   fraccionamientoServicios,
   mercadoPagoPaymentIntents,
@@ -34,13 +34,13 @@ export async function processServiceCargoPayment(input: { reference: string; pay
   const [row] = await db.select({
     cargo: cargosServicios,
     perfil: perfilesResidente,
-    circuito: circuitos,
+    fraccionamiento: fraccionamientos,
     servicio: servicios.clave,
     accessToken: fraccionamientoMetodosPago.accessTokenCifrado,
     collectorId: fraccionamientoMetodosPago.collectorId,
   }).from(cargosServicios)
     .innerJoin(perfilesResidente, eq(perfilesResidente.id, cargosServicios.perfilId))
-    .innerJoin(circuitos, eq(circuitos.id, perfilesResidente.circuitoId))
+    .innerJoin(fraccionamientos, eq(fraccionamientos.id, cargosServicios.fraccionamientoId))
     .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, cargosServicios.fraccionamientoServicioId))
     .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
     .leftJoin(fraccionamientoMetodosPago, and(
@@ -67,7 +67,7 @@ export async function processServiceCargoPayment(input: { reference: string; pay
     if (row.cargo.mercadoPagoPaymentId === input.paymentId) return { alreadyProcessed: true };
     throw new ServiceCargoPaymentValidationError('El cargo de servicio ya fue pagado con otro paymentId');
   }
-  const accessToken = decryptTokenSafe(row.accessToken ?? row.circuito.mercadoPagoAccessToken);
+  const accessToken = decryptTokenSafe(row.accessToken);
   if (!accessToken) throw new Error('Fraccionamiento sin credenciales de Mercado Pago');
   const { paymentClient } = createMercadoPagoClients(accessToken);
   const payment = await paymentClient.get({ id: input.paymentId });
@@ -164,8 +164,8 @@ export async function processServiceCargoPayment(input: { reference: string; pay
       const [waterPayment] = await tx.insert(pagos).values({
         fraccionamientoId: row.cargo.fraccionamientoId,
         perfilId: row.cargo.perfilId,
-        circuitoId: row.perfil.circuitoId,
-        representanteId: row.circuito.representanteId,
+        circuitoId: null,
+        representanteId: row.fraccionamiento.representanteId,
         mes: row.cargo.mes,
         anio: row.cargo.anio,
         monto: row.cargo.monto,

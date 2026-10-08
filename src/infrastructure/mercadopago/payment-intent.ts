@@ -20,7 +20,7 @@ const PaymentIntentRowSchema = z.object({
   tipo: z.enum(['agua', 'servicio']).default('agua'),
   fraccionamientoId: z.string().uuid(),
   perfilId: z.string().uuid(),
-  circuitoId: z.string().uuid(),
+  circuitoId: z.string().uuid().nullable(),
   cargoServicioId: z.string().uuid().nullable().default(null),
   periodos: z.array(PaymentIntentPeriodSchema).min(1).max(12),
   total: MoneySchema,
@@ -87,7 +87,7 @@ export async function persistMercadoPagoPaymentIntent(
   }
 
   const [perfil] = await db
-    .select({ fraccionamientoId: perfilesResidente.fraccionamientoId, circuitoId: perfilesResidente.circuitoId })
+    .select({ fraccionamientoId: perfilesResidente.fraccionamientoId })
     .from(perfilesResidente)
     .where(eq(perfilesResidente.id, input.perfilId))
     .limit(1);
@@ -123,7 +123,7 @@ export async function persistMercadoPagoPaymentIntent(
       tipo,
       fraccionamientoId: perfil.fraccionamientoId,
       perfilId: input.perfilId,
-      circuitoId: perfil.circuitoId ?? null,
+      circuitoId: null,
       cargoServicioId: input.cargoServicioId ?? null,
       periodos: input.periodos,
       total: input.total,
