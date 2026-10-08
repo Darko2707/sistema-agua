@@ -74,12 +74,14 @@ export class ProcesarPagoMpHandler {
     if (cmd.fraccionamientoId && perfil.fraccionamientoId !== cmd.fraccionamientoId) {
       throw new Error('El perfil cambio de fraccionamiento durante la confirmacion del pago');
     }
-    if (perfil.circuitoId !== cmd.circuitoId) {
+    if (cmd.circuitoId && perfil.circuitoId !== cmd.circuitoId) {
       throw new Error('El perfil cambio de circuito durante la confirmacion del pago');
     }
 
-    const circuito = await circuitoRepo.findById(cmd.circuitoId);
-    if (!circuito) throw new Error('Circuito no encontrado');
+    const circuito = cmd.circuitoId ? await circuitoRepo.findById(cmd.circuitoId) : null;
+    if (cmd.circuitoId && !circuito) throw new Error('Circuito no encontrado');
+    const representanteId = cmd.representanteId ?? circuito?.representanteId ?? null;
+    const collectorId = cmd.mercadoPagoCollectorId ?? circuito?.mercadoPagoCollectorId ?? null;
 
     // En referencias nuevas los importes vienen congelados en la intencion
     // persistida; en referencias legacy fueron reconstruidos desde la
@@ -101,8 +103,8 @@ export class ProcesarPagoMpHandler {
       return {
         perfilId:               cmd.perfilId,
         fraccionamientoId:      perfil.fraccionamientoId ?? undefined,
-        circuitoId:             circuito.id,
-        representanteId:        circuito.representanteId,
+        circuitoId:             circuito?.id ?? null,
+        representanteId,
         mes:                    periodo.mes,
         anio:                   periodo.anio,
         monto:                  fromCents(montoCents),
@@ -113,7 +115,7 @@ export class ProcesarPagoMpHandler {
         retencionIva:           fromCents(retencionesIva[index]),
         montoNetoRepresentante: fromCents(netos[index]),
         mercadoPagoPaymentId:   cmd.mercadoPagoPaymentId,
-        mercadoPagoCollectorId: cmd.mercadoPagoCollectorId ?? circuito.mercadoPagoCollectorId,
+        mercadoPagoCollectorId: collectorId,
         estado:                 'pagado' as const,
         metodo:                 cmd.metodo,
         folio:                  FolioVO.generate().toString(),
@@ -125,7 +127,7 @@ export class ProcesarPagoMpHandler {
     const result = await pagoRepo.createMercadoPagoBatchWithLock({
       perfilId: cmd.perfilId,
       fraccionamientoId: perfil.fraccionamientoId ?? undefined,
-      circuitoId: cmd.circuitoId,
+      circuitoId: circuito?.id ?? null,
       paymentIntentReference: cmd.paymentIntentReference,
       mercadoPagoPaymentId: cmd.mercadoPagoPaymentId,
       pagos,

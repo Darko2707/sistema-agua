@@ -269,18 +269,17 @@ export const asignacionesCircuito = pgTable('asignaciones_circuito', {
   id: uuid('id').defaultRandom().primaryKey(),
   usuarioId: text('usuario_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
   fraccionamientoId: uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
-  circuitoId: uuid('circuito_id').notNull().references(() => circuitos.id, { onDelete: 'cascade' }),
+  circuitoId: uuid('circuito_id').references(() => circuitos.id, { onDelete: 'set null' }),
   fraccionamientoServicioId: uuid('fraccionamiento_servicio_id').notNull().references(() => fraccionamientoServicios.id, { onDelete: 'restrict' }),
   rol: rolAsignacionCircuitoEnum('rol').notNull(),
   activo: boolean('activo').notNull().default(true),
   creadoEn: timestamp('creado_en').notNull().defaultNow(),
   actualizadoEn: timestamp('actualizado_en').notNull().defaultNow(),
 }, (t) => [
-  uniqueIndex('uq_asignacion_circuito_persona').on(t.usuarioId, t.circuitoId, t.fraccionamientoServicioId, t.rol),
-  index('idx_asignaciones_circuito_tenant').on(t.fraccionamientoId, t.circuitoId, t.activo),
+  uniqueIndex('uq_asignacion_fraccionamiento_persona').on(t.usuarioId, t.fraccionamientoId, t.fraccionamientoServicioId, t.rol),
+  index('idx_asignaciones_fraccionamiento_activa').on(t.fraccionamientoId, t.activo),
   index('idx_asignaciones_circuito_usuario').on(t.usuarioId, t.activo),
   foreignKey({ columns: [t.usuarioId, t.fraccionamientoId], foreignColumns: [user.id, user.fraccionamientoId], name: 'asignaciones_circuito_usuario_tenant_fk' }),
-  foreignKey({ columns: [t.circuitoId, t.fraccionamientoId], foreignColumns: [circuitos.id, circuitos.fraccionamientoId], name: 'asignaciones_circuito_circuito_tenant_fk' }),
   foreignKey({ columns: [t.fraccionamientoServicioId, t.fraccionamientoId], foreignColumns: [fraccionamientoServicios.id, fraccionamientoServicios.fraccionamientoId], name: 'asignaciones_circuito_servicio_tenant_fk' }),
 ]);
 

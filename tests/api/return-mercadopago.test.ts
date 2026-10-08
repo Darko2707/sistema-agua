@@ -32,9 +32,11 @@ vi.mock('@/src/infrastructure/db/repositories', () => ({
 
 vi.mock('@/db', () => ({
   db: {
-    query: { perfilesResidente: { findFirst: vi.fn(async () => ({
+    query: {
+      perfilesResidente: { findFirst: vi.fn(async () => ({
       id: 'perfil-001',
       circuitoId: 'circuito-001',
+      fraccionamientoId: 'fraccionamiento-001',
       circuito: {
         id: 'circuito-001',
         montoMensual: '100.00',
@@ -42,7 +44,16 @@ vi.mock('@/db', () => ({
         mercadoPagoAccessToken: 'token-cifrado',
         mercadoPagoCollectorId: '98765',
       },
-    })) } },
+      fraccionamiento: {
+        id: 'fraccionamiento-001',
+        montoMensual: '100.00',
+        montoReconexion: '300.00',
+        representanteId: 'representante-001',
+        activo: true,
+      },
+      })) },
+      fraccionamientoMetodosPago: { findFirst: vi.fn(async () => null) },
+    },
   },
 }));
 
@@ -107,6 +118,7 @@ describe('GET /api/mercadopago/return', () => {
     mockFindPaymentIntent.mockResolvedValue({
       externalReference: reference,
       perfilId: 'perfil-001',
+      fraccionamientoId: 'fraccionamiento-001',
       circuitoId: 'circuito-001',
       periodos: [{ mes: 8, anio: 2026, monto: '100.00', esReconexion: false }],
       total: '120.91',

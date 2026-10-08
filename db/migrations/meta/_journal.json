@@ -309,6 +309,13 @@
       "when": 1791331200000,
       "tag": "0043_perfiles_sin_circuito",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1791417600000,
+      "tag": "0044_asignaciones_por_fraccionamiento",
+      "breakpoints": true
     }
   ]
 }

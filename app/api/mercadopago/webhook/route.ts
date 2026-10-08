@@ -113,6 +113,7 @@ export async function POST(request: Request) {
         perfilId: verified.perfilId,
         fraccionamientoId: verified.fraccionamientoId,
         circuitoId: verified.circuitoId,
+        representanteId: verified.representanteId,
         paymentIntentReference: verified.paymentIntentReference,
         periodos: verified.periodos,
         metodo: 'mercado_pago',

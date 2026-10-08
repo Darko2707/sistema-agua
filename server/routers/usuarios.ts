@@ -403,11 +403,6 @@ export const usuariosRouter = router({
       if (target.rol !== input.rol) throw new TRPCError({ code: 'BAD_REQUEST', message: 'El rol del usuario no coincide con la asignación' });
       if (target.tenantId !== input.fraccionamientoId) throw new TRPCError({ code: 'FORBIDDEN', message: 'El usuario pertenece a otro fraccionamiento' });
 
-      const [circuito] = await db.select({ id: circuitos.id }).from(circuitos).where(and(
-        eq(circuitos.fraccionamientoId, input.fraccionamientoId),
-        eq(circuitos.activo, true),
-      )).limit(1);
-      if (!circuito) throw new TRPCError({ code: 'BAD_REQUEST', message: 'El fraccionamiento no está disponible para asignaciones' });
       const [servicio] = await db.select({ id: fraccionamientoServicios.id }).from(fraccionamientoServicios).where(and(
         eq(fraccionamientoServicios.id, input.fraccionamientoServicioId),
         eq(fraccionamientoServicios.fraccionamientoId, input.fraccionamientoId),
@@ -415,9 +410,9 @@ export const usuariosRouter = router({
       )).limit(1);
       if (!servicio) throw new TRPCError({ code: 'BAD_REQUEST', message: 'El servicio no está activo en el fraccionamiento' });
 
-      const assignmentInput = { ...input, circuitoId: circuito.id };
+      const assignmentInput = input;
       const [assignment] = await db.insert(asignacionesCircuito).values(assignmentInput).onConflictDoUpdate({
-        target: [asignacionesCircuito.usuarioId, asignacionesCircuito.circuitoId, asignacionesCircuito.fraccionamientoServicioId, asignacionesCircuito.rol],
+        target: [asignacionesCircuito.usuarioId, asignacionesCircuito.fraccionamientoId, asignacionesCircuito.fraccionamientoServicioId, asignacionesCircuito.rol],
         set: { activo: true, actualizadoEn: new Date() },
       }).returning({ id: asignacionesCircuito.id });
       await db.insert(auditoria).values({

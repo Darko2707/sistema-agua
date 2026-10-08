@@ -53,12 +53,25 @@ function assignmentChain(rows: Array<{ id: string }>) {
   return chain;
 }
 
+function tenantChain() {
+  const chain = {
+    from: vi.fn(),
+    where: vi.fn(),
+    limit: vi.fn().mockResolvedValue([{ activo: true }]),
+  };
+  chain.from.mockReturnValue(chain);
+  chain.where.mockReturnValue(chain);
+  return chain;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.select.mockReturnValue(assignmentChain([
-    { id: 'asignacion-1' },
-    { id: 'asignacion-2' },
-  ]));
+  mocks.select
+    .mockReturnValueOnce(tenantChain())
+    .mockReturnValueOnce(assignmentChain([
+      { id: 'asignacion-1' },
+      { id: 'asignacion-2' },
+    ]));
   mocks.findOrdenes.mockResolvedValue([{
     id: 'orden-1',
     tipo: 'corte',
@@ -85,14 +98,17 @@ describe('reportes.reporteOrdenesTrabajo para cuadrilla', () => {
   it('obtiene el alcance desde una asignación activa del fraccionamiento', async () => {
     const result = await reportesRouter.createCaller(cuadrillaContext).reporteOrdenesTrabajo({});
 
-    expect(mocks.select).toHaveBeenCalledTimes(1);
+    expect(mocks.select).toHaveBeenCalledTimes(2);
     expect(mocks.findOrdenes).toHaveBeenCalledTimes(1);
     expect(result).toHaveLength(1);
     expect(result[0]?.fraccionamiento.id).toBe(TENANT_ID);
   });
 
   it('rechaza si no tiene una asignación operativa activa', async () => {
-    mocks.select.mockReturnValue(assignmentChain([]));
+    mocks.select.mockReset();
+    mocks.select
+      .mockReturnValueOnce(tenantChain())
+      .mockReturnValueOnce(assignmentChain([]));
 
     await expect(reportesRouter.createCaller(cuadrillaContext).reporteOrdenesTrabajo({}))
       .rejects.toMatchObject({ code: 'FORBIDDEN' });

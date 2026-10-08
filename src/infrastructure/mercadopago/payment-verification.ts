@@ -40,7 +40,8 @@ export type VerifiedMercadoPagoPayment = {
   collectorId?: string;
   perfilId: string;
   fraccionamientoId: string;
-  circuitoId: string;
+  circuitoId: string | null;
+  representanteId: string | null;
   paymentIntentReference?: string;
   expectedTotal: string;
   periodos: Array<{
@@ -63,7 +64,7 @@ function moneyInCents(value: string): number {
 /**
  * Fetches a payment with the credentials belonging to the profile encoded in
  * the callback reference, then binds every security-sensitive field back to
- * that same server-side profile and circuit configuration.
+ * that same server-side profile and fraccionamiento configuration.
  */
 export async function fetchVerifiedMercadoPagoPayment(input: {
   externalReference: string | null;
@@ -103,6 +104,8 @@ export async function fetchVerifiedMercadoPagoPayment(input: {
           id:               true,
           montoMensual:     true,
           montoReconexion:  true,
+          representanteId:  true,
+          activo:           true,
         },
       },
       circuito: {
@@ -123,13 +126,13 @@ export async function fetchVerifiedMercadoPagoPayment(input: {
   if (intent && perfil.fraccionamientoId && intent.fraccionamientoId !== perfil.fraccionamientoId) {
     throw new MercadoPagoPaymentValidationError('circuit_mismatch', 'Fraccionamiento de pago inconsistente');
   }
-  if (
-    !perfil.circuito ||
-    perfil.circuitoId !== perfil.circuito.id
-  ) {
+  if (!perfil.fraccionamiento || perfil.fraccionamiento.activo === false) {
+    throw new MercadoPagoPaymentValidationError('circuit_mismatch', 'Fraccionamiento de pago inactivo o inexistente');
+  }
+  if (perfil.circuitoId && (!perfil.circuito || perfil.circuitoId !== perfil.circuito.id)) {
     throw new MercadoPagoPaymentValidationError('circuit_mismatch', 'Circuito de pago inconsistente');
   }
-  const configuracionCobro = perfil.fraccionamiento ?? perfil.circuito;
+  const configuracionCobro = perfil.fraccionamiento;
 
   const metodoPago = perfil.fraccionamientoId
     ? await db.query.fraccionamientoMetodosPago.findFirst({
@@ -140,9 +143,9 @@ export async function fetchVerifiedMercadoPagoPayment(input: {
         ),
       })
     : null;
-  const accessToken = decryptTokenSafe(metodoPago?.accessTokenCifrado ?? perfil.circuito.mercadoPagoAccessToken);
+  const accessToken = decryptTokenSafe(metodoPago?.accessTokenCifrado ?? perfil.circuito?.mercadoPagoAccessToken);
   if (!accessToken) {
-    throw new MercadoPagoPaymentValidationError('missing_access_token', 'Circuito sin credenciales de Mercado Pago');
+    throw new MercadoPagoPaymentValidationError('missing_access_token', 'Fraccionamiento sin credenciales de Mercado Pago');
   }
 
   const { paymentClient } = createMercadoPagoClients(accessToken);
@@ -213,7 +216,7 @@ export async function fetchVerifiedMercadoPagoPayment(input: {
 
   const configuredCollector = intent
     ? intent.collectorId
-    : (metodoPago?.collectorId ?? perfil.circuito.mercadoPagoCollectorId)?.trim();
+    : (metodoPago?.collectorId ?? perfil.circuito?.mercadoPagoCollectorId)?.trim();
   const paymentCollector = payment.collector_id === undefined ? undefined : String(payment.collector_id);
   if (configuredCollector && paymentCollector !== configuredCollector) {
     throw new MercadoPagoPaymentValidationError('collector_mismatch', 'El cobrador del pago no coincide con el fraccionamiento');
@@ -225,7 +228,8 @@ export async function fetchVerifiedMercadoPagoPayment(input: {
     collectorId: paymentCollector,
     perfilId: perfil.id,
     fraccionamientoId: perfil.fraccionamientoId!,
-    circuitoId: perfil.circuito.id,
+    circuitoId: perfil.circuitoId ?? null,
+    representanteId: perfil.fraccionamiento.representanteId ?? null,
     paymentIntentReference: intent?.externalReference,
     expectedTotal,
     periodos,

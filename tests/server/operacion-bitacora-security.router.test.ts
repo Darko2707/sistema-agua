@@ -3,11 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   findPerfil: vi.fn(),
   transaction: vi.fn(),
+  select: vi.fn(),
 }));
 
 vi.mock('@/db', () => ({
   db: {
     transaction: mocks.transaction,
+    select: mocks.select,
   },
 }));
 
@@ -75,6 +77,7 @@ function selectChain(rows: unknown[]) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.select.mockReturnValue(selectChain([{ activo: true }]));
   mocks.findPerfil.mockResolvedValue({
     id: PERFIL_ID,
     fraccionamientoId: TENANT_ID,

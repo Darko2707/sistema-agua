@@ -53,6 +53,7 @@ function pagoDesdeInput(
   return {
     ...input,
     id: `pago-${index}`,
+    circuitoId: input.circuitoId ?? null,
     mercadoPagoPaymentId: input.mercadoPagoPaymentId ?? null,
     mercadoPagoCollectorId: input.mercadoPagoCollectorId ?? null,
     creadoEn: new Date(),

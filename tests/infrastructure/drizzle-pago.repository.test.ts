@@ -63,6 +63,7 @@ function persistedPago(input: CrearPagoInput, index: number): PagoData {
   return {
     ...input,
     id: `pago-${index}`,
+    circuitoId: input.circuitoId ?? null,
     mercadoPagoPaymentId: input.mercadoPagoPaymentId ?? null,
     mercadoPagoCollectorId: input.mercadoPagoCollectorId ?? null,
     creadoEn: new Date('2026-08-09T18:00:00Z'),

@@ -176,17 +176,34 @@ export async function POST(request: Request) {
   } catch {
     return Response.json({ error: 'El fraccionamiento no tiene una suscripcion operativa vigente' }, { status: 403 });
   }
-  const [configuracionCobro] = await db.select({
-    activo: fraccionamientos.activo,
-    montoMensual: fraccionamientos.montoMensual,
-    montoReconexion: fraccionamientos.montoReconexion,
-    accessToken: fraccionamientoMetodosPago.accessTokenCifrado,
-    collectorId: fraccionamientoMetodosPago.collectorId,
-  }).from(fraccionamientos).leftJoin(fraccionamientoMetodosPago, and(
-    eq(fraccionamientoMetodosPago.fraccionamientoId, fraccionamientos.id),
-    eq(fraccionamientoMetodosPago.proveedor, 'mercado_pago'),
-    eq(fraccionamientoMetodosPago.activo, true),
-  )).where(eq(fraccionamientos.id, perfil.fraccionamientoId)).limit(1);
+  // Los perfiles heredados aun traen la configuracion en circuito; los
+  // perfiles nuevos consultan exclusivamente el fraccionamiento.
+  let configuracionCobro: {
+    activo: boolean;
+    montoMensual: string;
+    montoReconexion: string;
+    accessToken: string | null;
+    collectorId: string | null;
+  } | undefined = perfil.circuito ? {
+    activo: perfil.circuito.activo,
+    montoMensual: perfil.circuito.montoMensual,
+    montoReconexion: perfil.circuito.montoReconexion,
+    accessToken: perfil.circuito.mercadoPagoAccessToken,
+    collectorId: perfil.circuito.mercadoPagoCollectorId,
+  } : undefined;
+  if (!configuracionCobro) {
+    [configuracionCobro] = await db.select({
+      activo: fraccionamientos.activo,
+      montoMensual: fraccionamientos.montoMensual,
+      montoReconexion: fraccionamientos.montoReconexion,
+      accessToken: fraccionamientoMetodosPago.accessTokenCifrado,
+      collectorId: fraccionamientoMetodosPago.collectorId,
+    }).from(fraccionamientos).leftJoin(fraccionamientoMetodosPago, and(
+      eq(fraccionamientoMetodosPago.fraccionamientoId, fraccionamientos.id),
+      eq(fraccionamientoMetodosPago.proveedor, 'mercado_pago'),
+      eq(fraccionamientoMetodosPago.activo, true),
+    )).where(eq(fraccionamientos.id, perfil.fraccionamientoId)).limit(1);
+  }
   if (!configuracionCobro?.activo) return Response.json({ error: 'El fraccionamiento esta desactivado' }, { status: 403 });
   const accessToken = decryptTokenSafe(configuracionCobro.accessToken);
   if (!accessToken) {

@@ -8,7 +8,8 @@ export type ProcesarPagoMpPeriodo = {
 export type ProcesarPagoMpCommand = {
   perfilId: string;
   fraccionamientoId?: string;
-  circuitoId: string;
+  circuitoId?: string | null;
+  representanteId?: string | null;
   paymentIntentReference?: string;
   periodos: ProcesarPagoMpPeriodo[];
   mercadoPagoPaymentId: string;

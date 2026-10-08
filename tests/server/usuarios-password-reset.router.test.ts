@@ -5,6 +5,13 @@ const mocks = vi.hoisted(() => ({
   requestIpLimit: vi.fn(),
   requestAccountLimit: vi.fn(),
   findByRepresentante: vi.fn(),
+  select: vi.fn(),
+}));
+
+vi.mock('@/db', () => ({
+  db: {
+    select: mocks.select,
+  },
 }));
 
 vi.mock('@/src/infrastructure/db/repositories', () => ({
@@ -63,6 +70,11 @@ beforeEach(() => {
   mocks.findByRepresentante.mockResolvedValue({
     id: '22222222-2222-4222-8222-222222222222',
     activo: true,
+  });
+  mocks.select.mockReturnValue({
+    from: () => ({
+      where: () => ({ limit: async () => [{ activo: true }] }),
+    }),
   });
 });
 

@@ -228,7 +228,7 @@ describe('POST /api/mercadopago/checkout', () => {
     const response = await POST(request());
 
     expect(response.status).toBe(403);
-    expect(await response.json()).toEqual({ error: 'Tu circuito esta inhabilitado' });
+    expect(await response.json()).toEqual({ error: 'El fraccionamiento esta desactivado' });
     expect(mockFindPagos).not.toHaveBeenCalled();
     expect(mockPersistPaymentIntent).not.toHaveBeenCalled();
     expect(mockPreferenceCreate).not.toHaveBeenCalled();

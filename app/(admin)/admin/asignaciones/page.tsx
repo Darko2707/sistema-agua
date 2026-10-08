@@ -47,7 +47,7 @@ export default function AsignacionesPage() {
   const candidatos = useMemo(() => {
     const vistos = new Set<string>();
     return (personalQuery.data ?? []).filter((item) => {
-      if (item.rol !== 'cuadrilla_cortes') return false;
+      if (item.rol !== 'cuadrilla_cortes' && item.rol !== 'operador_pozo') return false;
       if (vistos.has(item.id)) return false;
       vistos.add(item.id);
       return true;

@@ -136,6 +136,13 @@ beforeEach(() => {
       montoMensual: '100.00',
       montoReconexion: '300.00',
     },
+    fraccionamiento: {
+      id: 'fraccionamiento-001',
+      montoMensual: '100.00',
+      montoReconexion: '300.00',
+      representanteId: 'representante-001',
+      activo: true,
+    },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } as any);
 

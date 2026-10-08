@@ -6,6 +6,7 @@ import {
   account,
   auditoria,
   circuitos,
+  fraccionamientos,
   passwordResetCodes,
   passwordResetRequests,
   perfilesResidente,
@@ -357,12 +358,14 @@ export class RepresentativePasswordResetService {
         .select({ id: perfilesResidente.id })
         .from(perfilesResidente)
         .innerJoin(users, eq(users.id, perfilesResidente.userId))
+        .innerJoin(fraccionamientos, eq(fraccionamientos.id, perfilesResidente.fraccionamientoId))
         .where(and(
           eq(perfilesResidente.id, preliminaryChallenge.perfilId),
           eq(perfilesResidente.userId, preliminaryChallenge.userId),
           eq(users.id, preliminaryChallenge.userId),
           eligibleResidentAccountCondition(),
           isNull(users.deletedAt),
+          eq(fraccionamientos.activo, true),
         ))
         .limit(1)
         .for('update');

@@ -579,7 +579,7 @@ export class DrizzlePagoRepository implements PagoRepository {
         pago.circuitoId !== input.circuitoId ||
         pago.mercadoPagoPaymentId !== input.mercadoPagoPaymentId
       ) {
-        throw new Error('Todos los periodos deben pertenecer al mismo perfil, circuito y paymentId');
+        throw new Error('Todos los periodos deben pertenecer al mismo perfil, fraccionamiento y paymentId');
       }
       const key = periodoKey(pago);
       if (requestedKeys.has(key)) throw new Error(`Periodo duplicado en el lote: ${key}`);
