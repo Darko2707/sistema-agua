@@ -126,6 +126,16 @@ export const serviciosRouter = router({
           }
         }
       });
+      // Al activar un servicio obligatorio, su cargo del periodo vigente queda
+      // disponible de inmediato en el checkout combinado del residente.
+      if (input.estado === 'activo') {
+        const ahora = new Date();
+        await generateMonthlyServiceCharges({
+          fraccionamientoId: input.fraccionamientoId,
+          mes: ahora.getUTCMonth() + 1,
+          anio: ahora.getUTCFullYear(),
+        });
+      }
       await db.insert(auditoria).values({
         actorId: ctx.user.id,
         accion: 'servicio.fraccionamiento.configurado',
