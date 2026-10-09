@@ -75,6 +75,7 @@ export class SubscriptionService {
         id: suscripcionesFraccionamiento.id,
         fraccionamientoId: suscripcionesFraccionamiento.fraccionamientoId,
         nombre: fraccionamientos.nombre,
+        fraccionamientoActivo: fraccionamientos.activo,
         estado: suscripcionesFraccionamiento.estado,
         vigenciaDesde: suscripcionesFraccionamiento.vigenciaDesde,
         vigenciaHasta: suscripcionesFraccionamiento.vigenciaHasta,

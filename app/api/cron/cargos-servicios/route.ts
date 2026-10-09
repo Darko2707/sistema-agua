@@ -60,7 +60,7 @@ export async function GET(request: Request) {
     const subscriptions = await subscriptionService.listAll();
     const tenants = [...new Set(
       subscriptions
-        .filter(row => row.estadoEfectivo === 'activa' || row.estadoEfectivo === 'gracia')
+        .filter(row => row.fraccionamientoActivo && (row.estadoEfectivo === 'activa' || row.estadoEfectivo === 'gracia'))
         .map(row => row.fraccionamientoId),
     )];
     const resultados: Array<{ fraccionamientoId: string; generados: number; candidatos: number }> = [];
