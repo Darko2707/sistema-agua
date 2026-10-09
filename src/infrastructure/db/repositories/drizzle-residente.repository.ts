@@ -208,25 +208,25 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
         .set({ fraccionamientoId: fraccionamiento.id, updatedAt: new Date() })
         .where(eq(user.id, data.userId));
 
-      // Agua es el servicio base: cada perfil nuevo lo recibe al registrarse.
-      const [agua] = await tx
+      // Todo servicio activo del fraccionamiento es obligatorio; un perfil
+      // nuevo queda asociado a todos en la misma transacción de su alta.
+      const serviciosActivos = await tx
         .select({ id: fraccionamientoServicios.id })
         .from(fraccionamientoServicios)
         .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
         .where(and(
           eq(fraccionamientoServicios.fraccionamientoId, fraccionamiento.id),
           eq(fraccionamientoServicios.estado, 'activo'),
-          eq(servicios.clave, 'agua'),
+          eq(servicios.activo, true),
         ))
-        .limit(1);
-      if (agua) {
-        await tx.insert(perfilesServicios).values({
+      if (serviciosActivos.length > 0) {
+        await tx.insert(perfilesServicios).values(serviciosActivos.map(servicio => ({
           perfilId: inserted.id,
           fraccionamientoId: fraccionamiento.id,
-          fraccionamientoServicioId: agua.id,
+          fraccionamientoServicioId: servicio.id,
           estadoAgua: data.estadoAgua,
           activo: true,
-        });
+        })));
       }
       return inserted;
     });

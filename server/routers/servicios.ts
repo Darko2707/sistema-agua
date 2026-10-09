@@ -17,17 +17,19 @@ export const serviciosRouter = router({
   catalogo: roleProcedure('admin', 'representante', 'tesorera', 'cuadrilla_cortes', 'operador_pozo', 'residente')
     .query(async () => db.query.servicios.findMany({ where: (s, { eq }) => eq(s.activo, true) })),
 
-  disponibles: roleProcedure('residente').query(async ({ ctx }) => {
+  misServicios: roleProcedure('residente').query(async ({ ctx }) => {
     if (!ctx.user.fraccionamientoId) return [];
+    // Los servicios no son optativos: el administrador los activa para todo
+    // el fraccionamiento. Esta consulta no depende de una suscripción elegida
+    // por el residente.
     return db
       .select({
         id: fraccionamientoServicios.id,
+        fraccionamientoServicioId: fraccionamientoServicios.id,
         servicioId: servicios.id,
         clave: servicios.clave,
         nombre: servicios.nombre,
         montoMensual: fraccionamientoServicios.montoMensual,
-        montoReconexion: fraccionamientoServicios.montoReconexion,
-        conCorteFisico: servicios.conCorteFisico,
       })
       .from(fraccionamientoServicios)
       .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
@@ -37,102 +39,6 @@ export const serviciosRouter = router({
         eq(servicios.activo, true),
       ));
   }),
-
-  misServicios: roleProcedure('residente').query(async ({ ctx }) => {
-    if (!ctx.user.fraccionamientoId) return [];
-    const perfil = await residenteRepo.findByUserId(ctx.user.id);
-    if (!perfil) throw new TRPCError({ code: 'NOT_FOUND', message: 'Perfil no encontrado' });
-    return db
-      .select({
-        id: perfilesServicios.id,
-        fraccionamientoServicioId: perfilesServicios.fraccionamientoServicioId,
-        servicioId: servicios.id,
-        clave: servicios.clave,
-        nombre: servicios.nombre,
-        activo: perfilesServicios.activo,
-        estado: perfilesServicios.estadoAgua,
-        montoMensual: fraccionamientoServicios.montoMensual,
-      })
-      .from(perfilesServicios)
-      .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, perfilesServicios.fraccionamientoServicioId))
-      .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
-      .where(and(
-        eq(perfilesServicios.perfilId, perfil.id),
-        eq(perfilesServicios.fraccionamientoId, ctx.user.fraccionamientoId),
-      ));
-  }),
-
-  suscribirme: roleProcedure('residente')
-    .input(z.object({ fraccionamientoServicioId: z.string().uuid() }))
-    .mutation(async ({ ctx, input }) => {
-      if (!ctx.user.fraccionamientoId) throw new TRPCError({ code: 'FORBIDDEN', message: 'Cuenta sin fraccionamiento' });
-      await subscriptionService.requireOperational(ctx.user.fraccionamientoId);
-      const perfil = await residenteRepo.findByUserId(ctx.user.id);
-      if (!perfil) throw new TRPCError({ code: 'NOT_FOUND', message: 'Perfil no encontrado' });
-      const [activation] = await db
-        .select({ id: fraccionamientoServicios.id, clave: servicios.clave })
-        .from(fraccionamientoServicios)
-        .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
-        .where(and(
-          eq(fraccionamientoServicios.id, input.fraccionamientoServicioId),
-          eq(fraccionamientoServicios.fraccionamientoId, ctx.user.fraccionamientoId),
-          eq(fraccionamientoServicios.estado, 'activo'),
-          eq(servicios.activo, true),
-        ))
-        .limit(1);
-      if (!activation) throw new TRPCError({ code: 'NOT_FOUND', message: 'Servicio no disponible para tu fraccionamiento' });
-
-      await db.insert(perfilesServicios).values({
-        perfilId: perfil.id,
-        fraccionamientoId: ctx.user.fraccionamientoId,
-        fraccionamientoServicioId: activation.id,
-        estadoAgua: 'activo',
-        activo: true,
-      }).onConflictDoUpdate({
-        target: [perfilesServicios.perfilId, perfilesServicios.fraccionamientoServicioId],
-        set: { activo: true, actualizadoEn: new Date() },
-      });
-      await db.insert(auditoria).values({
-        actorId: ctx.user.id,
-        accion: 'servicio.perfil.suscrito',
-        entidad: 'perfiles_servicios',
-        entidadId: activation.id,
-        detalle: { perfilId: perfil.id, fraccionamientoId: ctx.user.fraccionamientoId, servicio: activation.clave },
-      });
-      return { ok: true, servicio: activation.clave };
-    }),
-
-  cancelar: roleProcedure('residente')
-    .input(z.object({ fraccionamientoServicioId: z.string().uuid() }))
-    .mutation(async ({ ctx, input }) => {
-      if (!ctx.user.fraccionamientoId) throw new TRPCError({ code: 'FORBIDDEN', message: 'Cuenta sin fraccionamiento' });
-      await subscriptionService.requireOperational(ctx.user.fraccionamientoId);
-      const perfil = await residenteRepo.findByUserId(ctx.user.id);
-      if (!perfil) throw new TRPCError({ code: 'NOT_FOUND', message: 'Perfil no encontrado' });
-      const [service] = await db
-        .select({ id: perfilesServicios.id, clave: servicios.clave })
-        .from(perfilesServicios)
-        .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, perfilesServicios.fraccionamientoServicioId))
-        .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
-        .where(and(
-          eq(perfilesServicios.fraccionamientoServicioId, input.fraccionamientoServicioId),
-          eq(perfilesServicios.perfilId, perfil.id),
-          eq(perfilesServicios.fraccionamientoId, ctx.user.fraccionamientoId),
-          eq(fraccionamientoServicios.fraccionamientoId, ctx.user.fraccionamientoId),
-        ))
-        .limit(1);
-      if (!service) throw new TRPCError({ code: 'NOT_FOUND', message: 'Suscripcion de servicio no encontrada' });
-      if (service.clave === 'agua') throw new TRPCError({ code: 'BAD_REQUEST', message: 'El servicio de agua es obligatorio' });
-      await db.update(perfilesServicios).set({ activo: false, actualizadoEn: new Date() }).where(eq(perfilesServicios.id, service.id));
-      await db.insert(auditoria).values({
-        actorId: ctx.user.id,
-        accion: 'servicio.perfil.cancelado',
-        entidad: 'perfiles_servicios',
-        entidadId: service.id,
-        detalle: { perfilId: perfil.id, fraccionamientoId: ctx.user.fraccionamientoId, servicio: service.clave },
-      });
-      return { ok: true };
-    }),
 
   listarTenant: roleProcedure('admin')
     .input(tenantInput)
@@ -200,9 +106,9 @@ export const serviciosRouter = router({
             ));
         }
 
-        // Agua es el servicio base: al activarlo, todos los perfiles existentes
-        // deben tener su perfil_servicio dentro del mismo tenant.
-        if (service.clave === 'agua' && input.estado === 'activo') {
+        // Todo servicio activo es obligatorio para todos los perfiles del
+        // fraccionamiento, incluidos los que ya existían antes de configurarlo.
+        if (input.estado === 'activo') {
           const perfiles = await tx.select({ id: perfilesResidente.id, estadoAgua: perfilesResidente.estadoAgua })
             .from(perfilesResidente)
             .where(eq(perfilesResidente.fraccionamientoId, input.fraccionamientoId));

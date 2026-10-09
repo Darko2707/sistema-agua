@@ -372,6 +372,13 @@
       "when": 1792108800000,
       "tag": "0052_checkout_mixto",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1792195200000,
+      "tag": "0053_servicios_obligatorios_por_fraccionamiento",
+      "breakpoints": true
     }
   ]
 }
