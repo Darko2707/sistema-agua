@@ -8,9 +8,9 @@ import { TRPCError } from '@trpc/server';
 import { db } from '@/db';
 // eslint-disable-next-line no-restricted-imports -- complex financial aggregations not yet in a repo
 import {
-  asignacionesCircuito,
+  asignacionesFraccionamiento,
   fraccionamientoServicios,
-  gastosCircuito,
+  gastosFraccionamiento,
   ingresosAdicionales,
   servicios,
 } from '@/db/schema';
@@ -35,7 +35,7 @@ function sortPorEdificio<T extends { edificio: string; departamento: string }>(a
   });
 }
 
-function montoDisponibleCircuito(pago: {
+function montoDisponibleFraccionamiento(pago: {
   monto: string;
   montoBase?: string | null;
   montoNetoRepresentante?: string | null;
@@ -170,7 +170,7 @@ export const reportesRouter = router({
           return {
             mes,
             anio,
-            monto:     pago ? montoDisponibleCircuito(pago) : null,
+            monto:     pago ? montoDisponibleFraccionamiento(pago) : null,
             estado:    pago ? ('pagado' as const) : ('pendiente' as const),
             fechaPago: pago?.fechaPago ?? null,
           };
@@ -230,7 +230,7 @@ export const reportesRouter = router({
     }),
 
   // Lista de edificios únicos del circuito (para el filtro)
-  edificiosCircuito: roleProcedure('tesorera').query(async ({ ctx }) => {
+  edificiosFraccionamiento: roleProcedure('tesorera').query(async ({ ctx }) => {
     const fraccionamiento = await getFraccionamientoDelTesorera(ctx.user.id, ctx.user.fraccionamientoId!);
     const perfiles = await db.query.perfilesResidente.findMany({
       where: (p, { eq }) => eq(p.fraccionamientoId, fraccionamiento.id),
@@ -261,18 +261,18 @@ export const reportesRouter = router({
         });
         if (!fraccionamiento) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes un fraccionamiento asignado' });
       } else if (ctx.user.role === 'cuadrilla_cortes') {
-        const asignaciones = await db.select({ id: asignacionesCircuito.id })
-          .from(asignacionesCircuito)
+        const asignaciones = await db.select({ id: asignacionesFraccionamiento.id })
+          .from(asignacionesFraccionamiento)
           .innerJoin(
             fraccionamientoServicios,
-            eq(fraccionamientoServicios.id, asignacionesCircuito.fraccionamientoServicioId),
+            eq(fraccionamientoServicios.id, asignacionesFraccionamiento.fraccionamientoServicioId),
           )
           .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
           .where(and(
-            eq(asignacionesCircuito.usuarioId, ctx.user.id),
-            eq(asignacionesCircuito.fraccionamientoId, tenantId!),
-            eq(asignacionesCircuito.rol, 'cuadrilla_cortes'),
-            eq(asignacionesCircuito.activo, true),
+            eq(asignacionesFraccionamiento.usuarioId, ctx.user.id),
+            eq(asignacionesFraccionamiento.fraccionamientoId, tenantId!),
+            eq(asignacionesFraccionamiento.rol, 'cuadrilla_cortes'),
+            eq(asignacionesFraccionamiento.activo, true),
             eq(fraccionamientoServicios.estado, 'activo'),
             eq(servicios.clave, 'agua'),
           ));
@@ -340,7 +340,7 @@ export const reportesRouter = router({
             ),
           with: { perfil: true },
         }),
-        db.query.gastosCircuito.findMany({
+        db.query.gastosFraccionamiento.findMany({
           where: (g, { eq, and }) =>
             and(
               eq(g.fraccionamientoId, fraccionamiento.id),
@@ -366,7 +366,7 @@ export const reportesRouter = router({
         }),
       ]);
 
-      const totalPagos             = pagosPeriodo.reduce((s, p) => s + montoDisponibleCircuito(p), 0);
+      const totalPagos             = pagosPeriodo.reduce((s, p) => s + montoDisponibleFraccionamiento(p), 0);
       const totalIngresosAdicionales = ingresosPeriodo.reduce((s, i) => s + Number(i.monto), 0);
       const totalRecaudado         = totalPagos + totalIngresosAdicionales;
       const totalGastos            = gastosPeriodo.reduce((s, g) => s + Number(g.monto), 0);
@@ -392,7 +392,7 @@ export const reportesRouter = router({
         const pagoIds = new Set(pagosEdificio.map((p) => p.perfilId));
         return {
           edificio:          ed,
-          totalPagado:       pagosEdificio.reduce((s, p) => s + montoDisponibleCircuito(p), 0),
+          totalPagado:       pagosEdificio.reduce((s, p) => s + montoDisponibleFraccionamiento(p), 0),
           cantidadPagos:     pagosEdificio.length,
           residentesActivos: resEdificio.filter((r) => pagoIds.has(r.id)).length,
           residentesMorosos: resEdificio.filter((r) => !pagoIds.has(r.id)).length,
@@ -434,7 +434,7 @@ export const reportesRouter = router({
     .mutation(async ({ ctx, input }) => {
       const fraccionamiento = await getFraccionamientoDelTesorera(ctx.user.id, ctx.user.fraccionamientoId!);
 
-      const [gasto] = await db.insert(gastosCircuito).values({
+      const [gasto] = await db.insert(gastosFraccionamiento).values({
         fraccionamientoId: fraccionamiento.id,
         representanteId: ctx.user.id,
         concepto:        input.concepto,
@@ -459,20 +459,20 @@ export const reportesRouter = router({
     .mutation(async ({ ctx, input }) => {
       const fraccionamiento = await getFraccionamientoDelTesorera(ctx.user.id, ctx.user.fraccionamientoId!);
 
-      const gasto = await db.query.gastosCircuito.findFirst({
+      const gasto = await db.query.gastosFraccionamiento.findFirst({
         where: (g, { eq, and }) => and(eq(g.id, input.id), eq(g.fraccionamientoId, ctx.user.fraccionamientoId!)),
       });
       if (!gasto)                          throw new TRPCError({ code: 'NOT_FOUND' });
 
-      const updates: Partial<typeof gastosCircuito.$inferInsert> = {};
+      const updates: Partial<typeof gastosFraccionamiento.$inferInsert> = {};
       if (input.concepto)  updates.concepto  = input.concepto;
       if (input.monto)     updates.monto     = String(input.monto);
       if (input.categoria) updates.categoria = input.categoria;
       if (input.fecha)     updates.fecha     = new Date(input.fecha);
 
-      await db.update(gastosCircuito).set(updates).where(and(
-        eq(gastosCircuito.id, input.id),
-        eq(gastosCircuito.fraccionamientoId, ctx.user.fraccionamientoId!),
+      await db.update(gastosFraccionamiento).set(updates).where(and(
+        eq(gastosFraccionamiento.id, input.id),
+        eq(gastosFraccionamiento.fraccionamientoId, ctx.user.fraccionamientoId!),
       ));
       return { ok: true };
     }),
@@ -482,14 +482,14 @@ export const reportesRouter = router({
     .mutation(async ({ ctx, input }) => {
       const fraccionamiento = await getFraccionamientoDelTesorera(ctx.user.id, ctx.user.fraccionamientoId!);
 
-      const gasto = await db.query.gastosCircuito.findFirst({
+      const gasto = await db.query.gastosFraccionamiento.findFirst({
         where: (g, { eq, and }) => and(eq(g.id, input.id), eq(g.fraccionamientoId, ctx.user.fraccionamientoId!)),
       });
       if (!gasto)                          throw new TRPCError({ code: 'NOT_FOUND' });
 
-      await db.delete(gastosCircuito).where(and(
-        eq(gastosCircuito.id, input.id),
-        eq(gastosCircuito.fraccionamientoId, ctx.user.fraccionamientoId!),
+      await db.delete(gastosFraccionamiento).where(and(
+        eq(gastosFraccionamiento.id, input.id),
+        eq(gastosFraccionamiento.fraccionamientoId, ctx.user.fraccionamientoId!),
       ));
       return { ok: true };
     }),

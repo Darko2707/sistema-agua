@@ -40,7 +40,7 @@ function isAnioValido(anio: number): boolean {
   return Number.isInteger(anio) && anio >= 2020 && anio <= 2100;
 }
 
-function montoDisponibleCircuito(pago: {
+function montoDisponibleFraccionamiento(pago: {
   monto: string;
   montoBase?: string | null;
   montoNetoRepresentante?: string | null;
@@ -112,7 +112,7 @@ export async function GET(req: Request) {
         ),
         with: { perfil: true },
       }),
-      db.query.gastosCircuito.findMany({
+      db.query.gastosFraccionamiento.findMany({
         where: (g, { eq, and, or }) => and(
           eq(g.fraccionamientoId, fraccionamiento.id),
           or(...mesesLista.map(m => and(eq(g.mes, m.mes), eq(g.anio, m.anio)))),
@@ -133,7 +133,7 @@ export async function GET(req: Request) {
       const pagosM   = pagosTodos.filter(p => p.mes === mes && p.anio === anio);
       const gastosM  = gastosTodos.filter(g => g.mes === mes && g.anio === anio);
       const ingresosM = ingresosTodos.filter(i => i.mes === mes && i.anio === anio);
-      const totalPagos               = pagosM.reduce((s, p) => s + montoDisponibleCircuito(p), 0);
+      const totalPagos               = pagosM.reduce((s, p) => s + montoDisponibleFraccionamiento(p), 0);
       const totalIngresosAdicionales = ingresosM.reduce((s, i) => s + Number(i.monto), 0);
       const totalRecaudado           = totalPagos + totalIngresosAdicionales;
       const totalGastos              = gastosM.reduce((s, g) => s + Number(g.monto), 0);
@@ -154,7 +154,7 @@ export async function GET(req: Request) {
       const pagIds = new Set(pagEd.map(p => p.perfilId));
       return {
         edificio:          ed,
-        totalPagado:       pagEd.reduce((s, p) => s + montoDisponibleCircuito(p), 0),
+        totalPagado:       pagEd.reduce((s, p) => s + montoDisponibleFraccionamiento(p), 0),
         cantidadPagos:     pagEd.length,
         residentesActivos: resEd.filter(r => pagIds.has(r.id)).length,
         residentesMorosos: resEd.filter(r => !pagIds.has(r.id)).length,
@@ -218,7 +218,7 @@ export async function GET(req: Request) {
       where: (p, { eq, and }) => and(eq(p.fraccionamientoId, fraccionamiento.id), eq(p.mes, mes), eq(p.anio, anio), eq(p.estado, 'pagado')),
       with: { perfil: true },
     }),
-    db.query.gastosCircuito.findMany({
+    db.query.gastosFraccionamiento.findMany({
       where: (g, { eq, and }) => and(eq(g.fraccionamientoId, fraccionamiento.id), eq(g.mes, mes), eq(g.anio, anio)),
       orderBy: (g, { desc }) => [desc(g.fecha)],
     }),
@@ -228,7 +228,7 @@ export async function GET(req: Request) {
     }),
   ]);
 
-  const totalPagos               = pagosPeriodo.reduce((s, p) => s + montoDisponibleCircuito(p), 0);
+  const totalPagos               = pagosPeriodo.reduce((s, p) => s + montoDisponibleFraccionamiento(p), 0);
   const totalIngresosAdicionales = ingresosPeriodo.reduce((s, i) => s + Number(i.monto), 0);
   const totalRecaudado           = totalPagos + totalIngresosAdicionales;
   const totalGastos              = gastosPeriodo.reduce((s, g) => s + Number(g.monto), 0);
@@ -245,7 +245,7 @@ export async function GET(req: Request) {
     const pagIds = new Set(pagEd.map(p => p.perfilId));
     return {
       edificio:          ed,
-      totalPagado:       pagEd.reduce((s, p) => s + montoDisponibleCircuito(p), 0),
+      totalPagado:       pagEd.reduce((s, p) => s + montoDisponibleFraccionamiento(p), 0),
       cantidadPagos:     pagEd.length,
       residentesActivos: resEd.filter(r => pagIds.has(r.id)).length,
       residentesMorosos: resEd.filter(r => !pagIds.has(r.id)).length,

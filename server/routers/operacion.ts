@@ -1,4 +1,4 @@
-﻿import { z } from 'zod';
+import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 // Legacy operations in this router still share a transaction boundary directly.
 // eslint-disable-next-line no-restricted-imports
@@ -16,7 +16,7 @@ import {
   notificaciones,
   pagos,
   perfilesResidente,
-  asignacionesCircuito,
+  asignacionesFraccionamiento,
   fraccionamientoServicios,
   servicios,
 } from '@/db/schema';
@@ -59,15 +59,15 @@ async function assertPerfilVisible(
 
   if (role === 'cuadrilla_cortes') {
     if (!perfil.fraccionamientoId) throw new TRPCError({ code: 'FORBIDDEN' });
-    const [assignment] = await db.select({ id: asignacionesCircuito.id })
-      .from(asignacionesCircuito)
-      .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, asignacionesCircuito.fraccionamientoServicioId))
+    const [assignment] = await db.select({ id: asignacionesFraccionamiento.id })
+      .from(asignacionesFraccionamiento)
+      .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, asignacionesFraccionamiento.fraccionamientoServicioId))
       .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
       .where(and(
-        eq(asignacionesCircuito.usuarioId, userId),
-        eq(asignacionesCircuito.fraccionamientoId, perfil.fraccionamientoId),
-        eq(asignacionesCircuito.rol, 'cuadrilla_cortes'),
-        eq(asignacionesCircuito.activo, true),
+        eq(asignacionesFraccionamiento.usuarioId, userId),
+        eq(asignacionesFraccionamiento.fraccionamientoId, perfil.fraccionamientoId),
+        eq(asignacionesFraccionamiento.rol, 'cuadrilla_cortes'),
+        eq(asignacionesFraccionamiento.activo, true),
         eq(fraccionamientoServicios.estado, 'activo'),
         eq(servicios.clave, 'agua'),
       )).limit(1);
@@ -286,18 +286,18 @@ export const operacionRouter = router({
           ) {
             throw new TRPCError({ code: 'FORBIDDEN' });
           }
-          const [assignment] = await tx.select({ id: asignacionesCircuito.id })
-            .from(asignacionesCircuito)
+          const [assignment] = await tx.select({ id: asignacionesFraccionamiento.id })
+            .from(asignacionesFraccionamiento)
             .innerJoin(
               fraccionamientoServicios,
-              eq(fraccionamientoServicios.id, asignacionesCircuito.fraccionamientoServicioId),
+              eq(fraccionamientoServicios.id, asignacionesFraccionamiento.fraccionamientoServicioId),
             )
             .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
             .where(and(
-              eq(asignacionesCircuito.usuarioId, ctx.user.id),
-              eq(asignacionesCircuito.fraccionamientoId, perfil.fraccionamientoId),
-              eq(asignacionesCircuito.rol, 'cuadrilla_cortes'),
-              eq(asignacionesCircuito.activo, true),
+              eq(asignacionesFraccionamiento.usuarioId, ctx.user.id),
+              eq(asignacionesFraccionamiento.fraccionamientoId, perfil.fraccionamientoId),
+              eq(asignacionesFraccionamiento.rol, 'cuadrilla_cortes'),
+              eq(asignacionesFraccionamiento.activo, true),
               eq(fraccionamientoServicios.fraccionamientoId, perfil.fraccionamientoId),
               eq(fraccionamientoServicios.estado, 'activo'),
               eq(servicios.clave, 'agua'),

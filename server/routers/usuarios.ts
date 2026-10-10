@@ -26,7 +26,7 @@ import { profileChangeService } from '@/src/infrastructure/db/services/profile-c
 import { subscriptionService } from '@/src/infrastructure/db/services/subscription.service';
 import { db } from '@/db';
 import { and, eq, inArray } from 'drizzle-orm';
-import { asignacionesCircuito, auditoria, fraccionamientos, fraccionamientoServicios, perfilesResidente, user } from '@/db/schema';
+import { asignacionesFraccionamiento, auditoria, fraccionamientos, fraccionamientoServicios, perfilesResidente, user } from '@/db/schema';
 
 const telefono10 = z.string().regex(/^\d{10}$/, 'El telefono debe contener exactamente 10 digitos');
 
@@ -366,17 +366,17 @@ export const usuariosRouter = router({
       ];
       return db.select({
         id: user.id,
-        asignacionId: asignacionesCircuito.id,
+        asignacionId: asignacionesFraccionamiento.id,
         nombre: user.name,
         email: user.email,
         rol: user.role,
-        servicioId: asignacionesCircuito.fraccionamientoServicioId,
-        activo: asignacionesCircuito.activo,
+        servicioId: asignacionesFraccionamiento.fraccionamientoServicioId,
+        activo: asignacionesFraccionamiento.activo,
       }).from(user)
-        .leftJoin(asignacionesCircuito, and(
-          eq(asignacionesCircuito.usuarioId, user.id),
-          eq(asignacionesCircuito.fraccionamientoId, input.fraccionamientoId),
-          eq(asignacionesCircuito.activo, true),
+        .leftJoin(asignacionesFraccionamiento, and(
+          eq(asignacionesFraccionamiento.usuarioId, user.id),
+          eq(asignacionesFraccionamiento.fraccionamientoId, input.fraccionamientoId),
+          eq(asignacionesFraccionamiento.activo, true),
         ))
         .where(and(...conditions));
     }),
@@ -404,14 +404,14 @@ export const usuariosRouter = router({
       if (!servicio) throw new TRPCError({ code: 'BAD_REQUEST', message: 'El servicio no está activo en el fraccionamiento' });
 
       const assignmentInput = input;
-      const [assignment] = await db.insert(asignacionesCircuito).values(assignmentInput).onConflictDoUpdate({
-        target: [asignacionesCircuito.usuarioId, asignacionesCircuito.fraccionamientoId, asignacionesCircuito.fraccionamientoServicioId, asignacionesCircuito.rol],
+      const [assignment] = await db.insert(asignacionesFraccionamiento).values(assignmentInput).onConflictDoUpdate({
+        target: [asignacionesFraccionamiento.usuarioId, asignacionesFraccionamiento.fraccionamientoId, asignacionesFraccionamiento.fraccionamientoServicioId, asignacionesFraccionamiento.rol],
         set: { activo: true, actualizadoEn: new Date() },
-      }).returning({ id: asignacionesCircuito.id });
+      }).returning({ id: asignacionesFraccionamiento.id });
       await db.insert(auditoria).values({
         actorId: ctx.user.id,
         accion: 'personal.fraccionamiento.asignado',
-        entidad: 'asignaciones_circuito',
+        entidad: 'asignaciones_fraccionamiento',
         entidadId: assignment.id,
         detalle: assignmentInput,
       });
@@ -421,9 +421,9 @@ export const usuariosRouter = router({
   quitarAsignacionPersonal: roleProcedure('admin')
     .input(z.object({ asignacionId: z.string().uuid() }))
     .mutation(async ({ ctx, input }) => {
-      const [assignment] = await db.update(asignacionesCircuito).set({ activo: false, actualizadoEn: new Date() })
-        .where(and(eq(asignacionesCircuito.id, input.asignacionId), eq(asignacionesCircuito.activo, true)))
-        .returning({ id: asignacionesCircuito.id, fraccionamientoId: asignacionesCircuito.fraccionamientoId });
+      const [assignment] = await db.update(asignacionesFraccionamiento).set({ activo: false, actualizadoEn: new Date() })
+        .where(and(eq(asignacionesFraccionamiento.id, input.asignacionId), eq(asignacionesFraccionamiento.activo, true)))
+        .returning({ id: asignacionesFraccionamiento.id, fraccionamientoId: asignacionesFraccionamiento.fraccionamientoId });
       if (!assignment) throw new TRPCError({ code: 'NOT_FOUND', message: 'Asignación no encontrada o ya inactiva' });
       await db.insert(auditoria).values({ actorId: ctx.user.id, accion: 'personal.fraccionamiento.desasignado', entidad: 'asignaciones_fraccionamiento', entidadId: assignment.id, detalle: { fraccionamientoId: assignment.fraccionamientoId } });
       return { ok: true };

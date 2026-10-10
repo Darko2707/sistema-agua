@@ -61,7 +61,7 @@ export function ReporteResidentes() {
   const [descargando,    setDescargando]    = useState(false);
   const [excelModal,     setExcelModal]     = useState(false);
 
-  const edificiosQuery = trpcReact.reportes.edificiosCircuito.useQuery();
+  const edificiosQuery = trpcReact.reportes.edificiosFraccionamiento.useQuery();
   const residentesQuery = trpcReact.reportes.reporteResidentes.useQuery({
     estadoAgua: estadoFiltro || undefined,
     edificio:   edificioFiltro || undefined,

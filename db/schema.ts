@@ -17,7 +17,7 @@ export const estadoSuscripcionFraccionamientoEnum = pgEnum('estado_suscripcion_f
 export const estadoActivacionServicioEnum = pgEnum('estado_activacion_servicio', ['activo', 'inactivo']);
 export const estadoSolicitudPerfilEnum = pgEnum('estado_solicitud_perfil', ['pendiente', 'aprobada', 'rechazada']);
 export const estadoCargoServicioEnum = pgEnum('estado_cargo_servicio', ['pendiente', 'pagado', 'cancelado']);
-export const rolAsignacionCircuitoEnum = pgEnum('rol_asignacion_circuito', ['cuadrilla_cortes', 'operador_pozo']);
+export const rolAsignacionFraccionamientoEnum = pgEnum('rol_asignacion_fraccionamiento', ['cuadrilla_cortes', 'operador_pozo']);
 export const mercadoPagoIntentTipoEnum = pgEnum('mercado_pago_intent_tipo', ['agua', 'servicio', 'mixto']);
 export const ticketTipoEnum = pgEnum('ticket_tipo', ['agua', 'servicio']);
 export const tipoOrdenTrabajoEnum = pgEnum('tipo_orden_trabajo', ['corte', 'reconexion']);
@@ -239,12 +239,12 @@ export const passwordResetCodes = pgTable('password_reset_codes', {
 ]);
 // Asignaciones explícitas para personal operativo. Un usuario puede tener
 // varios circuitos, pero únicamente dentro de su propio fraccionamiento.
-export const asignacionesCircuito = pgTable('asignaciones_circuito', {
+export const asignacionesFraccionamiento = pgTable('asignaciones_fraccionamiento', {
   id: uuid('id').defaultRandom().primaryKey(),
   usuarioId: text('usuario_id').notNull().references(() => user.id, { onDelete: 'cascade' }),
   fraccionamientoId: uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
   fraccionamientoServicioId: uuid('fraccionamiento_servicio_id').notNull().references(() => fraccionamientoServicios.id, { onDelete: 'restrict' }),
-  rol: rolAsignacionCircuitoEnum('rol').notNull(),
+  rol: rolAsignacionFraccionamientoEnum('rol').notNull(),
   activo: boolean('activo').notNull().default(true),
   creadoEn: timestamp('creado_en').notNull().defaultNow(),
   actualizadoEn: timestamp('actualizado_en').notNull().defaultNow(),
@@ -252,8 +252,8 @@ export const asignacionesCircuito = pgTable('asignaciones_circuito', {
   uniqueIndex('uq_asignacion_fraccionamiento_persona').on(t.usuarioId, t.fraccionamientoId, t.fraccionamientoServicioId, t.rol),
   index('idx_asignaciones_fraccionamiento_activa').on(t.fraccionamientoId, t.activo),
   index('idx_asignaciones_usuario_activa').on(t.usuarioId, t.activo),
-  foreignKey({ columns: [t.usuarioId, t.fraccionamientoId], foreignColumns: [user.id, user.fraccionamientoId], name: 'asignaciones_circuito_usuario_tenant_fk' }),
-  foreignKey({ columns: [t.fraccionamientoServicioId, t.fraccionamientoId], foreignColumns: [fraccionamientoServicios.id, fraccionamientoServicios.fraccionamientoId], name: 'asignaciones_circuito_servicio_tenant_fk' }),
+  foreignKey({ columns: [t.usuarioId, t.fraccionamientoId], foreignColumns: [user.id, user.fraccionamientoId], name: 'asignaciones_fraccionamiento_usuario_tenant_fk' }),
+  foreignKey({ columns: [t.fraccionamientoServicioId, t.fraccionamientoId], foreignColumns: [fraccionamientoServicios.id, fraccionamientoServicios.fraccionamientoId], name: 'asignaciones_fraccionamiento_servicio_tenant_fk' }),
 ]);
 
 // Perfil extendido del residente — 1:1 con user
@@ -652,7 +652,7 @@ export const ingresosAdicionales = pgTable('ingresos_adicionales', {
   creadoEn:        timestamp('creado_en').defaultNow(),
 }, (t) => [index('idx_ingresos_fraccionamiento_periodo').on(t.fraccionamientoId, t.mes, t.anio)]);
 
-export const gastosCircuito = pgTable('gastos_circuito', {
+export const gastosFraccionamiento = pgTable('gastos_fraccionamiento', {
   id:              uuid('id').defaultRandom().primaryKey(),
   fraccionamientoId: uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
   representanteId: text('representante_id').notNull().references(() => user.id),
@@ -675,9 +675,9 @@ export const userRelations = relations(user, ({ one, many }) => ({
   pushSubscriptions: many(pushSubscriptions),
 }));
 
-export const gastosCircuitoRelations = relations(gastosCircuito, ({ one }) => ({
+export const gastosFraccionamientoRelations = relations(gastosFraccionamiento, ({ one }) => ({
   representante: one(user, {
-    fields: [gastosCircuito.representanteId],
+    fields: [gastosFraccionamiento.representanteId],
     references: [user.id],
   }),
 }));

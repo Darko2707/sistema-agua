@@ -14,7 +14,7 @@ import { DrizzleCorteOperacionDatabase } from '@/src/infrastructure/db/services/
 // eslint-disable-next-line no-restricted-imports
 import { db } from '@/db';
 // eslint-disable-next-line no-restricted-imports
-import { asignacionesCircuito, fraccionamientoServicios, servicios } from '@/db/schema';
+import { asignacionesFraccionamiento, fraccionamientoServicios, servicios } from '@/db/schema';
 
 import { router, roleProcedure, operationalRoleProcedure } from '../trpc';
 
@@ -23,15 +23,15 @@ const confirmarCorteHandler = new ConfirmarCorteHandler({ corteOperacionService 
 const confirmarReconexionHandler = new ConfirmarReconexionHandler({ corteOperacionService });
 
 async function findFraccionamientosAsignados(userId: string): Promise<string[]> {
-  const rows = await db.selectDistinct({ fraccionamientoId: asignacionesCircuito.fraccionamientoId })
-    .from(asignacionesCircuito)
-    .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, asignacionesCircuito.fraccionamientoServicioId))
+  const rows = await db.selectDistinct({ fraccionamientoId: asignacionesFraccionamiento.fraccionamientoId })
+    .from(asignacionesFraccionamiento)
+    .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, asignacionesFraccionamiento.fraccionamientoServicioId))
     .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
     .where(and(
-      eq(asignacionesCircuito.usuarioId, userId),
-      eq(asignacionesCircuito.rol, 'cuadrilla_cortes'),
-      eq(asignacionesCircuito.activo, true),
-      isNotNull(asignacionesCircuito.fraccionamientoId),
+      eq(asignacionesFraccionamiento.usuarioId, userId),
+      eq(asignacionesFraccionamiento.rol, 'cuadrilla_cortes'),
+      eq(asignacionesFraccionamiento.activo, true),
+      isNotNull(asignacionesFraccionamiento.fraccionamientoId),
       eq(fraccionamientoServicios.estado, 'activo'),
       eq(servicios.clave, 'agua'),
     ));
@@ -51,15 +51,15 @@ async function assertPerfilDeCuadrilla(userId: string, perfilId: string, tenantI
   if (!perfilObjetivo.fraccionamientoId) {
     throw new TRPCError({ code: 'FORBIDDEN', message: 'El perfil no tiene fraccionamiento asignado' });
   }
-  const [assignment] = await db.select({ id: asignacionesCircuito.id })
-    .from(asignacionesCircuito)
-    .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, asignacionesCircuito.fraccionamientoServicioId))
+  const [assignment] = await db.select({ id: asignacionesFraccionamiento.id })
+    .from(asignacionesFraccionamiento)
+    .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, asignacionesFraccionamiento.fraccionamientoServicioId))
     .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
     .where(and(
-      eq(asignacionesCircuito.usuarioId, userId),
-      eq(asignacionesCircuito.fraccionamientoId, perfilObjetivo.fraccionamientoId),
-      eq(asignacionesCircuito.rol, 'cuadrilla_cortes'),
-      eq(asignacionesCircuito.activo, true),
+      eq(asignacionesFraccionamiento.usuarioId, userId),
+      eq(asignacionesFraccionamiento.fraccionamientoId, perfilObjetivo.fraccionamientoId),
+      eq(asignacionesFraccionamiento.rol, 'cuadrilla_cortes'),
+      eq(asignacionesFraccionamiento.activo, true),
       eq(fraccionamientoServicios.estado, 'activo'),
       eq(servicios.clave, 'agua'),
     ))

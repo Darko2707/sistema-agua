@@ -1,4 +1,4 @@
-﻿import { auth } from '@/lib/auth';
+import { auth } from '@/lib/auth';
 import { db } from '@/db';
 import { and, eq, isNull } from 'drizzle-orm';
 import { generarReporteResidentesExcel } from '@/server/services/excel-reportes';
@@ -29,7 +29,7 @@ function safeFilenamePart(value: string): string {
     .slice(0, 80) || 'fraccionamiento';
 }
 
-function montoDisponibleCircuito(pago: {
+function montoDisponibleFraccionamiento(pago: {
   monto: string;
   montoBase?: string | null;
   montoNetoRepresentante?: string | null;
@@ -157,7 +157,7 @@ export async function GET(req: Request) {
     const pagosR = pagosList.filter(p => p.perfilId === r.id);
     const pagosAnio = periodos.map(({ mes, anio }) => {
       const p = pagosR.find(p => p.mes === mes && p.anio === anio && p.estado === 'pagado');
-      return { mes, anio, monto: p ? montoDisponibleCircuito(p) : null, estado: p ? 'pagado' as const : 'pendiente' as const };
+      return { mes, anio, monto: p ? montoDisponibleFraccionamiento(p) : null, estado: p ? 'pagado' as const : 'pendiente' as const };
     });
     const totalPagado   = pagosAnio.reduce((s, p) => s + (p.monto ?? 0), 0);
     const mesesSinPagar = pagosAnio.filter(p => p.estado === 'pendiente').length;

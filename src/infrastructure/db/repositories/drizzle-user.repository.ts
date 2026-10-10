@@ -94,7 +94,7 @@ export class DrizzleUserRepository implements UserRepository {
       where: (ia, { eq }) => eq(ia.representanteId, id),
     });
     if (r1) return true;
-    const r2 = await db.query.gastosCircuito.findFirst({
+    const r2 = await db.query.gastosFraccionamiento.findFirst({
       where: (g, { eq }) => eq(g.representanteId, id),
     });
     return !!r2;
