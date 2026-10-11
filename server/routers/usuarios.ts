@@ -25,8 +25,8 @@ import { PerfilCambiosSchema } from '@/src/application/residentes/profile-change
 import { profileChangeService } from '@/src/infrastructure/db/services/profile-change.service';
 import { subscriptionService } from '@/src/infrastructure/db/services/subscription.service';
 import { db } from '@/db';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
-import { asignacionesFraccionamiento, auditoria, fraccionamientos, fraccionamientoServicios, perfilesResidente, session, user } from '@/db/schema';
+import { and, eq, inArray } from 'drizzle-orm';
+import { asignacionesFraccionamiento, auditoria, fraccionamientos, fraccionamientoServicios, perfilesResidente, user } from '@/db/schema';
 
 const telefono10 = z.string().regex(/^\d{10}$/, 'El telefono debe contener exactamente 10 digitos');
 
@@ -54,54 +54,6 @@ async function limitOrThrow(
 }
 
 export const usuariosRouter = router({
-  registrarCuentaSinCargos: authenticatedProcedure
-    .mutation(async ({ ctx }) => {
-      if (ctx.user.role !== 'residente') {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Solo una cuenta nueva puede registrarse sin cargos.' });
-      }
-      const perfil = await residenteRepo.findByUserId(ctx.user.id);
-      if (perfil) {
-        throw new TRPCError({ code: 'CONFLICT', message: 'Una cuenta con vivienda registrada no puede marcarse como personal sin cargos desde el registro.' });
-      }
-      await db.transaction(async (tx) => {
-        await tx.update(user)
-          .set({ responsableCargos: false, updatedAt: new Date() })
-          .where(eq(user.id, ctx.user.id));
-        await tx.insert(auditoria).values({
-          actorId: ctx.user.id,
-          accion: 'cuenta.sin_cargos.registrada',
-          entidad: 'user',
-          entidadId: ctx.user.id,
-          detalle: { responsableCargos: false },
-        });
-      });
-      return { ok: true };
-    }),
-
-  cambiarResponsabilidadCargos: roleProcedure('admin')
-    .input(z.object({ userId: z.string().min(1), responsableCargos: z.boolean() }))
-    .mutation(async ({ ctx, input }) => {
-      const [target] = await db.select({ id: user.id, role: user.role })
-        .from(user)
-        .where(eq(user.id, input.userId))
-        .limit(1);
-      if (!target) throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
-      if (target.role === 'admin') throw new TRPCError({ code: 'BAD_REQUEST', message: 'El administrador global no puede tener cargos de vivienda' });
-      await db.transaction(async (tx) => {
-        await tx.update(user)
-          .set({ responsableCargos: input.responsableCargos, updatedAt: new Date() })
-          .where(eq(user.id, input.userId));
-        await tx.insert(auditoria).values({
-          actorId: ctx.user.id,
-          accion: 'cuenta.responsabilidad_cargos.actualizada',
-          entidad: 'user',
-          entidadId: input.userId,
-          detalle: { responsableCargos: input.responsableCargos },
-        });
-      });
-      return { ok: true };
-    }),
-
   crearPerfil: authenticatedProcedure
     .input(z.object({
       telefono:            telefono10,
@@ -117,10 +69,8 @@ export const usuariosRouter = router({
       path: ['nombrePropietario'],
     }))
     .mutation(async ({ ctx, input }) => {
-      const [account] = await db.select({ responsableCargos: user.responsableCargos })
-        .from(user).where(eq(user.id, ctx.user.id)).limit(1);
-      if (!account?.responsableCargos) {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'Esta cuenta no está marcada como responsable de cargos. Solicita al administrador que active esa opción.' });
+      if (ctx.user.role !== 'residente') {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Solo una cuenta de residente puede completar este registro' });
       }
       const [fraccionamiento] = await db.select({ id: fraccionamientos.id, diaCorte: fraccionamientos.diaCorte })
         .from(fraccionamientos)
@@ -141,12 +91,6 @@ export const usuariosRouter = router({
 
   miPerfil: authenticatedProcedure.query(async ({ ctx }) => {
     return residenteRepo.findByUserId(ctx.user.id);
-  }),
-
-  miResponsabilidadCargos: authenticatedProcedure.query(async ({ ctx }) => {
-    const [account] = await db.select({ responsableCargos: user.responsableCargos })
-      .from(user).where(eq(user.id, ctx.user.id)).limit(1);
-    return { responsableCargos: account?.responsableCargos ?? false };
   }),
 
   solicitarCambioPerfil: roleProcedure('residente')
@@ -412,53 +356,6 @@ export const usuariosRouter = router({
   listarPersonal: roleProcedure('admin', 'representante').query(async ({ ctx }) => {
     return listarPersonalHandler.execute({ rol: ctx.user.role as 'admin' | 'representante', fraccionamientoId: ctx.user.fraccionamientoId });
   }),
-
-  // Las cuentas que nacen como "sin cargos" todavía no tienen perfil ni
-  // fraccionamiento. El administrador debe poder encontrarlas para darles su
-  // función operativa, sin convertirlas artificialmente en residentes.
-  listarCuentasSinCargos: roleProcedure('admin').query(async () => db.select({
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    responsableCargos: user.responsableCargos,
-    fraccionamientoId: user.fraccionamientoId,
-  }).from(user).where(and(
-    eq(user.responsableCargos, false),
-    isNull(user.fraccionamientoId),
-    isNull(user.deletedAt),
-    eq(user.role, 'residente'),
-  )).orderBy(user.name)),
-
-  asignarCuentaSinCargos: roleProcedure('admin')
-    .input(z.object({
-      userId: z.string().min(1),
-      fraccionamientoId: z.string().uuid(),
-      rol: z.enum(['residente', 'cuadrilla_cortes', 'operador_pozo']),
-    }))
-    .mutation(async ({ ctx, input }) => {
-      const [[target], [fraccionamiento]] = await Promise.all([
-        db.select({ id: user.id, responsableCargos: user.responsableCargos, fraccionamientoId: user.fraccionamientoId, deletedAt: user.deletedAt })
-          .from(user).where(eq(user.id, input.userId)).limit(1),
-        db.select({ id: fraccionamientos.id, activo: fraccionamientos.activo })
-          .from(fraccionamientos).where(eq(fraccionamientos.id, input.fraccionamientoId)).limit(1),
-      ]);
-      if (!target || target.deletedAt) throw new TRPCError({ code: 'NOT_FOUND', message: 'Cuenta no encontrada' });
-      if (target.responsableCargos || target.fraccionamientoId) throw new TRPCError({ code: 'CONFLICT', message: 'La cuenta ya fue asignada o tiene cargos habilitados' });
-      if (!fraccionamiento?.activo) throw new TRPCError({ code: 'BAD_REQUEST', message: 'El fraccionamiento no está activo' });
-      await db.transaction(async (tx) => {
-        await tx.update(user).set({ role: input.rol, fraccionamientoId: input.fraccionamientoId, updatedAt: new Date() }).where(eq(user.id, input.userId));
-        await tx.delete(session).where(eq(session.userId, input.userId));
-        await tx.insert(auditoria).values({
-          actorId: ctx.user.id,
-          accion: 'cuenta.sin_cargos.asignada',
-          entidad: 'user',
-          entidadId: input.userId,
-          detalle: { fraccionamientoId: input.fraccionamientoId, rol: input.rol },
-        });
-      });
-      return { ok: true };
-    }),
 
   listarPersonalPorFraccionamiento: roleProcedure('admin')
     .input(z.object({ fraccionamientoId: z.string().uuid() }))

@@ -62,9 +62,6 @@ export const user = pgTable('user', {
   emailVerified: boolean('email_verified').notNull().default(false),
   image:         text('image'),
   role:          rolEnum('role').notNull().default('residente'),
-  // La responsabilidad de cargos no es un rol: una persona puede ser parte
-  // del personal y, al mismo tiempo, pagar los servicios de su vivienda.
-  responsableCargos: boolean('responsable_cargos').notNull().default(true),
   // Nullable para el admin global y durante el onboarding del residente;
   // el perfil terminado debe fijar exactamente un fraccionamiento.
   fraccionamientoId: uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
