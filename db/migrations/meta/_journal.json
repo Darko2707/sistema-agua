@@ -393,6 +393,13 @@
       "when": 1792368000000,
       "tag": "0055_renombrar_tablas_fraccionamiento",
       "breakpoints": true
+    },
+    {
+      "idx": 56,
+      "version": "7",
+      "when": 1792454400000,
+      "tag": "0056_responsable_cargos",
+      "breakpoints": true
     }
   ]
 }

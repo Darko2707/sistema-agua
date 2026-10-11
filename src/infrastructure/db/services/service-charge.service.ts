@@ -1,7 +1,7 @@
 import { and, eq, ne } from 'drizzle-orm';
 
 import { db } from '@/db';
-import { cargosServicios, fraccionamientoServicios, perfilesServicios, servicios } from '@/db/schema';
+import { cargosServicios, fraccionamientoServicios, perfilesResidente, perfilesServicios, servicios, user } from '@/db/schema';
 import { subscriptionService } from './subscription.service';
 
 export type ServiceChargePeriod = {
@@ -27,11 +27,14 @@ export async function generateMonthlyServiceCharges(input: ServiceChargePeriod) 
     fraccionamientoId: perfilesServicios.fraccionamientoId,
     monto: fraccionamientoServicios.montoMensual,
   }).from(perfilesServicios)
+    .innerJoin(perfilesResidente, eq(perfilesResidente.id, perfilesServicios.perfilId))
+    .innerJoin(user, eq(user.id, perfilesResidente.userId))
     .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, perfilesServicios.fraccionamientoServicioId))
     .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
     .where(and(
       eq(perfilesServicios.fraccionamientoId, input.fraccionamientoId),
       eq(perfilesServicios.activo, true),
+      eq(user.responsableCargos, true),
       eq(fraccionamientoServicios.estado, 'activo'),
       eq(servicios.activo, true),
       ne(servicios.clave, 'agua'),

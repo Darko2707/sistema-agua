@@ -13,6 +13,8 @@ export type ResidenteData = {
   nombrePropietario?: string | null;
   telefonoPropietario?: string | null;
   creadoEn: Date | null;
+  /** Se conserva en el perfil para que los flujos de cobro no dependan del rol. */
+  responsableCargos?: boolean;
 };
 
 export type FraccionamientoCobroRef = {
@@ -37,6 +39,7 @@ export type UsuarioRef = {
   name: string;
   email: string;
   role: string;
+  responsableCargos: boolean;
 };
 
 export type PagoRef = { mes: number; anio: number; estado: string | null };

@@ -23,7 +23,7 @@ const fraccionamientoCobroColumns = {
 } as const;
 
 type WithRelaciones = typeof perfilesResidente.$inferSelect & {
-  usuario?: { id: string; name: string; email: string; role: string } | null;
+  usuario?: { id: string; name: string; email: string; role: string; responsableCargos: boolean } | null;
   fraccionamiento?: FraccionamientoCobroRef | null;
   pagos?: { mes: number; anio: number; estado: string | null }[];
   cortes?: { activo: boolean | null }[];
@@ -69,11 +69,13 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
       where: (p, { eq }) => eq(p.userId, userId),
       with: {
         fraccionamiento: { columns: fraccionamientoCobroColumns },
+        usuario: { columns: { responsableCargos: true } },
       },
     });
     if (!row) return null;
     return {
       ...toData(row),
+      responsableCargos: row.usuario?.responsableCargos ?? true,
       fraccionamiento: row.fraccionamiento ?? null,
     };
   }
@@ -263,8 +265,10 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
       WITH candidatos AS MATERIALIZED (
         SELECT perfil.id
         FROM perfiles_residente AS perfil
+        INNER JOIN "user" AS usuario ON usuario.id = perfil.user_id
         INNER JOIN fraccionamientos AS fraccionamiento ON fraccionamiento.id = perfil.fraccionamiento_id
         WHERE perfil.estado_agua = 'activo'
+          AND usuario.responsable_cargos = true
           AND fraccionamiento.activo = true
           AND fraccionamiento.dia_corte < ${diaActual}
           AND EXISTS (
