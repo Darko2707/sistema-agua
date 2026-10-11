@@ -1,5 +1,5 @@
 ALTER TABLE "user"
-  ADD COLUMN "responsable_cargos" boolean NOT NULL DEFAULT true;
+  ADD COLUMN IF NOT EXISTS "responsable_cargos" boolean NOT NULL DEFAULT true;
 --> statement-breakpoint
 -- Conserva como responsables a quienes ya tienen vivienda registrada y evita
 -- convertir al administrador global o al personal sin vivienda en deudores.
