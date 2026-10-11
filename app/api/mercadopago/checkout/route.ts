@@ -170,6 +170,7 @@ export async function POST(request: Request) {
 
   const perfil = await residenteRepo.findByUserIdWithPaymentConfig(session.user.id);
   if (!perfil) return Response.json({ error: 'Completa tu perfil primero' }, { status: 400 });
+  if (perfil.responsableCargos === false) return Response.json({ error: 'Esta cuenta no tiene cargos de vivienda habilitados' }, { status: 403 });
   if (!perfil.fraccionamientoId) return Response.json({ error: 'Tu perfil no tiene fraccionamiento asignado' }, { status: 403 });
   try {
     await subscriptionService.requireOperational(perfil.fraccionamientoId);

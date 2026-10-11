@@ -5,6 +5,7 @@ export type UserData = {
   name:  string;
   email: string;
   role:  UserRole;
+  responsableCargos: boolean;
   fraccionamientoId?: string | null;
   fraccionamientoNombre?: string | null;
 };

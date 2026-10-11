@@ -32,6 +32,7 @@ export function AdminDashboard() {
     tab, setTab,
     resumen,
     personal,
+    fraccionamientos,
     pendientesCorte,
     pendientesReconexion,
     cargando,
@@ -44,6 +45,8 @@ export function AdminDashboard() {
     irPaginaResidentes,
     morosos,
     cambiarRol,
+    cambiarResponsabilidadCargos,
+    asignarCuentaSinCargos,
     registrarPagoRetroactivo,
     salir,
   } = useAdmin();
@@ -171,8 +174,11 @@ export function AdminDashboard() {
         {tab === 'personal' && (
           <PersonalTab
             personal={personal}
+            fraccionamientos={fraccionamientos}
             actualizando={actualizando}
             onCambiarRol={cambiarRol}
+            onCambiarResponsabilidadCargos={cambiarResponsabilidadCargos}
+            onAsignarCuentaSinCargos={asignarCuentaSinCargos}
           />
         )}
         {tab === 'residentes' && (
@@ -182,6 +188,7 @@ export function AdminDashboard() {
             setFiltroEstado={setFiltroEstado}
             actualizando={actualizando}
             onCambiarRol={cambiarRol}
+            onCambiarResponsabilidadCargos={cambiarResponsabilidadCargos}
             onRegistrarPagoRetroactivo={registrarPagoRetroactivo}
             onLimpiarFiltros={() => {
               setFiltroEstado('todos');

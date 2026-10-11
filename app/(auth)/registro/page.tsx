@@ -25,6 +25,7 @@ const cuentaSchema = z.object({
     .refine(esNombrePersonaValido, NOMBRE_PERSONA_ERROR),
   email: z.string().trim().email('Correo electrónico inválido'),
   password: z.string().min(8, 'La contraseña debe tener al menos 8 caracteres'),
+  responsableCargos: z.boolean(),
   aceptaLegales: z.literal(true, { error: 'Debes aceptar los terminos y condiciones para continuar' }),
 });
 type CuentaForm = z.infer<typeof cuentaSchema>;
@@ -81,7 +82,7 @@ function FieldError({ id, message }: { id: string; message?: string }) {
 
 export default function RegistroPage() {
   const router = useRouter();
-  const [paso, setPaso] = useState<1 | 2>(1);
+  const [paso, setPaso] = useState<1 | 2 | 3>(1);
   const [serverError, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
@@ -89,7 +90,7 @@ export default function RegistroPage() {
 
   const fraccionamientosQuery = trpcReact.fraccionamientos.listarPublicos.useQuery();
 
-  const cuenta = useForm<CuentaForm>({ resolver: zodResolver(cuentaSchema), mode: 'onTouched' });
+  const cuenta = useForm<CuentaForm>({ resolver: zodResolver(cuentaSchema), mode: 'onTouched', defaultValues: { responsableCargos: true } });
   const perfil = useForm<PerfilForm>({
     resolver: zodResolver(perfilSchema),
     mode: 'onTouched',
@@ -118,8 +119,15 @@ export default function RegistroPage() {
 
         // La cuenta ya existe: nunca se vuelve a intentar el alta del correo.
         setPaso(2);
-        const perfilExistente = await trpc.usuarios.miPerfil.query();
+        const [perfilExistente, responsabilidad] = await Promise.all([
+          trpc.usuarios.miPerfil.query(),
+          trpc.usuarios.miResponsabilidadCargos.query(),
+        ]);
         if (!active) return;
+        if (!responsabilidad.responsableCargos) {
+          setPaso(3);
+          return;
+        }
         if (perfilExistente) router.replace('/residente');
       } catch (err: unknown) {
         if (active) {
@@ -145,8 +153,35 @@ export default function RegistroPage() {
   async function handleCrearCuenta(data: CuentaForm) {
     setError('');
     setCuentaPendiente({ ...data, email: data.email.trim().toLowerCase() });
+    if (!data.responsableCargos) {
+      setSubmitting(true);
+      try {
+        const email = data.email.trim().toLowerCase();
+        const { error: signUpError } = await authClient.signUp.email({
+          email,
+          password: data.password,
+          name: normalizarNombrePersona(data.nombre),
+        });
+        if (signUpError) throw new Error(signUpError.message ?? 'No se pudo crear la cuenta.');
+        let sessionResult = await authClient.getSession();
+        if (!sessionResult.data?.user) {
+          const { error: signInError } = await authClient.signIn.email({ email, password: data.password });
+          if (signInError) throw new Error('La cuenta fue creada, pero no se pudo iniciar sesiÃ³n automÃ¡ticamente. Inicia sesiÃ³n para continuar.');
+          sessionResult = await authClient.getSession();
+        }
+        if (!sessionResult.data?.user) throw new Error('La cuenta fue creada, pero no pudimos confirmar la sesiÃ³n. Inicia sesiÃ³n para continuar.');
+        await aceptarLegales();
+        await trpc.usuarios.registrarCuentaSinCargos.mutate();
+        setCuentaPendiente(null);
+        setPaso(3);
+      } catch (err: unknown) {
+        setError(userFacingError(err, 'SISCO-102'));
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
     setPaso(2);
-    return;
   }
   /*
     Legacy account creation flow removed: account creation now happens after
@@ -285,9 +320,9 @@ export default function RegistroPage() {
 
   return (
     <AuthCard
-      title={paso === 1 ? 'Crear cuenta' : 'Completa tu perfil'}
-      subtitle={`Paso ${paso} de 2`}
-      maxWidth={paso === 1 ? 420 : 620}
+      title={paso === 1 ? 'Crear cuenta' : paso === 2 ? 'Completa tu perfil' : 'Cuenta creada'}
+      subtitle={paso === 3 ? 'Pendiente de asignación administrativa' : `Paso ${paso} de 2`}
+      maxWidth={paso === 1 || paso === 3 ? 420 : 620}
       footer={paso === 1 ? (
         <>
           ¿Ya tienes cuenta?{' '}
@@ -344,6 +379,13 @@ export default function RegistroPage() {
             <p id="pwd-hint" style={{ fontSize: 12, color: C.textWarm, marginTop: 4 }}>Mínimo 8 caracteres.</p>
             <FieldError id="pwd-err" message={cuenta.formState.errors.password?.message} />
           </div>
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, border: `1px solid ${C.amberBdr}`, background: C.amberBg, borderRadius: 14, padding: '12px 14px', fontSize: 12.5, color: C.textWarm, lineHeight: 1.45, fontWeight: 700 }}>
+            <input type="checkbox" style={{ marginTop: 2, accentColor: C.greenDk }} {...cuenta.register('responsableCargos')} />
+            <span>
+              <strong style={{ color: C.greenDk }}>Esta cuenta será responsable de pagos de una vivienda</strong><br />
+              Si la desmarcas, se creará como cuenta de personal sin domicilio ni cargos. Un administrador podrá asignarle su rol y fraccionamiento.
+            </span>
+          </label>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 12.5, color: C.textWarm, lineHeight: 1.45, fontWeight: 700 }}>
             <input
               id="acepta-legales"
@@ -365,7 +407,7 @@ export default function RegistroPage() {
             {submitting ? 'Creando cuenta...' : 'Continuar'}
           </button>
         </form>
-      ) : (
+      ) : paso === 2 ? (
         <form onSubmit={perfil.handleSubmit(handleCompletarPerfil)} style={{ display: 'flex', flexDirection: 'column', gap: 16 }} noValidate aria-label="Formulario de perfil de residente">
           <div className="auth-grid-2">
             <div>
@@ -495,6 +537,15 @@ export default function RegistroPage() {
             </button>
           </div>
         </form>
+      ) : (
+        <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <p style={{ margin: 0, color: C.textWarm, fontSize: 14, lineHeight: 1.55 }}>
+            Tu cuenta se creó sin cargos de vivienda. El administrador debe asignarte un rol y un fraccionamiento antes de que puedas usar el sistema.
+          </p>
+          <button type="button" className="auth-primary" style={buttonGold} onClick={handleUsarOtraCuenta}>
+            Cerrar sesión
+          </button>
+        </div>
       )}
     </AuthCard>
   );
