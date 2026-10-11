@@ -22,7 +22,6 @@ function toData(row: typeof user.$inferSelect): UserData {
     name: row.name,
     email: row.email,
     role: row.role as UserRole,
-    responsableCargos: row.responsableCargos,
     fraccionamientoId: row.fraccionamientoId ?? null,
   };
 }
@@ -107,7 +106,6 @@ export class DrizzleUserRepository implements UserRepository {
         id:             user.id,
         name:           user.name,
         email:          user.email,
-        responsableCargos: user.responsableCargos,
         fraccionamientoId:     fraccionamientos.id,
         fraccionamientoNombre: fraccionamientos.nombre,
       })
@@ -121,7 +119,6 @@ export class DrizzleUserRepository implements UserRepository {
       name:  r.name,
       email: r.email,
       role:  'representante' as const,
-      responsableCargos: r.responsableCargos,
       fraccionamiento: r.fraccionamientoId ? { id: r.fraccionamientoId, nombre: r.fraccionamientoNombre } : null,
     }));
   }
@@ -132,7 +129,6 @@ export class DrizzleUserRepository implements UserRepository {
         id:                     user.id,
         name:                   user.name,
         email:                  user.email,
-        responsableCargos:      user.responsableCargos,
         fraccionamientoId:      fraccionamientos.id,
         fraccionamientoNombre:  fraccionamientos.nombre,
         mercadoPagoCollectorId: fraccionamientoMetodosPago.collectorId,
@@ -152,7 +148,6 @@ export class DrizzleUserRepository implements UserRepository {
       name:  t.name,
       email: t.email,
       role:  'tesorera' as const,
-      responsableCargos: t.responsableCargos,
       fraccionamiento: t.fraccionamientoId
         ? { id: t.fraccionamientoId, nombre: t.fraccionamientoNombre, mercadoPagoCollectorId: t.mercadoPagoCollectorId }
         : null,
@@ -165,7 +160,6 @@ export class DrizzleUserRepository implements UserRepository {
       name: user.name,
       email: user.email,
       role: user.role,
-      responsableCargos: user.responsableCargos,
       fraccionamientoId: user.fraccionamientoId,
       fraccionamientoNombre: fraccionamientos.nombre,
     }).from(user)
@@ -181,7 +175,6 @@ export class DrizzleUserRepository implements UserRepository {
       name: row.name,
       email: row.email,
       role: row.role as UserRole,
-      responsableCargos: row.responsableCargos,
       fraccionamientoId: row.fraccionamientoId ?? null,
       fraccionamientoNombre: row.fraccionamientoNombre ?? null,
     }));

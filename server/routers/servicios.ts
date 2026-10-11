@@ -3,11 +3,11 @@ import { and, eq, ne } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { db } from '@/db';
-import { auditoria, cargosServicios, fraccionamientos, fraccionamientoServicios, perfilesResidente, perfilesServicios, servicios, tickets, user } from '@/db/schema';
+import { auditoria, cargosServicios, fraccionamientos, fraccionamientoServicios, perfilesResidente, perfilesServicios, servicios, tickets } from '@/db/schema';
 import { subscriptionService } from '@/src/infrastructure/db/services/subscription.service';
 import { generateMonthlyServiceCharges } from '@/src/infrastructure/db/services/service-charge.service';
 import { residenteRepo } from '@/src/infrastructure/db/repositories';
-import { protectedProcedure, router, roleProcedure } from '../trpc';
+import { router, roleProcedure } from '../trpc';
 import { TRPCError } from '@trpc/server';
 import { generarFolioServicio } from '@/src/domain/pagos/folio.vo';
 
@@ -17,12 +17,8 @@ export const serviciosRouter = router({
   catalogo: roleProcedure('admin', 'representante', 'tesorera', 'cuadrilla_cortes', 'operador_pozo', 'residente')
     .query(async () => db.query.servicios.findMany({ where: (s, { eq }) => eq(s.activo, true) })),
 
-  // Un integrante del personal puede conservar su propio perfil de residente.
-  // La consulta se limita siempre al perfil y fraccionamiento de la sesión.
-  misServicios: protectedProcedure.query(async ({ ctx }) => {
+  misServicios: roleProcedure('residente').query(async ({ ctx }) => {
     if (!ctx.user.fraccionamientoId) return [];
-    const [account] = await db.select({ responsableCargos: user.responsableCargos }).from(user).where(eq(user.id, ctx.user.id)).limit(1);
-    if (!account?.responsableCargos) return [];
     // Los servicios no son optativos: el administrador los activa para todo
     // el fraccionamiento. Esta consulta no depende de una suscripción elegida
     // por el residente.
@@ -155,10 +151,8 @@ export const serviciosRouter = router({
       return { ok: true };
     }),
 
-  misCargos: protectedProcedure.query(async ({ ctx }) => {
+  misCargos: roleProcedure('residente').query(async ({ ctx }) => {
     if (!ctx.user.fraccionamientoId) return [];
-    const [account] = await db.select({ responsableCargos: user.responsableCargos }).from(user).where(eq(user.id, ctx.user.id)).limit(1);
-    if (!account?.responsableCargos) return [];
     const perfil = await residenteRepo.findByUserId(ctx.user.id);
     if (!perfil) throw new TRPCError({ code: 'NOT_FOUND', message: 'Perfil no encontrado' });
     return db.select({

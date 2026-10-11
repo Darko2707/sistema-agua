@@ -32,12 +32,9 @@ export type Personal = {
   name:  string;
   email: string;
   role:  string;
-  responsableCargos: boolean;
   fraccionamientoId?: string | null;
   fraccionamientoNombre?: string | null;
 };
-
-export type FraccionamientoOpcion = { id: string; nombre: string; activo: boolean };
 
 export type ResidenteCompleto = {
   id:                   string;
@@ -50,7 +47,7 @@ export type ResidenteCompleto = {
   pagoEsteMes?:         boolean;
   esMoroso?:            boolean;
   corteActivo?:         boolean;
-  usuario?:             { id?: string; name?: string; email?: string; role?: string; responsableCargos?: boolean } | null;
+  usuario?:             { id?: string; name?: string; email?: string; role?: string } | null;
   fraccionamiento?:     { id: string; nombre: string; activo?: boolean } | null;
 };
 
@@ -74,7 +71,6 @@ export function useAdmin() {
   const [tab, setTab]                           = useState<AdminTab>('resumen');
   const [resumen, setResumen]                   = useState<Resumen | null>(null);
   const [personal, setPersonal]                 = useState<Personal[]>([]);
-  const [fraccionamientos, setFraccionamientos] = useState<FraccionamientoOpcion[]>([]);
   const [residentes, setResidentes]             = useState<ResidenteCompleto[]>([]);
   const [paginaMeta, setPaginaMeta]             = useState<PaginaMeta>({ total: 0, page: 1, pageSize: 50, totalPages: 0 });
   const [pendientesCorte, setPendientesCorte]   = useState<ResidenteCompleto[]>([]);
@@ -88,20 +84,15 @@ export function useAdmin() {
 
   async function cargarDatos(page = paginaResidentes) {
     try {
-      const [resumenData, personalData, cuentasSinCargos, fraccionamientosData, residentesData, cortesData, reconexionesData] = await Promise.all([
+      const [resumenData, personalData, residentesData, cortesData, reconexionesData] = await Promise.all([
         trpc.pagos.resumenMes.query(),
         trpc.usuarios.listarPersonal.query(),
-        trpc.usuarios.listarCuentasSinCargos.query(),
-        trpc.fraccionamientos.listar.query(),
         trpc.usuarios.listarResidentes.query({ page, pageSize: 50 }),
         trpc.cortes.pendientesDeCorte.query(),
         trpc.cortes.pendientesDeReconexion.query(),
       ]);
       setResumen(resumenData as Resumen ?? null);
-      const personalExistente = personalData as Personal[];
-      const pendientes = cuentasSinCargos as Personal[];
-      setPersonal([...personalExistente, ...pendientes.filter((cuenta) => !personalExistente.some((persona) => persona.id === cuenta.id))]);
-      setFraccionamientos((fraccionamientosData as FraccionamientoOpcion[]).filter((fraccionamiento) => fraccionamiento.activo));
+      setPersonal(personalData as Personal[]);
       const rd = residentesData as { items: ResidenteCompleto[]; total: number; page: number; pageSize: number; totalPages: number };
       setResidentes(rd.items);
       setPaginaMeta({ total: rd.total, page: rd.page, pageSize: rd.pageSize, totalPages: rd.totalPages });
@@ -133,30 +124,6 @@ export function useAdmin() {
       await cargarDatos();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Error al cambiar rol');
-    }
-    setActualizando(null);
-  }
-
-  async function cambiarResponsabilidadCargos(userId: string, responsableCargos: boolean) {
-    setActualizando(userId);
-    setError(null);
-    try {
-      await trpc.usuarios.cambiarResponsabilidadCargos.mutate({ userId, responsableCargos });
-      await cargarDatos();
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error al actualizar los cargos de la cuenta');
-    }
-    setActualizando(null);
-  }
-
-  async function asignarCuentaSinCargos(userId: string, fraccionamientoId: string, rol: 'residente' | 'cuadrilla_cortes' | 'operador_pozo') {
-    setActualizando(userId);
-    setError(null);
-    try {
-      await trpc.usuarios.asignarCuentaSinCargos.mutate({ userId, fraccionamientoId, rol });
-      await cargarDatos();
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Error al asignar la cuenta');
     }
     setActualizando(null);
   }
@@ -214,7 +181,6 @@ export function useAdmin() {
     tab, setTab,
     resumen,
     personal,
-    fraccionamientos,
     pendientesCorte,
     pendientesReconexion,
     cargando,
@@ -229,8 +195,6 @@ export function useAdmin() {
     busquedaResidentes, setBusquedaResidentes,
     cargarDatos,
     cambiarRol,
-    cambiarResponsabilidadCargos,
-    asignarCuentaSinCargos,
     asignarRepresentante,
     registrarPagoRetroactivo,
     salir,
