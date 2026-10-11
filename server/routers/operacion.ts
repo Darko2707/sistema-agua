@@ -11,6 +11,7 @@ import {
   auditoria,
   bitacoraCortes,
   consentimientosLegales,
+  cargosServicios,
   cortes,
   fraccionamientos,
   notificaciones,
@@ -493,6 +494,7 @@ export const operacionRouter = router({
     }
     const fraccionamientoFilter = fraccionamientoId ? eq(perfilesResidente.fraccionamientoId, fraccionamientoId) : undefined;
     const pagoFraccionamientoFilter = fraccionamientoId ? eq(pagos.fraccionamientoId, fraccionamientoId) : undefined;
+    const cargoFraccionamientoFilter = fraccionamientoId ? eq(cargosServicios.fraccionamientoId, fraccionamientoId) : undefined;
 
     const [residentesRow] = await db.select({ total: sql<number>`count(*)::int` }).from(perfilesResidente).where(fraccionamientoFilter);
     const [pagosRow] = await db.select({
@@ -502,6 +504,22 @@ export const operacionRouter = router({
       transferencia: sql<number>`count(*) filter (where ${pagos.metodo} = 'transferencia')::int`,
       mercadoPago: sql<number>`count(*) filter (where ${pagos.metodo} = 'mercado_pago')::int`,
     }).from(pagos).where(and(eq(pagos.estado, 'pagado'), eq(pagos.mes, periodo.mes), eq(pagos.anio, periodo.anio), pagoFraccionamientoFilter));
+    const [cargosRow] = await db.select({
+      total: sql<number>`count(*)::int`,
+      monto: sql<number>`coalesce(sum(${cargosServicios.monto}::numeric), 0)::float`,
+      efectivo: sql<number>`count(*) filter (where ${cargosServicios.metodo} = 'efectivo')::int`,
+      transferencia: sql<number>`count(*) filter (where ${cargosServicios.metodo} = 'transferencia')::int`,
+      mercadoPago: sql<number>`count(*) filter (where ${cargosServicios.metodo} = 'mercado_pago')::int`,
+    }).from(cargosServicios)
+      .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, cargosServicios.fraccionamientoServicioId))
+      .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
+      .where(and(
+        eq(cargosServicios.estado, 'pagado'),
+        eq(cargosServicios.mes, periodo.mes),
+        eq(cargosServicios.anio, periodo.anio),
+        sql`${servicios.clave} <> 'agua'`,
+        cargoFraccionamientoFilter,
+      ));
     const [cortesPendientes] = await db.select({ total: sql<number>`count(*)::int` }).from(perfilesResidente).where(and(eq(perfilesResidente.estadoAgua, 'pendiente_corte'), fraccionamientoFilter));
     const [reconexionesPendientes] = await db.select({ total: sql<number>`count(*)::int` }).from(perfilesResidente).where(and(eq(perfilesResidente.estadoAgua, 'pendiente_reconexion'), fraccionamientoFilter));
     const porFraccionamientoRows = ctx.user.role === 'admin'
@@ -534,39 +552,62 @@ export const operacionRouter = router({
         .groupBy(fraccionamientos.id, fraccionamientos.nombre)
         .orderBy(fraccionamientos.nombre)
       : [];
+    const cargosPorFraccionamiento = ctx.user.role === 'admin'
+      ? await db.select({
+        fraccionamientoId: cargosServicios.fraccionamientoId,
+        pagosMes: sql<number>`count(*)::int`,
+        ingresosMes: sql<number>`coalesce(sum(${cargosServicios.monto}::numeric), 0)::float`,
+        efectivo: sql<number>`count(*) filter (where ${cargosServicios.metodo} = 'efectivo')::int`,
+        transferencia: sql<number>`count(*) filter (where ${cargosServicios.metodo} = 'transferencia')::int`,
+        mercadoPago: sql<number>`count(*) filter (where ${cargosServicios.metodo} = 'mercado_pago')::int`,
+      }).from(cargosServicios)
+        .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, cargosServicios.fraccionamientoServicioId))
+        .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
+        .where(and(
+          eq(cargosServicios.estado, 'pagado'),
+          eq(cargosServicios.mes, periodo.mes),
+          eq(cargosServicios.anio, periodo.anio),
+          sql`${servicios.clave} <> 'agua'`,
+        ))
+        .groupBy(cargosServicios.fraccionamientoId)
+      : [];
+    const cargosPorFraccionamientoMap = new Map(cargosPorFraccionamiento.map((row) => [row.fraccionamientoId, row]));
 
     const totalResidentes = residentesRow?.total ?? 0;
-    const totalPagos = pagosRow?.total ?? 0;
+    const totalPagos = (pagosRow?.total ?? 0) + (cargosRow?.total ?? 0);
     return {
       periodo,
-      ingresosMes: pagosRow?.monto ?? 0,
+      ingresosMes: (pagosRow?.monto ?? 0) + (cargosRow?.monto ?? 0),
       residentesActivos: totalResidentes,
       pagosMes: totalPagos,
       morosidadPct: totalResidentes > 0 ? Math.round(((totalResidentes - totalPagos) / totalResidentes) * 100) : 0,
       pagosPorMetodo: {
-        efectivo: pagosRow?.efectivo ?? 0,
-        transferencia: pagosRow?.transferencia ?? 0,
-        mercadoPago: pagosRow?.mercadoPago ?? 0,
+        efectivo: (pagosRow?.efectivo ?? 0) + (cargosRow?.efectivo ?? 0),
+        transferencia: (pagosRow?.transferencia ?? 0) + (cargosRow?.transferencia ?? 0),
+        mercadoPago: (pagosRow?.mercadoPago ?? 0) + (cargosRow?.mercadoPago ?? 0),
       },
       cortesPendientes: cortesPendientes?.total ?? 0,
       reconexionesPendientes: reconexionesPendientes?.total ?? 0,
-      porFraccionamiento: porFraccionamientoRows.map((row) => ({
+      porFraccionamiento: porFraccionamientoRows.map((row) => {
+        const cargos = cargosPorFraccionamientoMap.get(row.fraccionamientoId);
+        const pagosMes = (row.pagosMes ?? 0) + (cargos?.pagosMes ?? 0);
+        return ({
         fraccionamientoId: row.fraccionamientoId,
         nombre: row.nombre,
-        ingresosMes: row.ingresosMes ?? 0,
+        ingresosMes: (row.ingresosMes ?? 0) + (cargos?.ingresosMes ?? 0),
         residentesActivos: row.residentes ?? 0,
-        pagosMes: row.pagosMes ?? 0,
+        pagosMes,
         morosidadPct: (row.residentes ?? 0) > 0
-          ? Math.round((((row.residentes ?? 0) - (row.pagosMes ?? 0)) / (row.residentes ?? 0)) * 100)
+          ? Math.round((((row.residentes ?? 0) - pagosMes) / (row.residentes ?? 0)) * 100)
           : 0,
         cortesPendientes: row.cortesPendientes ?? 0,
         reconexionesPendientes: row.reconexionesPendientes ?? 0,
         pagosPorMetodo: {
-          efectivo: row.efectivo ?? 0,
-          transferencia: row.transferencia ?? 0,
-          mercadoPago: row.mercadoPago ?? 0,
+          efectivo: (row.efectivo ?? 0) + (cargos?.efectivo ?? 0),
+          transferencia: (row.transferencia ?? 0) + (cargos?.transferencia ?? 0),
+          mercadoPago: (row.mercadoPago ?? 0) + (cargos?.mercadoPago ?? 0),
         },
-      })),
+      }); }),
     };
   }),
 });

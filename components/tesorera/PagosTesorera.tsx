@@ -32,6 +32,7 @@ type TipoPeriodo = 'atrasado' | 'actual' | 'adelantado';
 type EstadoPeriodo = 'pagado' | 'disponible' | 'bloqueado';
 type MesAnio = { mes: number; anio: number };
 type PeriodoPago = MesAnio & { tipo: TipoPeriodo; estado: EstadoPeriodo };
+type CargoPendiente = MesAnio & { id: string; monto: number; servicio: string };
 type ResidentePago = {
   id: string;
   edificio: string;
@@ -41,6 +42,7 @@ type ResidentePago = {
   accionDisponible: AccionDisponible;
   atrasadosPendientes: number;
   periodos: PeriodoPago[];
+  cargosPendientes: CargoPendiente[];
   usuario?: { id?: string; name?: string | null; email?: string | null };
 };
 
@@ -86,6 +88,7 @@ export function PagosTesorera() {
   const [modalPago, setModalPago] = useState<{ residenteId: string } | null>(null);
   const [metodoSel, setMetodoSel] = useState<MetodoPago>('efectivo');
   const [mesesSel, setMesesSel] = useState<MesAnio[]>([]);
+  const [cargosSel, setCargosSel] = useState<string[]>([]);
 
   const utils    = trpcReact.useUtils();
   const query    = trpcReact.pagos.listarResidentesParaPago.useQuery();
@@ -114,6 +117,10 @@ export function PagosTesorera() {
       .map(periodoKey),
   );
   const mesesSeleccionados = mesesSel.filter(periodo => periodosDisponiblesModal.has(periodoKey(periodo)));
+  const cargosIncluidos = residenteModal
+    ? residenteModal.cargosPendientes.filter((cargo) => cargosSel.includes(cargo.id))
+    : [];
+  const totalCargosIncluidos = cargosIncluidos.reduce((total, cargo) => total + cargo.monto, 0);
 
   function abrirModal(residente: ResidentePago) {
     const primeroDisponible = [...residente.periodos]
@@ -128,6 +135,7 @@ export function PagosTesorera() {
     setMesesSel(primeroDisponible
       ? [{ mes: primeroDisponible.mes, anio: primeroDisponible.anio }]
       : []);
+    setCargosSel(residente.cargosPendientes.map((cargo) => cargo.id));
   }
 
   function toggleMes(periodo: PeriodoPago) {
@@ -152,9 +160,11 @@ export function PagosTesorera() {
         perfilId: residenteModal.id,
         metodo: metodoSel,
         meses: [...mesesSeleccionados].sort(compararPeriodos),
+        cargoIds: cargosSel,
       });
       setModalPago(null);
       setMesesSel([]);
+      setCargosSel([]);
       const registrados = res.registrados;
       const folios = res.folios.filter(Boolean);
       const resumenFolios = folios.length > 0
@@ -163,8 +173,11 @@ export function PagosTesorera() {
       const resumenOmitidos = res.omitidos.length > 0
         ? ` · Ya pagados: ${res.omitidos.join(', ')}`
         : '';
+      const resumenServicios = res.cargosServiciosPagados > 0
+        ? ` · ${res.cargosServiciosPagados} ${res.cargosServiciosPagados === 1 ? 'servicio obligatorio pagado' : 'servicios obligatorios pagados'}`
+        : '';
       mostrar(
-        `${registrados} ${registrados === 1 ? 'mes registrado' : 'meses registrados'}${resumenFolios}${resumenOmitidos}`,
+        `${registrados} ${registrados === 1 ? 'mes registrado' : 'meses registrados'}${resumenServicios}${resumenFolios}${resumenOmitidos}`,
         'ok',
       );
     } catch (e: unknown) {
@@ -453,6 +466,29 @@ export function PagosTesorera() {
               </div>
             </fieldset>
 
+            <section aria-label="Servicios pendientes" style={{ marginTop: 16, border: `1px solid ${C.gold}`, background: C.goldBg, borderRadius: 12, padding: '12px 14px' }}>
+              <p style={{ margin: 0, fontSize: 12, fontWeight: 800, color: C.textMain }}>Servicios pendientes a cobrar</p>
+              {residenteModal.cargosPendientes.length > 0 ? (
+                <div style={{ marginTop: 8, display: 'grid', gap: 7 }}>
+                  {residenteModal.cargosPendientes.map((cargo) => {
+                    const selected = cargosSel.includes(cargo.id);
+                    return (
+                      <label key={cargo.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, cursor: registrando ? 'not-allowed' : 'pointer', fontSize: 12.5, color: C.textMain }}>
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <input type="checkbox" checked={selected} disabled={!!registrando} onChange={() => setCargosSel((actual) => selected ? actual.filter((id) => id !== cargo.id) : [...actual, cargo.id])} style={{ accentColor: C.green }} />
+                          {cargo.servicio} · {etiquetaPeriodo(cargo)}
+                        </span>
+                        <strong style={{ color: C.green }}>${cargo.monto.toFixed(2)}</strong>
+                      </label>
+                    );
+                  })}
+                  <p style={{ margin: '4px 0 0', fontSize: 13, fontWeight: 800, color: C.green }}>
+                    Servicios seleccionados: ${totalCargosIncluidos.toFixed(2)} MXN
+                  </p>
+                </div>
+              ) : <p style={{ margin: '5px 0 0', fontSize: 12, color: C.textMuted }}>No hay servicios adicionales pendientes.</p>}
+            </section>
+
             <div style={{ marginTop: 18, display: 'flex', flexDirection: 'column', gap: 15 }}>
               {(['atrasado', 'actual', 'adelantado'] as const).map(tipo => {
                 const periodos = periodosModal.filter(periodo => periodo.tipo === tipo);
@@ -505,7 +541,7 @@ export function PagosTesorera() {
               <div style={{ display: 'flex', gap: 8 }}>
                 <button type="button" onClick={() => setModalPago(null)} disabled={!!registrando} style={{ border: `1px solid ${C.border}`, background: '#fff', color: C.textMain, borderRadius: 10, padding: '9px 14px', fontWeight: 800, cursor: registrando ? 'not-allowed' : 'pointer' }}>Cancelar</button>
                 <button type="button" onClick={registrar} disabled={!!registrando || mesesSeleccionados.length === 0} style={{ border: 'none', background: C.green, color: '#fff', borderRadius: 10, padding: '9px 14px', fontWeight: 800, cursor: registrando || mesesSeleccionados.length === 0 ? 'not-allowed' : 'pointer', opacity: registrando || mesesSeleccionados.length === 0 ? .65 : 1 }}>
-                  {registrando ? 'Registrando...' : `Registrar ${mesesSeleccionados.length || ''} ${mesesSeleccionados.length === 1 ? 'mes' : 'meses'}`.trim()}
+                  {registrando ? 'Registrando...' : `Registrar pago completo (${mesesSeleccionados.length || 0} ${mesesSeleccionados.length === 1 ? 'mes' : 'meses'})`}
                 </button>
               </div>
             </div>

@@ -55,7 +55,7 @@ export default function LoginPage() {
         password,
       });
       if (signInError) {
-        setError('SISCO-401: No pudimos iniciar sesion. El correo o la contrasena no coinciden. Verifica los datos e intenta de nuevo.');
+        setError(userFacingError(signInError, 'SISCO-401'));
         setLoading(false);
         return;
       }

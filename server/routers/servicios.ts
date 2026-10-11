@@ -1,5 +1,5 @@
 /* eslint-disable no-restricted-imports -- legacy router boundary; migrate queries to repositories incrementally. */
-import { and, eq } from 'drizzle-orm';
+import { and, eq, ne } from 'drizzle-orm';
 import { z } from 'zod';
 
 import { db } from '@/db';
@@ -157,6 +157,7 @@ export const serviciosRouter = router({
     if (!perfil) throw new TRPCError({ code: 'NOT_FOUND', message: 'Perfil no encontrado' });
     return db.select({
       id: cargosServicios.id,
+      fraccionamientoServicioId: cargosServicios.fraccionamientoServicioId,
       mes: cargosServicios.mes,
       anio: cargosServicios.anio,
       monto: cargosServicios.monto,
@@ -168,7 +169,11 @@ export const serviciosRouter = router({
     }).from(cargosServicios)
       .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, cargosServicios.fraccionamientoServicioId))
       .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
-      .where(and(eq(cargosServicios.perfilId, perfil.id), eq(cargosServicios.fraccionamientoId, ctx.user.fraccionamientoId)));
+      .where(and(
+        eq(cargosServicios.perfilId, perfil.id),
+        eq(cargosServicios.fraccionamientoId, ctx.user.fraccionamientoId),
+        ne(servicios.clave, 'agua'),
+      ));
   }),
 
   generarCargosMes: roleProcedure('admin')

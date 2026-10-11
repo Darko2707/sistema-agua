@@ -692,8 +692,36 @@ export const perfilesResidenteRelations = relations(perfilesResidente, ({ one, m
     references: [fraccionamientos.id],
   }),
   pagos:  many(pagos),
+  cargosServicios: many(cargosServicios),
   cortes: many(cortes),
   ordenesTrabajo: many(ordenesTrabajo),
+}));
+
+export const cargosServiciosRelations = relations(cargosServicios, ({ one }) => ({
+  perfil: one(perfilesResidente, {
+    fields: [cargosServicios.perfilId],
+    references: [perfilesResidente.id],
+  }),
+  fraccionamiento: one(fraccionamientos, {
+    fields: [cargosServicios.fraccionamientoId],
+    references: [fraccionamientos.id],
+  }),
+  fraccionamientoServicio: one(fraccionamientoServicios, {
+    fields: [cargosServicios.fraccionamientoServicioId],
+    references: [fraccionamientoServicios.id],
+  }),
+}));
+
+export const fraccionamientoServiciosRelations = relations(fraccionamientoServicios, ({ one, many }) => ({
+  fraccionamiento: one(fraccionamientos, {
+    fields: [fraccionamientoServicios.fraccionamientoId],
+    references: [fraccionamientos.id],
+  }),
+  servicio: one(servicios, {
+    fields: [fraccionamientoServicios.servicioId],
+    references: [servicios.id],
+  }),
+  cargosServicios: many(cargosServicios),
 }));
 
 export const pagosRelations = relations(pagos, ({ one }) => ({

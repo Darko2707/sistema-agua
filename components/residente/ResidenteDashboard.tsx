@@ -189,6 +189,7 @@ export function ResidenteDashboard() {
   const { data: historial, isLoading: historialLoading, refetch: refetchHistorial } = useMiHistorial();
   const { checkout, isPending: pagando, error } = useCheckoutCombinadoMP();
   const { data: cargos } = trpcReact.servicios.misCargos.useQuery();
+  const { data: servicios } = trpcReact.servicios.misServicios.useQuery();
 
   const [menuOpen,      setMenuOpen]      = useState(false);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
@@ -197,6 +198,7 @@ export function ResidenteDashboard() {
   const [cargosSeleccionados, setCargosSeleccionados] = useState<string[]>([]);
   const menuRef      = useRef<HTMLDivElement>(null);
   const announcerRef = useRef<HTMLDivElement>(null);
+  const cargosInicializadosRef = useRef(new Set<string>());
 
   const paymentResult = searchParams.get('payment') as keyof typeof PAYMENT_RESULT | null;
 
@@ -227,10 +229,16 @@ export function ResidenteDashboard() {
   }, [paymentResult, refetchHistorial]);
 
   useEffect(() => {
-    if (!cargos) return;
-    setCargosSeleccionados(cargos
-      .filter(cargo => cargo.estado === 'pendiente' && cargo.servicio !== 'agua')
-      .map(cargo => cargo.id));
+    const pendientes = (cargos ?? []).filter(cargo => cargo.estado === 'pendiente' && cargo.servicio !== 'agua');
+    const idsPendientes = new Set(pendientes.map(cargo => cargo.id));
+    setCargosSeleccionados(actual => {
+      const conservados = actual.filter(id => idsPendientes.has(id));
+      const nuevos = pendientes
+        .filter(cargo => !cargosInicializadosRef.current.has(cargo.id))
+        .map(cargo => cargo.id);
+      pendientes.forEach(cargo => cargosInicializadosRef.current.add(cargo.id));
+      return [...conservados, ...nuevos];
+    });
   }, [cargos]);
 
   // Close menu on outside click
@@ -269,18 +277,30 @@ export function ResidenteDashboard() {
   const mesActual   = ahora.getMonth() + 1;
   const anioActual  = ahora.getFullYear();
   const yaPagoEsteMes   = pagos.some(p => p.mes === mesActual && p.anio === anioActual && p.estado === 'pagado');
-  const totalConCargos  = desgloseVigente?.total ?? '0.00';
   const montoMensual    = Number(perfil.fraccionamiento?.montoMensual ?? 50);
   const montoReconexion = Number(perfil.fraccionamiento?.montoReconexion ?? 300);
   const esReconexion    = perfil.estadoAgua === 'cortado';
   const montoBaseAdelantado = montoMensual * mesesAdelantados + (esReconexion ? montoReconexion : 0);
-  const desgloseAdelantado = desgloseVigente ? calcularDesglosePago(montoBaseAdelantado) : null;
-  const totalTarjeta = desgloseAdelantado?.total ?? totalConCargos;
+  const totalAguaConTarjeta = Number(calcularDesglosePago(montoBaseAdelantado).total);
   const cargosPendientes = (cargos ?? []).filter(cargo => cargo.estado === 'pendiente' && cargo.servicio !== 'agua');
-  const totalCargosSeleccionados = cargosPendientes
-    .filter(cargo => cargosSeleccionados.includes(cargo.id))
+  const cargosSeleccionadosValidos = cargosPendientes.filter(cargo => cargosSeleccionados.includes(cargo.id));
+  const totalServiciosSeleccionados = cargosSeleccionadosValidos
     .reduce((total, cargo) => total + Number(cargo.monto), 0);
-  const totalCheckout = (incluirAgua ? Number(totalTarjeta) : 0) + totalCargosSeleccionados;
+  const totalBaseCheckout = (incluirAgua ? montoBaseAdelantado : 0) + totalServiciosSeleccionados;
+  const desgloseCheckout = totalBaseCheckout > 0 ? calcularDesglosePago(totalBaseCheckout) : null;
+  const totalCheckout = desgloseVigente && totalBaseCheckout > 0
+    ? Number(desgloseCheckout?.total ?? totalBaseCheckout)
+    : totalBaseCheckout;
+  const serviciosActivos = (servicios ?? []).filter(servicio => servicio.clave !== 'agua');
+  const conceptosServicios = serviciosActivos.flatMap(servicio => {
+    const cargosServicio = (cargos ?? [])
+      .filter(cargo => cargo.fraccionamientoServicioId === servicio.id)
+      .sort((a, b) => b.anio !== a.anio ? b.anio - a.anio : b.mes - a.mes);
+    const pendientes = cargosServicio.filter(cargo => cargo.estado === 'pendiente');
+    return pendientes.length > 0
+      ? pendientes.map(cargo => ({ servicio, cargo }))
+      : [{ servicio, cargo: cargosServicio[0] }];
+  });
 
   const userName = sessionData?.user?.name ?? 'Usuario';
   const miRol    = (sessionData?.user?.role as string) ?? 'residente';
@@ -296,7 +316,7 @@ export function ResidenteDashboard() {
   }
   const primerPeriodoTarjeta = periodosPendientesTarjeta[0] ?? { mes: mesActual, anio: anioActual };
   const periodoTarjetaLabel = `${MESES[primerPeriodoTarjeta.mes - 1]} ${primerPeriodoTarjeta.anio}`;
-  const puedePagarConTarjeta = (incluirAgua && perfil.estadoAgua !== 'pendiente_reconexion' && periodosPendientesTarjeta.length > 0) || cargosPendientes.length > 0;
+  const puedePagarConTarjeta = (incluirAgua && perfil.estadoAgua !== 'pendiente_reconexion' && periodosPendientesTarjeta.length > 0) || cargosSeleccionadosValidos.length > 0;
 
   const pagoReconexion = pagos.find(p => p.esReconexion && p.estado === 'pagado' && p.mes === mesActual && p.anio === anioActual)
     ?? pagos.find(p => p.esReconexion && p.estado === 'pagado');
@@ -321,12 +341,12 @@ export function ResidenteDashboard() {
     .sort((a, b) => b.anio !== a.anio ? b.anio - a.anio : b.mes - a.mes)
     .slice(0, 6);
 
-  const breakdown = desgloseVigente ? [
-    { label: mesesAdelantados === 1 ? 'Cuota base' : `Cuotas (${mesesAdelantados} meses)`, value: `$${(montoMensual * mesesAdelantados).toFixed(2)}` },
-    ...(esReconexion ? [{ label: 'Cargo de reconexión', value: `$${montoReconexion.toFixed(2)}` }] : []),
-    { label: 'Comisión Mercado Pago',     value: `$${desgloseAdelantado?.comisionMercadoPago ?? desgloseVigente.comisionMercadoPago}` },
-    { label: 'Retención ISR (MP)',        value: `$${desgloseAdelantado?.retencionIsr ?? desgloseVigente.retencionIsr}` },
-    { label: 'Retención IVA (MP)',        value: `$${desgloseAdelantado?.retencionIva ?? desgloseVigente.retencionIva}` },
+  const breakdown = desgloseCheckout ? [
+    ...(incluirAgua ? [{ label: mesesAdelantados === 1 ? 'Agua' : `Agua (${mesesAdelantados} meses)`, value: `$${montoBaseAdelantado.toFixed(2)}` }] : []),
+    ...cargosSeleccionadosValidos.map(cargo => ({ label: cargo.nombreServicio, value: `$${Number(cargo.monto).toFixed(2)}` })),
+    { label: 'Comisión Mercado Pago', value: `$${desgloseCheckout.comisionMercadoPago}` },
+    { label: 'Retención ISR (MP)', value: `$${desgloseCheckout.retencionIsr}` },
+    { label: 'Retención IVA (MP)', value: `$${desgloseCheckout.retencionIva}` },
   ] : [];
 
   async function salir() {
@@ -454,7 +474,7 @@ export function ResidenteDashboard() {
               <div>
                 <div style={{ fontFamily: FB, fontWeight: 700, fontSize: 15, color: C.pendingText }}>Tu servicio está suspendido</div>
                 <div style={{ fontSize: 13, color: '#B5683C', marginTop: 3, lineHeight: 1.5 }}>
-                  Paga ${totalConCargos} MXN con tarjeta para reactivarlo (cuota + reconexión + comisiones MP).
+                  Paga ${totalAguaConTarjeta.toFixed(2)} MXN con tarjeta para reactivarlo (cuota + reconexión + comisiones MP).
                 </div>
               </div>
             </div>
@@ -533,8 +553,11 @@ export function ResidenteDashboard() {
 
             {puedePagarConTarjeta && (
               <>
-                {/* Amount box */}
+                {/* Payment concepts */}
                 <div style={{ background: C.header, borderRadius: 18, padding: '16px 18px', marginTop: 14 }}>
+                  <div style={{ fontFamily: FB, fontSize: 15, fontWeight: 800, color: C.green, marginBottom: 12 }}>
+                    Conceptos a pagar
+                  </div>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer', fontSize: 13, color: C.textMain, fontWeight: 800, marginBottom: 12 }}>
                     <input
                       type="checkbox"
@@ -542,7 +565,8 @@ export function ResidenteDashboard() {
                       onChange={event => setIncluirAgua(event.target.checked)}
                       disabled={perfil.estadoAgua === 'pendiente_reconexion'}
                     />
-                    Incluir pago de agua
+                    <span style={{ flex: 1 }}>Agua</span>
+                    <span style={{ color: C.green, whiteSpace: 'nowrap' }}>${montoBaseAdelantado.toFixed(2)}</span>
                   </label>
                   {incluirAgua && (
                     <>
@@ -550,14 +574,14 @@ export function ResidenteDashboard() {
                     {esReconexion ? 'Cuota + reconexión' : yaPagoEsteMes ? 'Meses adelantados' : 'Cuota mensual'}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, marginTop: 5 }}>
-                    <span style={{ fontFamily: FB, fontSize: 46, fontWeight: 800, color: C.green, letterSpacing: '-.02em', lineHeight: 1 }}>
+                    <span style={{ fontFamily: FB, fontSize: 22, fontWeight: 800, color: C.green, letterSpacing: '-.02em', lineHeight: 1 }}>
                       ${montoBaseAdelantado.toFixed(2)}
                     </span>
                     <span style={{ fontSize: 15, fontWeight: 700, color: C.textWarm2 }}>MXN</span>
                   </div>
-                  {desgloseVigente && (
+                  {desgloseCheckout && (
                     <div style={{ fontSize: 12.5, color: '#C98A0E', marginTop: 5, fontWeight: 600 }}>
-                      Con tarjeta: <strong>${totalTarjeta} MXN</strong> · incluye comisiones MP
+                      Con tarjeta: <strong>${totalCheckout.toFixed(2)} MXN</strong> · incluye comisiones MP
                     </div>
                   )}
 
@@ -624,30 +648,37 @@ export function ResidenteDashboard() {
                     </>
                   )}
 
-                  {cargosPendientes.length > 0 && (
-                    <div style={{ marginTop: incluirAgua ? 18 : 0, borderTop: incluirAgua ? `1px solid ${C.border3}` : 'none', paddingTop: incluirAgua ? 15 : 0 }}>
-                      <div style={{ fontSize: 12.5, color: C.textWarm, fontWeight: 800, marginBottom: 8 }}>Cargos adicionales</div>
-                      {cargosPendientes.map(cargo => {
-                        const selected = cargosSeleccionados.includes(cargo.id);
-                        return (
-                          <label key={cargo.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 0', cursor: 'pointer', borderTop: `1px solid ${C.border}` }}>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: 9, minWidth: 0 }}>
-                              <input
-                                type="checkbox"
-                                checked={selected}
-                                onChange={() => setCargosSeleccionados(current => selected ? current.filter(id => id !== cargo.id) : [...current, cargo.id])}
-                              />
-                              <span style={{ fontSize: 13, color: C.textMain, fontWeight: 700 }}>{cargo.nombreServicio}</span>
-                            </span>
-                            <span style={{ fontSize: 13, color: C.green, fontWeight: 800, whiteSpace: 'nowrap' }}>${Number(cargo.monto).toFixed(2)}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  )}
+                  <div style={{ marginTop: 18, borderTop: `1px solid ${C.border3}`, paddingTop: 15 }}>
+                    <div style={{ fontSize: 12.5, color: C.textWarm, fontWeight: 800, marginBottom: 4 }}>Servicios del fraccionamiento</div>
+                    <p style={{ margin: '0 0 6px', fontSize: 11.5, color: C.textWarm3 }}>Puedes pagar uno, varios o combinarlos con agua. Los ya pagados siguen visibles.</p>
+                    {conceptosServicios.map(({ servicio, cargo }, index) => {
+                      const pendiente = cargo?.estado === 'pendiente';
+                      const seleccionado = Boolean(cargo && cargosSeleccionados.includes(cargo.id));
+                      const periodo = cargo ? `${MESES[cargo.mes - 1]} ${cargo.anio}` : 'Aun sin cargo generado';
+                      return (
+                        <label key={cargo?.id ?? servicio.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 0', borderTop: index === 0 ? 'none' : `1px solid ${C.border}`, cursor: pendiente ? 'pointer' : 'default', opacity: pendiente || !cargo ? 1 : .7 }}>
+                          <input
+                            type="checkbox"
+                            checked={seleccionado}
+                            disabled={!pendiente}
+                            onChange={() => cargo && setCargosSeleccionados(actual => seleccionado ? actual.filter(id => id !== cargo.id) : [...actual, cargo.id])}
+                          />
+                          <span style={{ flex: 1 }}>
+                            <span style={{ display: 'block', fontSize: 13, color: C.textMain, fontWeight: 700 }}>{servicio.nombre}</span>
+                            <span style={{ display: 'block', marginTop: 2, fontSize: 11.5, color: C.textWarm2 }}>{periodo} · {pendiente ? 'Pendiente' : cargo?.estado === 'pagado' ? 'Pagado' : 'Sin cargo pendiente'}</span>
+                          </span>
+                          <span style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                            <span style={{ display: 'block', fontSize: 13, color: C.green, fontWeight: 800 }}>${Number(cargo?.monto ?? servicio.montoMensual).toFixed(2)}</span>
+                            {cargo?.estado === 'pagado' && <span style={{ fontSize: 10.5, color: C.green2, fontWeight: 700 }}>Pagado</span>}
+                          </span>
+                        </label>
+                      );
+                    })}
+                    {conceptosServicios.length === 0 && <p style={{ margin: '8px 0 0', fontSize: 12, color: C.textWarm2 }}>No hay servicios adicionales configurados.</p>}
+                  </div>
 
                   {/* Collapsible breakdown */}
-                  {desgloseVigente && (
+                  {desgloseCheckout && (
                     <>
                       <button
                         type="button"
@@ -674,7 +705,7 @@ export function ResidenteDashboard() {
                           <div style={{ height: 1, background: C.border3, margin: '8px 0' }} />
                           <div style={{ display: 'flex', justifyContent: 'space-between', color: C.green, fontWeight: 800, fontSize: 14 }}>
                             <span>Total a pagar</span>
-                            <span>${totalTarjeta} MXN</span>
+                            <span>${totalCheckout.toFixed(2)} MXN</span>
                           </div>
                         </div>
                       )}
@@ -685,7 +716,7 @@ export function ResidenteDashboard() {
                 {/* MP button */}
                 <button
                   type="button"
-                  onClick={() => checkout({ mesesAgua: incluirAgua ? mesesAdelantados : 0, cargoIds: cargosSeleccionados })}
+                  onClick={() => checkout({ mesesAgua: incluirAgua ? mesesAdelantados : 0, cargoIds: cargosSeleccionadosValidos.map(cargo => cargo.id) })}
                   disabled={pagando || totalCheckout <= 0}
                   aria-busy={pagando}
                   style={{
@@ -765,7 +796,7 @@ export function ResidenteDashboard() {
                 {puedePagarConTarjeta && (
                   <button
                     type="button"
-                    onClick={() => checkout({ mesesAgua: incluirAgua ? mesesAdelantados : 0, cargoIds: cargosSeleccionados })}
+                    onClick={() => checkout({ mesesAgua: incluirAgua ? mesesAdelantados : 0, cargoIds: cargosSeleccionadosValidos.map(cargo => cargo.id) })}
                     disabled={pagando}
                     aria-busy={pagando}
                     style={{ marginTop: 14, background: C.gold, color: '#5A3D06', border: 'none', borderRadius: 14, padding: '12px 22px', cursor: pagando ? 'not-allowed' : 'pointer', fontFamily: FB, fontSize: 13, fontWeight: 700 }}

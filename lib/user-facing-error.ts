@@ -12,6 +12,27 @@ const KNOWN_ERRORS: Array<{
   accion: string;
 }> = [
   {
+    test: /fraccionamiento.*desactivad|desactivad.*fraccionamiento/i,
+    code: 'SISCO-423',
+    titulo: 'El fraccionamiento esta desactivado',
+    causa: 'El administrador suspendió temporalmente el acceso y los cobros de este fraccionamiento.',
+    accion: 'Contacta al administrador para confirmar cuándo volverá a estar disponible.',
+  },
+  {
+    test: /uq_perfiles_residente_ubicacion|duplicate key.*perfiles_residente|registro por fraccionamiento.*edificio.*departamento|edificio y departamento.*cuenta registrada/i,
+    code: 'SISCO-409',
+    titulo: 'Esta vivienda ya está registrada',
+    causa: 'Ya existe un residente con el mismo fraccionamiento, edificio y departamento.',
+    accion: 'Verifica los datos de la vivienda o inicia sesión con la cuenta ya registrada.',
+  },
+  {
+    test: /cuadrilla.*asignaci.n operativa|asignaci.n operativa activa/i,
+    code: 'SISCO-403',
+    titulo: 'La cuadrilla aún no tiene servicios asignados',
+    causa: 'La cuenta debe pertenecer a un fraccionamiento y tener al menos una asignación operativa activa.',
+    accion: 'El administrador debe asignar la cuadrilla al fraccionamiento y al servicio correspondiente.',
+  },
+  {
     test: /periodos?.*(pagad|registrad)|ya existe un pago|ya fueron pagados/i,
     code: 'SISCO-201',
     titulo: 'El periodo ya fue pagado',
@@ -51,6 +72,10 @@ const KNOWN_ERRORS: Array<{
 function rawMessage(error: unknown): string {
   if (error instanceof Error && error.message) return error.message;
   if (typeof error === 'string') return error;
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string') return message;
+  }
   return '';
 }
 

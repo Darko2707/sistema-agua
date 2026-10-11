@@ -100,7 +100,7 @@ export async function GET(req: Request) {
     if (mesesLista.length > MAX_RANGO_MESES)
       return new Response('El rango no puede exceder 36 meses', { status: 400 });
 
-    const [residentes, pagosTodos, gastosTodos, ingresosTodos] = await Promise.all([
+    const [residentes, pagosTodos, cargosServiciosTodos, gastosTodos, ingresosTodos] = await Promise.all([
       db.query.perfilesResidente.findMany({
         where: (p, { eq }) => eq(p.fraccionamientoId, fraccionamiento.id),
       }),
@@ -111,6 +111,14 @@ export async function GET(req: Request) {
           or(...mesesLista.map(m => and(eq(p.mes, m.mes), eq(p.anio, m.anio)))),
         ),
         with: { perfil: true },
+      }),
+      db.query.cargosServicios.findMany({
+        where: (cargo, { eq, and, or }) => and(
+          eq(cargo.fraccionamientoId, fraccionamiento.id),
+          eq(cargo.estado, 'pagado'),
+          or(...mesesLista.map(m => and(eq(cargo.mes, m.mes), eq(cargo.anio, m.anio)))),
+        ),
+        with: { perfil: true, fraccionamientoServicio: { with: { servicio: true } } },
       }),
       db.query.gastosFraccionamiento.findMany({
         where: (g, { eq, and, or }) => and(
@@ -131,13 +139,14 @@ export async function GET(req: Request) {
     // Desglose por mes
     const porMes: MesResumen[] = mesesLista.map(({ mes, anio }) => {
       const pagosM   = pagosTodos.filter(p => p.mes === mes && p.anio === anio);
+      const cargosM  = cargosServiciosTodos.filter(cargo => cargo.mes === mes && cargo.anio === anio && cargo.fraccionamientoServicio?.servicio?.clave !== 'agua');
       const gastosM  = gastosTodos.filter(g => g.mes === mes && g.anio === anio);
       const ingresosM = ingresosTodos.filter(i => i.mes === mes && i.anio === anio);
-      const totalPagos               = pagosM.reduce((s, p) => s + montoDisponibleFraccionamiento(p), 0);
+      const totalPagos               = pagosM.reduce((s, p) => s + montoDisponibleFraccionamiento(p), 0) + cargosM.reduce((s, cargo) => s + Number(cargo.monto), 0);
       const totalIngresosAdicionales = ingresosM.reduce((s, i) => s + Number(i.monto), 0);
       const totalRecaudado           = totalPagos + totalIngresosAdicionales;
       const totalGastos              = gastosM.reduce((s, g) => s + Number(g.monto), 0);
-      return { mes, anio, totalPagos, totalIngresosAdicionales, totalRecaudado, totalGastos, saldo: totalRecaudado - totalGastos, cantidadPagos: pagosM.length };
+      return { mes, anio, totalPagos, totalIngresosAdicionales, totalRecaudado, totalGastos, saldo: totalRecaudado - totalGastos, cantidadPagos: pagosM.length + cargosM.length };
     });
 
     const totalPagos               = porMes.reduce((s, m) => s + m.totalPagos, 0);
@@ -151,11 +160,12 @@ export async function GET(req: Request) {
     const porEdificio = edificios.map(ed => {
       const resEd  = residentes.filter(r => r.edificio === ed);
       const pagEd  = pagosTodos.filter(p => p.perfil?.edificio === ed);
-      const pagIds = new Set(pagEd.map(p => p.perfilId));
+      const cargosEd = cargosServiciosTodos.filter(cargo => cargo.perfil?.edificio === ed && cargo.fraccionamientoServicio?.servicio?.clave !== 'agua');
+      const pagIds = new Set([...pagEd.map(p => p.perfilId), ...cargosEd.map(cargo => cargo.perfilId)]);
       return {
         edificio:          ed,
-        totalPagado:       pagEd.reduce((s, p) => s + montoDisponibleFraccionamiento(p), 0),
-        cantidadPagos:     pagEd.length,
+        totalPagado:       pagEd.reduce((s, p) => s + montoDisponibleFraccionamiento(p), 0) + cargosEd.reduce((s, cargo) => s + Number(cargo.monto), 0),
+        cantidadPagos:     pagEd.length + cargosEd.length,
         residentesActivos: resEd.filter(r => pagIds.has(r.id)).length,
         residentesMorosos: resEd.filter(r => !pagIds.has(r.id)).length,
       };
@@ -210,13 +220,17 @@ export async function GET(req: Request) {
 
   if (!isMesValido(mes) || !isAnioValido(anio)) return new Response('Parámetros inválidos', { status: 400 });
 
-  const [residentes, pagosPeriodo, gastosPeriodo, ingresosPeriodo] = await Promise.all([
+  const [residentes, pagosPeriodo, cargosServiciosPeriodo, gastosPeriodo, ingresosPeriodo] = await Promise.all([
     db.query.perfilesResidente.findMany({
       where: (p, { eq }) => eq(p.fraccionamientoId, fraccionamiento.id),
     }),
     db.query.pagos.findMany({
       where: (p, { eq, and }) => and(eq(p.fraccionamientoId, fraccionamiento.id), eq(p.mes, mes), eq(p.anio, anio), eq(p.estado, 'pagado')),
       with: { perfil: true },
+    }),
+    db.query.cargosServicios.findMany({
+      where: (cargo, { eq, and }) => and(eq(cargo.fraccionamientoId, fraccionamiento.id), eq(cargo.mes, mes), eq(cargo.anio, anio), eq(cargo.estado, 'pagado')),
+      with: { perfil: true, fraccionamientoServicio: { with: { servicio: true } } },
     }),
     db.query.gastosFraccionamiento.findMany({
       where: (g, { eq, and }) => and(eq(g.fraccionamientoId, fraccionamiento.id), eq(g.mes, mes), eq(g.anio, anio)),
@@ -228,11 +242,12 @@ export async function GET(req: Request) {
     }),
   ]);
 
-  const totalPagos               = pagosPeriodo.reduce((s, p) => s + montoDisponibleFraccionamiento(p), 0);
+  const cargosAdicionales = cargosServiciosPeriodo.filter((cargo) => cargo.fraccionamientoServicio?.servicio?.clave !== 'agua');
+  const totalPagos               = pagosPeriodo.reduce((s, p) => s + montoDisponibleFraccionamiento(p), 0) + cargosAdicionales.reduce((s, cargo) => s + Number(cargo.monto), 0);
   const totalIngresosAdicionales = ingresosPeriodo.reduce((s, i) => s + Number(i.monto), 0);
   const totalRecaudado           = totalPagos + totalIngresosAdicionales;
   const totalGastos              = gastosPeriodo.reduce((s, g) => s + Number(g.monto), 0);
-  const perfilesPagados = new Set(pagosPeriodo.map((p) => p.perfilId));
+  const perfilesPagados = new Set([...pagosPeriodo.map((p) => p.perfilId), ...cargosAdicionales.map((cargo) => cargo.perfilId)]);
   const totalPagaron = perfilesPagados.size;
   const porcentajeCobranza = residentes.length > 0
     ? Math.round((totalPagaron / residentes.length) * 100 * 10) / 10
@@ -242,11 +257,12 @@ export async function GET(req: Request) {
   const porEdificio = edificios.map(ed => {
     const resEd  = residentes.filter(r => r.edificio === ed);
     const pagEd  = pagosPeriodo.filter(p => p.perfil?.edificio === ed);
-    const pagIds = new Set(pagEd.map(p => p.perfilId));
+    const cargosEd = cargosAdicionales.filter(cargo => cargo.perfil?.edificio === ed);
+    const pagIds = new Set([...pagEd.map(p => p.perfilId), ...cargosEd.map(cargo => cargo.perfilId)]);
     return {
       edificio:          ed,
-      totalPagado:       pagEd.reduce((s, p) => s + montoDisponibleFraccionamiento(p), 0),
-      cantidadPagos:     pagEd.length,
+      totalPagado:       pagEd.reduce((s, p) => s + montoDisponibleFraccionamiento(p), 0) + cargosEd.reduce((s, cargo) => s + Number(cargo.monto), 0),
+      cantidadPagos:     pagEd.length + cargosEd.length,
       residentesActivos: resEd.filter(r => pagIds.has(r.id)).length,
       residentesMorosos: resEd.filter(r => !pagIds.has(r.id)).length,
     };

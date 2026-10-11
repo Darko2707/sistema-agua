@@ -61,7 +61,17 @@ export async function POST(request: Request) {
   const accessToken = decryptTokenSafe(config.accessToken);
   if (!accessToken) return Response.json({ error: 'Mercado Pago no esta configurado para este fraccionamiento' }, { status: 400 });
 
-  const selectedCharges = cargoIds.length === 0 ? [] : await db.select({ id: cargosServicios.id, monto: cargosServicios.monto, nombre: servicios.nombre }).from(cargosServicios).innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, cargosServicios.fraccionamientoServicioId)).innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId)).where(and(inArray(cargosServicios.id, cargoIds), eq(cargosServicios.perfilId, perfil.id), eq(cargosServicios.fraccionamientoId, perfil.fraccionamientoId), eq(cargosServicios.estado, 'pendiente'), ne(servicios.clave, 'agua')));
+  const mandatoryChargeWhere = and(
+    eq(cargosServicios.perfilId, perfil.id),
+    eq(cargosServicios.fraccionamientoId, perfil.fraccionamientoId),
+    eq(cargosServicios.estado, 'pendiente'),
+    ne(servicios.clave, 'agua'),
+  );
+  const selectedCharges = cargoIds.length === 0 ? [] : await db.select({ id: cargosServicios.id, monto: cargosServicios.monto, nombre: servicios.nombre })
+    .from(cargosServicios)
+    .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, cargosServicios.fraccionamientoServicioId))
+    .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
+    .where(and(mandatoryChargeWhere, inArray(cargosServicios.id, cargoIds)));
   if (selectedCharges.length !== cargoIds.length) return Response.json({ error: 'Uno o mas cargos ya no estan disponibles; actualiza la pagina' }, { status: 409 });
 
   const periods = await nextUnpaidPeriods(perfil.id, perfil.fraccionamientoId, parsed.data.mesesAgua);
@@ -72,9 +82,9 @@ export async function POST(request: Request) {
   const isReconnection = periods.length > 0 && perfil.estadoAgua === 'cortado';
   const waterPeriods: MercadoPagoPaymentIntentPeriod[] = periods.map((period, index) => ({ ...period, monto: calcularMontoServicio(waterConfig, { incluyeReconexion: index === 0 && isReconnection }).toFixed(2), esReconexion: index === 0 && isReconnection }));
   const waterBase = waterPeriods.reduce((sum, period) => sum + Number(period.monto), 0);
-  const waterTotal = waterPeriods.length > 0 ? Number(calcularDesglosePago(waterBase).total) : 0;
   const serviceTotal = selectedCharges.reduce((sum, charge) => sum + Number(charge.monto), 0);
-  const total = (waterTotal + serviceTotal).toFixed(2);
+  const totalBase = waterBase + serviceTotal;
+  const total = (totalBase > 0 ? Number(calcularDesglosePago(totalBase).total) : 0).toFixed(2);
 
   const now = new Date(); const windowStart = Math.floor(now.getTime() / WINDOW_MS) * WINDOW_MS;
   const canonical = JSON.stringify({ perfilId: perfil.id, fraccionamientoId: perfil.fraccionamientoId, waterPeriods, cargoIds, total, collectorId: config.collectorId ?? null, windowStart });

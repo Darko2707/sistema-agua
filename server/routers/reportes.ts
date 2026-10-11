@@ -9,6 +9,7 @@ import { db } from '@/db';
 // eslint-disable-next-line no-restricted-imports -- complex financial aggregations not yet in a repo
 import {
   asignacionesFraccionamiento,
+  cargosServicios,
   fraccionamientoServicios,
   gastosFraccionamiento,
   ingresosAdicionales,
@@ -131,6 +132,22 @@ export const reportesRouter = router({
           fechaPago: true,
         },
       });
+      const cargosList = await db.query.cargosServicios.findMany({
+        where: (cargo, { inArray, and, eq }) => and(
+          inArray(cargo.perfilId, perfilIds),
+          eq(cargo.fraccionamientoId, ctx.user.fraccionamientoId!),
+          eq(cargo.estado, 'pagado'),
+        ),
+        columns: {
+          id: true,
+          perfilId: true,
+          mes: true,
+          anio: true,
+          monto: true,
+          pagadoEn: true,
+        },
+        with: { fraccionamientoServicio: { with: { servicio: true } } },
+      });
 
       // El estado financiero y el operativo son fuentes distintas. Este
       // resumen permite a tesorería ver si hay un trabajo físico pendiente sin
@@ -162,15 +179,22 @@ export const reportesRouter = router({
 
       const resultado = filtrados.map((r) => {
         const pagosResidente = pagosList.filter((p) => p.perfilId === r.id);
+        const cargosResidente = cargosList.filter((cargo) =>
+          cargo.perfilId === r.id && cargo.fraccionamientoServicio?.servicio?.clave !== 'agua',
+        );
 
         const pagosAnio = periodos.map(({ mes, anio }) => {
           const pago = pagosResidente.find(
             (p) => p.mes === mes && p.anio === anio && p.estado === 'pagado',
           );
+          const totalServicios = cargosResidente
+            .filter((cargo) => cargo.mes === mes && cargo.anio === anio)
+            .reduce((total, cargo) => total + Number(cargo.monto), 0);
+          const montoAgua = pago ? montoDisponibleFraccionamiento(pago) : 0;
           return {
             mes,
             anio,
-            monto:     pago ? montoDisponibleFraccionamiento(pago) : null,
+            monto:     pago || totalServicios > 0 ? montoAgua + totalServicios : null,
             estado:    pago ? ('pagado' as const) : ('pendiente' as const),
             fechaPago: pago?.fechaPago ?? null,
           };
@@ -178,10 +202,14 @@ export const reportesRouter = router({
 
         const totalPagado   = pagosAnio.reduce((s, p) => s + (p.monto ?? 0), 0);
         const mesesSinPagar = pagosAnio.filter((p) => p.estado === 'pendiente').length;
-        const ultimoPago    = pagosResidente
-          .filter((p) => p.estado === 'pagado' && p.fechaPago)
-          .sort((a, b) => new Date(b.fechaPago!).getTime() - new Date(a.fechaPago!).getTime())[0]
-          ?.fechaPago ?? null;
+        const ultimoPago = [
+          ...pagosResidente
+            .filter((p) => p.estado === 'pagado' && p.fechaPago)
+            .map((p) => p.fechaPago!),
+          ...cargosResidente
+            .filter((cargo) => cargo.pagadoEn)
+            .map((cargo) => cargo.pagadoEn!),
+        ].sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null;
 
         const ordenesResidente = ordenesList.filter((orden) => orden.perfilId === r.id);
         const ultimaOrden = (tipo: 'corte' | 'reconexion') => {
@@ -326,7 +354,7 @@ export const reportesRouter = router({
     .query(async ({ ctx, input }) => {
       const fraccionamiento = await getFraccionamientoDelTesorera(ctx.user.id, ctx.user.fraccionamientoId!);
 
-      const [residentes, pagosPeriodo, gastosPeriodo, ingresosPeriodo, ordenesPeriodo] = await Promise.all([
+      const [residentes, pagosPeriodo, cargosServiciosPeriodo, gastosPeriodo, ingresosPeriodo, ordenesPeriodo] = await Promise.all([
         db.query.perfilesResidente.findMany({
           where: (p, { eq }) => eq(p.fraccionamientoId, fraccionamiento.id),
         }),
@@ -339,6 +367,15 @@ export const reportesRouter = router({
               eq(p.estado, 'pagado'),
             ),
           with: { perfil: true },
+        }),
+        db.query.cargosServicios.findMany({
+          where: (cargo, { eq, and }) => and(
+            eq(cargo.fraccionamientoId, fraccionamiento.id),
+            eq(cargo.mes, input.mes),
+            eq(cargo.anio, input.anio),
+            eq(cargo.estado, 'pagado'),
+          ),
+          with: { perfil: true, fraccionamientoServicio: { with: { servicio: true } } },
         }),
         db.query.gastosFraccionamiento.findMany({
           where: (g, { eq, and }) =>
@@ -366,12 +403,18 @@ export const reportesRouter = router({
         }),
       ]);
 
-      const totalPagos             = pagosPeriodo.reduce((s, p) => s + montoDisponibleFraccionamiento(p), 0);
+      const cargosAdicionales = cargosServiciosPeriodo.filter((cargo) => cargo.fraccionamientoServicio?.servicio?.clave !== 'agua');
+      const totalAgua = pagosPeriodo.reduce((s, p) => s + montoDisponibleFraccionamiento(p), 0);
+      const totalServicios = cargosAdicionales.reduce((s, cargo) => s + Number(cargo.monto), 0);
+      const totalPagos             = totalAgua + totalServicios;
       const totalIngresosAdicionales = ingresosPeriodo.reduce((s, i) => s + Number(i.monto), 0);
       const totalRecaudado         = totalPagos + totalIngresosAdicionales;
       const totalGastos            = gastosPeriodo.reduce((s, g) => s + Number(g.monto), 0);
       const montoMensual   = Number(fraccionamiento.montoMensual);
-      const perfilesPagados = new Set(pagosPeriodo.map((p) => p.perfilId));
+      const perfilesPagados = new Set([
+        ...pagosPeriodo.map((p) => p.perfilId),
+        ...cargosAdicionales.map((cargo) => cargo.perfilId),
+      ]);
       const totalPagaron = perfilesPagados.size;
       const porcentajeCobranza = residentes.length > 0
         ? Math.round((totalPagaron / residentes.length) * 100 * 10) / 10
@@ -389,11 +432,12 @@ export const reportesRouter = router({
       const porEdificio = edificios.map((ed) => {
         const resEdificio  = residentes.filter((r) => r.edificio === ed);
         const pagosEdificio = pagosPeriodo.filter((p) => p.perfil?.edificio === ed);
-        const pagoIds = new Set(pagosEdificio.map((p) => p.perfilId));
+        const cargosEdificio = cargosAdicionales.filter((cargo) => cargo.perfil?.edificio === ed);
+        const pagoIds = new Set([...pagosEdificio.map((p) => p.perfilId), ...cargosEdificio.map((cargo) => cargo.perfilId)]);
         return {
           edificio:          ed,
-          totalPagado:       pagosEdificio.reduce((s, p) => s + montoDisponibleFraccionamiento(p), 0),
-          cantidadPagos:     pagosEdificio.length,
+          totalPagado:       pagosEdificio.reduce((s, p) => s + montoDisponibleFraccionamiento(p), 0) + cargosEdificio.reduce((s, cargo) => s + Number(cargo.monto), 0),
+          cantidadPagos:     pagosEdificio.length + cargosEdificio.length,
           residentesActivos: resEdificio.filter((r) => pagoIds.has(r.id)).length,
           residentesMorosos: resEdificio.filter((r) => !pagoIds.has(r.id)).length,
         };
@@ -405,6 +449,8 @@ export const reportesRouter = router({
         anio:                    input.anio,
         totalRecaudado,
         totalPagos,
+        totalAgua,
+        totalServicios,
         totalIngresosAdicionales,
         totalResidentes:         residentes.length,
         totalPagaron,

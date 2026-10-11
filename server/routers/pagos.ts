@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { router, protectedProcedure, roleProcedure, operationalRoleProcedure } from '../trpc';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
+import { and, eq, inArray, ne } from 'drizzle-orm';
 
 import { residenteRepo, pagoRepo } from '@/src/infrastructure/db/repositories';
 import { RegistrarPagoManualHandler } from '@/src/application/pagos/commands/registrar-pago-manual.handler';
@@ -10,6 +11,7 @@ import { ResumenMesHandler } from '@/src/application/pagos/queries/resumen-mes.h
 import { MetricasAdminHandler } from '@/src/application/pagos/queries/metricas-admin.handler';
 // eslint-disable-next-line no-restricted-imports -- inline MP webhook queries not yet in a repo
 import { db } from '@/db';
+import { auditoria, cargosServicios, fraccionamientoServicios, servicios } from '@/db/schema';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
 import {
   compararPeriodos,
@@ -21,6 +23,7 @@ import {
 } from '@/src/domain/pagos/periodos-tesoreria';
 import { calcularDesgloseServicio, calcularMontoServicio } from '@/src/domain/pagos/calculator';
 import { FolioVO } from '@/src/domain/pagos/folio.vo';
+import { generarFolioServicio } from '@/src/domain/pagos/folio.vo';
 import { subscriptionService } from '@/src/infrastructure/db/services/subscription.service';
 import { logger } from '@/lib/logger';
 import { schedulePushDispatch } from '@/lib/push-dispatcher';
@@ -31,6 +34,61 @@ const resumenMesHandler = new ResumenMesHandler({ pagoRepo, residenteRepo });
 const metricasAdminHandler = new MetricasAdminHandler({ pagoRepo });
 
 const MESES_CORTO = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+async function registrarCargosObligatoriosManuales(input: {
+  perfilId: string;
+  fraccionamientoId: string;
+  cargoIds: string[];
+  metodo: 'efectivo' | 'transferencia';
+  actorId: string;
+}) {
+  const cargoIds = [...new Set(input.cargoIds)];
+  if (cargoIds.length === 0) return { cargos: 0, monto: 0 };
+
+  return db.transaction(async (tx) => {
+    const pendientes = await tx.select({
+      id: cargosServicios.id,
+      monto: cargosServicios.monto,
+      servicio: servicios.nombre,
+    }).from(cargosServicios)
+      .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, cargosServicios.fraccionamientoServicioId))
+      .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
+      .where(and(
+        eq(cargosServicios.perfilId, input.perfilId),
+        eq(cargosServicios.fraccionamientoId, input.fraccionamientoId),
+        eq(cargosServicios.estado, 'pendiente'),
+        ne(servicios.clave, 'agua'),
+        inArray(cargosServicios.id, cargoIds),
+      ));
+    if (pendientes.length !== cargoIds.length) {
+      throw new TRPCError({ code: 'CONFLICT', message: 'Uno o más servicios ya no están disponibles; actualiza la lista' });
+    }
+
+    let monto = 0;
+    let cargos = 0;
+    for (const cargo of pendientes) {
+      const folio = generarFolioServicio();
+      const [updated] = await tx.update(cargosServicios).set({
+        estado: 'pagado',
+        metodo: input.metodo,
+        folio,
+        pagadoEn: new Date(),
+      }).where(and(eq(cargosServicios.id, cargo.id), eq(cargosServicios.estado, 'pendiente')))
+        .returning({ id: cargosServicios.id });
+      if (!updated) continue;
+      cargos += 1;
+      monto += Number(cargo.monto);
+      await tx.insert(auditoria).values({
+        actorId: input.actorId,
+        accion: 'servicio.cargo.pagado_manual_combinado',
+        entidad: 'cargos_servicios',
+        entidadId: cargo.id,
+        detalle: { perfilId: input.perfilId, fraccionamientoId: input.fraccionamientoId, metodo: input.metodo, folio, servicio: cargo.servicio },
+      });
+    }
+    return { cargos, monto };
+  });
+}
 
 const mesesTesoreraSchema = z.array(z.object({
   mes:  z.number().int().min(1).max(12),
@@ -215,6 +273,21 @@ export const pagosRouter = router({
         },
       },
     });
+    const cargosPendientes = await db.select({
+      id: cargosServicios.id,
+      perfilId: cargosServicios.perfilId,
+      mes: cargosServicios.mes,
+      anio: cargosServicios.anio,
+      monto: cargosServicios.monto,
+      servicio: servicios.nombre,
+    }).from(cargosServicios)
+      .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, cargosServicios.fraccionamientoServicioId))
+      .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
+      .where(and(
+        eq(cargosServicios.fraccionamientoId, ctx.user.fraccionamientoId),
+        eq(cargosServicios.estado, 'pendiente'),
+        ne(servicios.clave, 'agua'),
+      ));
 
     return {
       fraccionamiento: {
@@ -244,6 +317,15 @@ export const pagosRouter = router({
           atrasadosPendientes: estadoPago.atrasadosPendientes,
           accionDisponible:    estadoPago.accionDisponible,
           periodos:            estadoPago.periodos,
+          cargosPendientes: cargosPendientes
+            .filter((cargo) => cargo.perfilId === p.id)
+            .map((cargo) => ({
+              id: cargo.id,
+              mes: cargo.mes,
+              anio: cargo.anio,
+              monto: Number(cargo.monto),
+              servicio: cargo.servicio,
+            })),
         };
       }),
     };
@@ -255,6 +337,7 @@ export const pagosRouter = router({
       perfilId: z.uuid(),
       metodo:   z.enum(['efectivo', 'transferencia']),
       meses:    mesesTesoreraSchema,
+      cargoIds: z.array(z.uuid()).max(50).default([]),
     }).strict())
     .mutation(async ({ ctx, input }) => {
       if (!ctx.user.fraccionamientoId) {
@@ -323,14 +406,22 @@ export const pagosRouter = router({
         },
         politica: { tipo: 'tesorera_escalonada' },
       });
+      const cargosServiciosPagados = await registrarCargosObligatoriosManuales({
+        perfilId: perfil.id,
+        fraccionamientoId: ctx.user.fraccionamientoId,
+        cargoIds: input.cargoIds,
+        metodo: input.metodo,
+        actorId: ctx.user.id,
+      });
       const folios = batchResult.pagos
         .map(pago => pago.folio)
         .filter((folio): folio is string => Boolean(folio));
       const omitidos = batchResult.omitidos
         .map(periodo => `${MESES_CORTO[periodo.mes - 1]} ${periodo.anio}`);
-      const total = batchResult.pagos.reduce((sum, pago) => sum + Number(pago.monto), 0);
+      const total = batchResult.pagos.reduce((sum, pago) => sum + Number(pago.monto), 0)
+        + cargosServiciosPagados.monto;
 
-      if (folios.length === 0) {
+      if (folios.length === 0 && cargosServiciosPagados.cargos === 0) {
         throw new TRPCError({
           code: 'CONFLICT',
           message: 'Los periodos seleccionados ya fueron pagados; actualiza la lista e intenta de nuevo',
@@ -345,6 +436,7 @@ export const pagosRouter = router({
         folio: folios[0],
         folios,
         registrados: folios.length,
+        cargosServiciosPagados: cargosServiciosPagados.cargos,
         omitidos,
         monto: total.toFixed(2),
         metodo: input.metodo,
