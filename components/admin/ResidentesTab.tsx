@@ -41,6 +41,7 @@ type Props = {
   setFiltroEstado:            (v: string) => void;
   actualizando:               string | null;
   onCambiarRol:               (userId: string, rol: string) => void;
+  onCambiarResponsabilidadCargos: (userId: string, responsableCargos: boolean) => void;
   onRegistrarPagoRetroactivo: (
     perfilId: string,
     meses: MesAnio[],
@@ -59,6 +60,7 @@ export function ResidentesTab({
   setFiltroEstado,
   actualizando,
   onCambiarRol,
+  onCambiarResponsabilidadCargos,
   onRegistrarPagoRetroactivo,
   onLimpiarFiltros,
   paginaMeta,
@@ -228,6 +230,9 @@ export function ResidentesTab({
                       Moroso
                     </Badge>
                   )}
+                  <Badge variant={r.usuario?.responsableCargos === false ? 'secondary' : 'default'}>
+                    {r.usuario?.responsableCargos === false ? 'Sin cargos futuros' : 'Con cargos'}
+                  </Badge>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -257,6 +262,14 @@ export function ResidentesTab({
                       <option key={role.value} value={role.value}>{role.label}</option>
                     ))}
                   </select>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={actualizando === usuarioId}
+                    onClick={() => onCambiarResponsabilidadCargos(usuarioId, r.usuario?.responsableCargos === false)}
+                  >
+                    {r.usuario?.responsableCargos === false ? 'Activar cargos' : 'Quitar cargos'}
+                  </Button>
                   {actualizando === usuarioId && (
                     <span className="text-xs text-muted-foreground">Guardando...</span>
                   )}

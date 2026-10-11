@@ -55,6 +55,7 @@ export async function POST(request: Request) {
 
   const perfil = await residenteRepo.findByUserIdWithPaymentConfig(session.user.id);
   if (!perfil?.fraccionamientoId) return Response.json({ error: 'Perfil sin fraccionamiento' }, { status: 403 });
+  if (perfil.responsableCargos === false) return Response.json({ error: 'Esta cuenta no tiene cargos de vivienda habilitados' }, { status: 403 });
   try { await subscriptionService.requireOperational(perfil.fraccionamientoId); } catch { return Response.json({ error: 'El fraccionamiento no tiene una suscripcion operativa vigente' }, { status: 403 }); }
   const [config] = await db.select({ activo: fraccionamientos.activo, montoMensual: fraccionamientos.montoMensual, montoReconexion: fraccionamientos.montoReconexion, accessToken: fraccionamientoMetodosPago.accessTokenCifrado, collectorId: fraccionamientoMetodosPago.collectorId }).from(fraccionamientos).leftJoin(fraccionamientoMetodosPago, and(eq(fraccionamientoMetodosPago.fraccionamientoId, fraccionamientos.id), eq(fraccionamientoMetodosPago.proveedor, 'mercado_pago'), eq(fraccionamientoMetodosPago.activo, true))).where(eq(fraccionamientos.id, perfil.fraccionamientoId)).limit(1);
   if (!config?.activo) return Response.json({ error: 'El fraccionamiento esta desactivado' }, { status: 403 });

@@ -34,6 +34,7 @@ function mapPerfil(p: ResidenteConRelaciones, periodo: ReturnType<typeof Periodo
       name:  p.usuario?.name,
       email: p.usuario?.email,
       role:  p.usuario?.role,
+      responsableCargos: p.usuario?.responsableCargos ?? true,
     },
     fraccionamiento: p.fraccionamiento,
     pagoEsteMes,
