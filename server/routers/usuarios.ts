@@ -26,7 +26,7 @@ import { profileChangeService } from '@/src/infrastructure/db/services/profile-c
 import { subscriptionService } from '@/src/infrastructure/db/services/subscription.service';
 import { db } from '@/db';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
-import { asignacionesFraccionamiento, auditoria, fraccionamientos, fraccionamientoServicios, perfilesResidente, session, user } from '@/db/schema';
+import { asignacionesFraccionamiento, auditoria, fraccionamientos, fraccionamientoServicios, perfilesResidente, servicios, session, user } from '@/db/schema';
 
 const telefono10 = z.string().regex(/^\d{10}$/, 'El telefono debe contener exactamente 10 digitos');
 
@@ -443,11 +443,36 @@ export const usuariosRouter = router({
         db.select({ id: fraccionamientos.id, activo: fraccionamientos.activo })
           .from(fraccionamientos).where(eq(fraccionamientos.id, input.fraccionamientoId)).limit(1),
       ]);
+      const [servicioAgua] = input.rol === 'cuadrilla_cortes'
+        ? await db.select({ id: fraccionamientoServicios.id })
+          .from(fraccionamientoServicios)
+          .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
+          .where(and(
+            eq(fraccionamientoServicios.fraccionamientoId, input.fraccionamientoId),
+            eq(fraccionamientoServicios.estado, 'activo'),
+            eq(servicios.clave, 'agua'),
+          )).limit(1)
+        : [];
+      if (input.rol === 'cuadrilla_cortes' && !servicioAgua) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'No hay un servicio de agua activo para esta cuadrilla' });
+      }
       if (!target || target.deletedAt) throw new TRPCError({ code: 'NOT_FOUND', message: 'Cuenta no encontrada' });
       if (target.responsableCargos || target.fraccionamientoId) throw new TRPCError({ code: 'CONFLICT', message: 'La cuenta ya fue asignada o tiene cargos habilitados' });
       if (!fraccionamiento?.activo) throw new TRPCError({ code: 'BAD_REQUEST', message: 'El fraccionamiento no está activo' });
       await db.transaction(async (tx) => {
         await tx.update(user).set({ role: input.rol, fraccionamientoId: input.fraccionamientoId, updatedAt: new Date() }).where(eq(user.id, input.userId));
+        if (input.rol === 'cuadrilla_cortes' && servicioAgua) {
+          await tx.insert(asignacionesFraccionamiento).values({
+            usuarioId: input.userId,
+            fraccionamientoId: input.fraccionamientoId,
+            fraccionamientoServicioId: servicioAgua.id,
+            rol: 'cuadrilla_cortes',
+            activo: true,
+          }).onConflictDoUpdate({
+            target: [asignacionesFraccionamiento.usuarioId, asignacionesFraccionamiento.fraccionamientoId, asignacionesFraccionamiento.fraccionamientoServicioId, asignacionesFraccionamiento.rol],
+            set: { activo: true, actualizadoEn: new Date() },
+          });
+        }
         await tx.delete(session).where(eq(session.userId, input.userId));
         await tx.insert(auditoria).values({
           actorId: ctx.user.id,

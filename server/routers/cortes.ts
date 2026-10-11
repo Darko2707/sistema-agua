@@ -14,7 +14,7 @@ import { DrizzleCorteOperacionDatabase } from '@/src/infrastructure/db/services/
 // eslint-disable-next-line no-restricted-imports
 import { db } from '@/db';
 // eslint-disable-next-line no-restricted-imports
-import { asignacionesFraccionamiento, fraccionamientoServicios, servicios } from '@/db/schema';
+import { asignacionesFraccionamiento, fraccionamientoServicios, servicios, user } from '@/db/schema';
 
 import { router, roleProcedure, operationalRoleProcedure } from '../trpc';
 
@@ -35,7 +35,38 @@ async function findFraccionamientosAsignados(userId: string): Promise<string[]> 
       eq(fraccionamientoServicios.estado, 'activo'),
       eq(servicios.clave, 'agua'),
     ));
-  return rows.map((row) => row.fraccionamientoId!);
+  if (rows.length > 0) return rows.map((row) => row.fraccionamientoId!);
+
+  // Las cuentas creadas antes de las asignaciones explícitas ya tienen un
+  // fraccionamiento y rol aprobados por administración. Reparamos únicamente
+  // esa relación operativa faltante, limitada a su propio tenant y a Agua.
+  const [worker] = await db.select({
+    fraccionamientoId: user.fraccionamientoId,
+    role: user.role,
+  }).from(user).where(eq(user.id, userId)).limit(1);
+  if (worker?.role !== 'cuadrilla_cortes' || !worker.fraccionamientoId) return [];
+
+  const [agua] = await db.select({ id: fraccionamientoServicios.id })
+    .from(fraccionamientoServicios)
+    .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
+    .where(and(
+      eq(fraccionamientoServicios.fraccionamientoId, worker.fraccionamientoId),
+      eq(fraccionamientoServicios.estado, 'activo'),
+      eq(servicios.clave, 'agua'),
+    )).limit(1);
+  if (!agua) return [];
+
+  await db.insert(asignacionesFraccionamiento).values({
+    usuarioId: userId,
+    fraccionamientoId: worker.fraccionamientoId,
+    fraccionamientoServicioId: agua.id,
+    rol: 'cuadrilla_cortes',
+    activo: true,
+  }).onConflictDoUpdate({
+    target: [asignacionesFraccionamiento.usuarioId, asignacionesFraccionamiento.fraccionamientoId, asignacionesFraccionamiento.fraccionamientoServicioId, asignacionesFraccionamiento.rol],
+    set: { activo: true, actualizadoEn: new Date() },
+  });
+  return [worker.fraccionamientoId];
 }
 
 const pendientesCorteHandler = new PendientesCorteHandler({ residenteRepo, findFraccionamientosAsignados });
@@ -51,20 +82,8 @@ async function assertPerfilDeCuadrilla(userId: string, perfilId: string, tenantI
   if (!perfilObjetivo.fraccionamientoId) {
     throw new TRPCError({ code: 'FORBIDDEN', message: 'El perfil no tiene fraccionamiento asignado' });
   }
-  const [assignment] = await db.select({ id: asignacionesFraccionamiento.id })
-    .from(asignacionesFraccionamiento)
-    .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, asignacionesFraccionamiento.fraccionamientoServicioId))
-    .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
-    .where(and(
-      eq(asignacionesFraccionamiento.usuarioId, userId),
-      eq(asignacionesFraccionamiento.fraccionamientoId, perfilObjetivo.fraccionamientoId),
-      eq(asignacionesFraccionamiento.rol, 'cuadrilla_cortes'),
-      eq(asignacionesFraccionamiento.activo, true),
-      eq(fraccionamientoServicios.estado, 'activo'),
-      eq(servicios.clave, 'agua'),
-    ))
-    .limit(1);
-  if (!assignment) {
+  const fraccionamientosAsignados = await findFraccionamientosAsignados(userId);
+  if (!fraccionamientosAsignados.includes(perfilObjetivo.fraccionamientoId)) {
     throw new TRPCError({ code: 'FORBIDDEN', message: 'No puedes operar fuera de tu fraccionamiento' });
   }
 }

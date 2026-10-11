@@ -182,6 +182,49 @@ export const serviciosRouter = router({
       ));
   }),
 
+  // The scheduled job creates charges in bulk. This scoped, idempotent action
+  // prevents a resident from seeing a configured mandatory service without a
+  // payable charge while the next scheduled run is pending.
+  sincronizarMisCargos: protectedProcedure.mutation(async ({ ctx }) => {
+    if (!ctx.user.fraccionamientoId) return { generados: 0, candidatos: 0 };
+    const [account] = await db.select({ responsableCargos: user.responsableCargos })
+      .from(user).where(eq(user.id, ctx.user.id)).limit(1);
+    if (!account?.responsableCargos) return { generados: 0, candidatos: 0 };
+
+    const perfil = await residenteRepo.findByUserId(ctx.user.id);
+    if (!perfil) throw new TRPCError({ code: 'NOT_FOUND', message: 'Perfil no encontrado' });
+
+    const activaciones = await db.select({ id: fraccionamientoServicios.id })
+      .from(fraccionamientoServicios)
+      .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
+      .where(and(
+        eq(fraccionamientoServicios.fraccionamientoId, ctx.user.fraccionamientoId),
+        eq(fraccionamientoServicios.estado, 'activo'),
+        eq(servicios.activo, true),
+        ne(servicios.clave, 'agua'),
+      ));
+
+    if (activaciones.length > 0) {
+      await db.insert(perfilesServicios).values(activaciones.map((activation) => ({
+        perfilId: perfil.id,
+        fraccionamientoId: ctx.user.fraccionamientoId!,
+        fraccionamientoServicioId: activation.id,
+        estadoAgua: perfil.estadoAgua,
+        activo: true,
+      }))).onConflictDoUpdate({
+        target: [perfilesServicios.perfilId, perfilesServicios.fraccionamientoServicioId],
+        set: { activo: true, actualizadoEn: new Date() },
+      });
+    }
+
+    const ahora = new Date();
+    return generateMonthlyServiceCharges({
+      fraccionamientoId: ctx.user.fraccionamientoId,
+      mes: ahora.getUTCMonth() + 1,
+      anio: ahora.getUTCFullYear(),
+    });
+  }),
+
   generarCargosMes: roleProcedure('admin')
     .input(tenantInput.extend({ mes: z.number().int().min(1).max(12), anio: z.number().int().min(2020).max(2100) }))
     .mutation(async ({ input }) => generateMonthlyServiceCharges(input)),

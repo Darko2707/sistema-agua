@@ -188,8 +188,12 @@ export function ResidenteDashboard() {
   const { data: sessionData, isPending: sessionPending } = useSession();
   const { data: historial, isLoading: historialLoading, refetch: refetchHistorial } = useMiHistorial();
   const { checkout, isPending: pagando, error } = useCheckoutCombinadoMP();
+  const utils = trpcReact.useUtils();
   const { data: cargos } = trpcReact.servicios.misCargos.useQuery();
   const { data: servicios } = trpcReact.servicios.misServicios.useQuery();
+  const sincronizarCargos = trpcReact.servicios.sincronizarMisCargos.useMutation({
+    onSuccess: () => { void utils.servicios.misCargos.invalidate(); },
+  });
 
   const [menuOpen,      setMenuOpen]      = useState(false);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
@@ -227,6 +231,11 @@ export function ResidenteDashboard() {
       timers.forEach(window.clearTimeout);
     };
   }, [paymentResult, refetchHistorial]);
+
+  useEffect(() => {
+    if (!sessionData?.user || sincronizarCargos.isPending || sincronizarCargos.isSuccess) return;
+    sincronizarCargos.mutate();
+  }, [sessionData?.user, sincronizarCargos]);
 
   useEffect(() => {
     const pendientes = (cargos ?? []).filter(cargo => cargo.estado === 'pendiente' && cargo.servicio !== 'agua');
@@ -556,7 +565,7 @@ export function ResidenteDashboard() {
                 {/* Payment concepts */}
                 <div style={{ background: C.header, borderRadius: 18, padding: '16px 18px', marginTop: 14 }}>
                   <div style={{ fontFamily: FB, fontSize: 15, fontWeight: 800, color: C.green, marginBottom: 12 }}>
-                    Conceptos a pagar
+                    Selecciona los conceptos a pagar
                   </div>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer', fontSize: 13, color: C.textMain, fontWeight: 800, marginBottom: 12 }}>
                     <input
@@ -574,7 +583,7 @@ export function ResidenteDashboard() {
                     {esReconexion ? 'Cuota + reconexión' : yaPagoEsteMes ? 'Meses adelantados' : 'Cuota mensual'}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: 7, marginTop: 5 }}>
-                    <span style={{ fontFamily: FB, fontSize: 22, fontWeight: 800, color: C.green, letterSpacing: '-.02em', lineHeight: 1 }}>
+                    <span style={{ fontFamily: FB, fontSize: 13, fontWeight: 800, color: C.green, letterSpacing: '-.02em', lineHeight: 1 }}>
                       ${montoBaseAdelantado.toFixed(2)}
                     </span>
                     <span style={{ fontSize: 15, fontWeight: 700, color: C.textWarm2 }}>MXN</span>
@@ -588,7 +597,7 @@ export function ResidenteDashboard() {
                   {!esReconexion && (
                     <label style={{ display: 'block', marginTop: 14 }}>
                       <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 7 }}>
-                        <span style={{ fontSize: 12, color: C.textWarm, fontWeight: 800 }}>Meses a pagar</span>
+                        <span style={{ fontSize: 12, color: C.textWarm, fontWeight: 800 }}>Periodos de agua</span>
                         <span style={{ fontSize: 12, color: C.green, fontWeight: 800 }}>
                           {yaPagoEsteMes || mesesAdelantados > 1 ? 'Adelanto' : 'Mes actual'}
                         </span>
@@ -649,7 +658,7 @@ export function ResidenteDashboard() {
                   )}
 
                   <div style={{ marginTop: 18, borderTop: `1px solid ${C.border3}`, paddingTop: 15 }}>
-                    <div style={{ fontSize: 12.5, color: C.textWarm, fontWeight: 800, marginBottom: 4 }}>Servicios del fraccionamiento</div>
+                    <div style={{ fontSize: 12.5, color: C.textWarm, fontWeight: 800, marginBottom: 4 }}>Otros conceptos del fraccionamiento</div>
                     <p style={{ margin: '0 0 6px', fontSize: 11.5, color: C.textWarm3 }}>Puedes pagar uno, varios o combinarlos con agua. Los ya pagados siguen visibles.</p>
                     {conceptosServicios.map(({ servicio, cargo }, index) => {
                       const pendiente = cargo?.estado === 'pendiente';
