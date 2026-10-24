@@ -278,6 +278,10 @@ export function ResidenteDashboard() {
   const utils = trpcReact.useUtils();
   const { data: cargos } = trpcReact.servicios.misCargos.useQuery();
   const { data: servicios } = trpcReact.servicios.misServicios.useQuery();
+  const asignacionQ = trpcReact.usuarios.miAsignacionOperativa.useQuery(undefined, {
+    enabled: !!sessionData?.user,
+  });
+  const tieneAsignacionCuadrilla = Boolean(asignacionQ.data && asignacionQ.data.length > 0);
   const sincronizarCargos = trpcReact.servicios.sincronizarMisCargos.useMutation({
     onSuccess: () => { void utils.servicios.misCargos.invalidate(); },
   });
@@ -435,7 +439,7 @@ export function ResidenteDashboard() {
   const roleNav =
     miRol === 'representante'   ? { label: 'Mi panel (Representante)', path: '/representante' } :
     miRol === 'tesorera'        ? { label: 'Mi panel (Tesorería)', path: '/tesorera' } :
-    miRol === 'cuadrilla_cortes'? { label: 'Mi panel (Cuadrilla)', path: '/trabajador' } :
+    (miRol === 'cuadrilla_cortes' || tieneAsignacionCuadrilla) ? { label: 'Mi panel (Cuadrilla)', path: '/trabajador' } :
     miRol === 'admin'           ? { label: 'Mi panel (Admin)', path: '/admin' } :
     null;
 

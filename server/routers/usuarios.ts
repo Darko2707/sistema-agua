@@ -26,7 +26,7 @@ import { profileChangeService } from '@/src/infrastructure/db/services/profile-c
 import { subscriptionService } from '@/src/infrastructure/db/services/subscription.service';
 import { db } from '@/db';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
-import { asignacionesFraccionamiento, auditoria, fraccionamientos, fraccionamientoServicios, perfilesResidente, servicios, session, user } from '@/db/schema';
+import { asignacionesFraccionamiento, auditoria, fraccionamientos, fraccionamientoServicios, servicios, session, user } from '@/db/schema';
 
 const telefono10 = z.string().regex(/^\d{10}$/, 'El telefono debe contener exactamente 10 digitos');
 
@@ -162,7 +162,7 @@ export const usuariosRouter = router({
       if (!perfil) throw new TRPCError({ code: 'NOT_FOUND', message: 'Perfil no encontrado' });
       return profileChangeService.createRequest({
         actorId: ctx.user.id,
-        tenantId: ctx.user.fraccionamientoId,
+        tenantId: ctx.user.fraccionamientoId!,
         perfilId: perfil.id,
         cambios: input.cambios,
         motivo: input.motivo,
@@ -175,7 +175,7 @@ export const usuariosRouter = router({
     }
     return profileChangeService.listMine({
       actorId: ctx.user.id,
-      tenantId: ctx.user.fraccionamientoId,
+      tenantId: ctx.user.fraccionamientoId!,
     });
   }),
 
@@ -430,8 +430,10 @@ export const usuariosRouter = router({
     eq(user.role, 'residente'),
   )).orderBy(user.name)),
 
-  miAsignacionOperativa: roleProcedure('cuadrilla_cortes')
-    .query(async ({ ctx }) => db.select({
+  miAsignacionOperativa: authenticatedProcedure
+    .query(async ({ ctx }) => {
+      if (!ctx.user.fraccionamientoId) return [];
+      return db.select({
       id: asignacionesFraccionamiento.id,
       rol: asignacionesFraccionamiento.rol,
       fraccionamientoNombre: fraccionamientos.nombre,
@@ -443,10 +445,11 @@ export const usuariosRouter = router({
       .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
       .where(and(
         eq(asignacionesFraccionamiento.usuarioId, ctx.user.id),
-        eq(asignacionesFraccionamiento.fraccionamientoId, ctx.user.fraccionamientoId!),
+        eq(asignacionesFraccionamiento.fraccionamientoId, ctx.user.fraccionamientoId),
         eq(asignacionesFraccionamiento.activo, true),
         eq(fraccionamientoServicios.estado, 'activo'),
-      ))),
+      ));
+    }),
 
   asignarCuentaSinCargos: roleProcedure('admin')
     .input(z.object({
