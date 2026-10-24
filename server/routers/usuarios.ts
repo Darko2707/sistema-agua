@@ -430,11 +430,29 @@ export const usuariosRouter = router({
     eq(user.role, 'residente'),
   )).orderBy(user.name)),
 
+  miAsignacionOperativa: roleProcedure('cuadrilla_cortes')
+    .query(async ({ ctx }) => db.select({
+      id: asignacionesFraccionamiento.id,
+      rol: asignacionesFraccionamiento.rol,
+      fraccionamientoNombre: fraccionamientos.nombre,
+      servicioNombre: servicios.nombre,
+      servicioClave: servicios.clave,
+    }).from(asignacionesFraccionamiento)
+      .innerJoin(fraccionamientos, eq(fraccionamientos.id, asignacionesFraccionamiento.fraccionamientoId))
+      .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, asignacionesFraccionamiento.fraccionamientoServicioId))
+      .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
+      .where(and(
+        eq(asignacionesFraccionamiento.usuarioId, ctx.user.id),
+        eq(asignacionesFraccionamiento.fraccionamientoId, ctx.user.fraccionamientoId!),
+        eq(asignacionesFraccionamiento.activo, true),
+        eq(fraccionamientoServicios.estado, 'activo'),
+      ))),
+
   asignarCuentaSinCargos: roleProcedure('admin')
     .input(z.object({
       userId: z.string().min(1),
       fraccionamientoId: z.string().uuid(),
-      rol: z.enum(['residente', 'cuadrilla_cortes', 'operador_pozo']),
+      rol: z.enum(['residente', 'cuadrilla_cortes']),
     }))
     .mutation(async ({ ctx, input }) => {
       const [[target], [fraccionamiento]] = await Promise.all([
@@ -490,7 +508,7 @@ export const usuariosRouter = router({
     .query(async ({ input }) => {
       const conditions = [
         eq(user.fraccionamientoId, input.fraccionamientoId),
-        inArray(user.role, ['representante', 'tesorera', 'cuadrilla_cortes', 'operador_pozo']),
+        inArray(user.role, ['representante', 'tesorera', 'cuadrilla_cortes']),
       ];
       return db.select({
         id: user.id,
@@ -514,7 +532,7 @@ export const usuariosRouter = router({
       usuarioId: z.string().min(1),
       fraccionamientoId: z.string().uuid(),
       fraccionamientoServicioId: z.string().uuid(),
-      rol: z.enum(['cuadrilla_cortes', 'operador_pozo']),
+      rol: z.literal('cuadrilla_cortes'),
     }))
     .mutation(async ({ ctx, input }) => {
       await subscriptionService.requireOperational(input.fraccionamientoId);

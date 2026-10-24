@@ -10,7 +10,7 @@ type Props = {
   actualizando:          string | null;
   onCambiarRol:          (userId: string, rol: string) => void;
   onCambiarResponsabilidadCargos: (userId: string, responsableCargos: boolean) => void;
-  onAsignarCuentaSinCargos: (userId: string, fraccionamientoId: string, rol: 'residente' | 'cuadrilla_cortes' | 'operador_pozo') => void;
+  onAsignarCuentaSinCargos: (userId: string, fraccionamientoId: string, rol: 'residente' | 'cuadrilla_cortes') => void;
 };
 
 export function PersonalTab({
@@ -22,7 +22,7 @@ export function PersonalTab({
   onAsignarCuentaSinCargos,
 }: Props) {
   const [fraccionamientoPendiente, setFraccionamientoPendiente] = useState<Record<string, string>>({});
-  const [rolPendiente, setRolPendiente] = useState<Record<string, 'residente' | 'cuadrilla_cortes' | 'operador_pozo'>>({});
+  const [rolPendiente, setRolPendiente] = useState<Record<string, 'residente' | 'cuadrilla_cortes'>>({});
   const personalPorFraccionamiento = personal.reduce<Record<string, Personal[]>>((grupos, persona) => {
     const nombre = persona.fraccionamientoNombre ?? 'Sin fraccionamiento asignado';
     (grupos[nombre] ??= []).push(persona);
@@ -68,7 +68,7 @@ export function PersonalTab({
                     disabled={actualizando === p.id}
                     onChange={(e) => {
                       if (p.fraccionamientoId) onCambiarRol(p.id, e.target.value);
-                      else setRolPendiente((prev) => ({ ...prev, [p.id]: e.target.value as 'residente' | 'cuadrilla_cortes' | 'operador_pozo' }));
+                      else setRolPendiente((prev) => ({ ...prev, [p.id]: e.target.value as 'residente' | 'cuadrilla_cortes' }));
                     }}
                     className="h-10 rounded-lg border bg-background px-3 md:w-72"
                   >

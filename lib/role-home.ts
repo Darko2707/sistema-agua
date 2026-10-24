@@ -10,7 +10,6 @@ export function homePathForRole(role: string | null | undefined): string {
       return '/trabajador';
     case 'residente':
       return '/residente';
-    case 'operador_pozo':
     default:
       return '/acceso-no-configurado';
   }

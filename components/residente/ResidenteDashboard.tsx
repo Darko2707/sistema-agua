@@ -11,6 +11,7 @@ import { ResidenteDashboardSkeleton } from './ResidenteDashboardSkeleton';
 import { MESES_FULL as MESES } from '@/lib/meses';
 import { CheckCircle2, Clock, XCircle } from 'lucide-react';
 import { calcularDesglosePago } from '@/src/domain/pagos/calculator';
+import { homePathForRole } from '@/lib/role-home';
 
 // ── Design tokens ──────────────────────────────────────────────────────────────
 const C = {
@@ -233,9 +234,17 @@ export function ResidenteDashboard() {
   }, [paymentResult, refetchHistorial]);
 
   useEffect(() => {
-    if (!sessionData?.user || sincronizarCargos.isPending || sincronizarCargos.isSuccess) return;
+    if (!sessionData?.user || !historial?.perfil || sincronizarCargos.isPending || sincronizarCargos.isSuccess) return;
     sincronizarCargos.mutate();
-  }, [sessionData?.user, sincronizarCargos]);
+  }, [sessionData?.user, historial?.perfil, sincronizarCargos]);
+
+  const roleWithoutResidentProfile = sessionData?.user?.role;
+  const workerHome = homePathForRole(roleWithoutResidentProfile);
+  useEffect(() => {
+    if (historialLoading || sessionPending || historial?.perfil) return;
+    if (roleWithoutResidentProfile === 'residente' || !roleWithoutResidentProfile) return;
+    router.replace(workerHome);
+  }, [historialLoading, sessionPending, historial?.perfil, roleWithoutResidentProfile, router, workerHome]);
 
   useEffect(() => {
     const pendientes = (cargos ?? []).filter(cargo => cargo.estado === 'pendiente' && cargo.servicio !== 'agua');
@@ -263,17 +272,18 @@ export function ResidenteDashboard() {
   if (cargando) return <ResidenteDashboardSkeleton />;
 
   if (!historial?.perfil) {
+    const isWorker = roleWithoutResidentProfile && roleWithoutResidentProfile !== 'residente';
     return (
       <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: FM }}>
         <div style={{ background: '#fff', borderRadius: 26, padding: 32, maxWidth: 400, width: '100%', textAlign: 'center', boxShadow: '0 10px 28px rgba(120,90,30,.10)' }}>
           <p style={{ fontFamily: FB, fontSize: 18, fontWeight: 700, color: C.textMain, marginBottom: 20 }}>
-            No encontramos tu perfil de residente.
+            {isWorker ? 'Abriendo tu panel de trabajo…' : 'No encontramos tu perfil de residente.'}
           </p>
           <button
-            onClick={() => router.push('/registro')}
+            onClick={() => router.replace(isWorker ? workerHome : '/registro')}
             style={{ background: C.gold, color: '#5A3D06', border: 'none', borderRadius: 14, padding: '14px 28px', cursor: 'pointer', fontFamily: FB, fontSize: 15, fontWeight: 700 }}
           >
-            Completar registro
+            {isWorker ? 'Ir a mi panel' : 'Completar registro'}
           </button>
         </div>
       </div>

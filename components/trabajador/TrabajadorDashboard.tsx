@@ -148,16 +148,21 @@ export function TrabajadorDashboard() {
     refetchInterval:     30_000,
     refetchOnWindowFocus: true,
   });
+  const asignacionQ = trpcReact.usuarios.miAsignacionOperativa.useQuery(undefined, {
+    refetchOnWindowFocus: true,
+  });
   const { confirmarCorte, confirmarReconexion } = useActualizarEstadoAgua();
 
-  const queryError = cortesQ.error?.message ?? reconexionesQ.error?.message ?? null;
+  const queryError = cortesQ.error?.message ?? reconexionesQ.error?.message ?? asignacionQ.error?.message ?? null;
+  const asignacion = asignacionQ.data?.[0] ?? null;
 
   function refetchAll() {
     void cortesQ.refetch();
     void reconexionesQ.refetch();
+    void asignacionQ.refetch();
   }
 
-  const cargando           = sessionPending || cortesQ.isLoading || reconexionesQ.isLoading;
+  const cargando           = sessionPending || cortesQ.isLoading || reconexionesQ.isLoading || asignacionQ.isLoading;
   const pendientesCorte    = (cortesQ.data ?? []) as ResidenteJob[];
   const pendientesReconexion = (reconexionesQ.data ?? []) as ResidenteJob[];
   const total              = pendientesCorte.length + pendientesReconexion.length;
@@ -258,12 +263,6 @@ export function TrabajadorDashboard() {
                     <div style={{ fontWeight: 700, fontSize: 14, color: '#1F2A22', fontFamily: FS, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombre}</div>
                     <div style={{ fontSize: 12, color: '#8A8879', marginTop: 2, fontFamily: FM }}>Cuadrilla SISCO</div>
                   </div>
-                  <button role="menuitem" onClick={() => { setMenuOpen(false); router.push('/residente'); }}
-                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: 'none', border: 'none', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#1F2A22', fontFamily: FM, textAlign: 'left' }}>
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-                    Inicio
-                  </button>
-                  <div style={{ height: 1, background: '#E4E1D5', margin: '4px 9px' }} />
                   <button role="menuitem" onClick={() => { setMenuOpen(false); void salir(); }}
                     style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: 'none', border: 'none', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#C0453F', fontFamily: FM, textAlign: 'left' }}>
                     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M10 4H6a2 2 0 00-2 2v12a2 2 0 002 2h4M16 8l4 4-4 4M20 12H9"/></svg>

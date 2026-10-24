@@ -149,7 +149,7 @@ export function useAdmin() {
     setActualizando(null);
   }
 
-  async function asignarCuentaSinCargos(userId: string, fraccionamientoId: string, rol: 'residente' | 'cuadrilla_cortes' | 'operador_pozo') {
+  async function asignarCuentaSinCargos(userId: string, fraccionamientoId: string, rol: 'residente' | 'cuadrilla_cortes') {
     setActualizando(userId);
     setError(null);
     try {

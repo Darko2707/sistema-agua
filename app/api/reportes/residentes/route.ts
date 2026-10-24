@@ -116,28 +116,41 @@ export async function GET(req: Request) {
   }
 
   const perfilIds = residentes.map(r => r.id);
-  const pagosList = perfilIds.length > 0
-    ? await db.query.pagos.findMany({
-        where: (p, { inArray, and, eq }) => and(
-          inArray(p.perfilId, perfilIds),
-          eq(p.fraccionamientoId, dbUser.fraccionamientoId!),
-        ),
-        columns: {
-          id: true,
-          perfilId: true,
-          mes: true,
-          anio: true,
-          monto: true,
-          montoBase: true,
-          montoNetoRepresentante: true,
-          estado: true,
-          fechaPago: true,
-        },
-      })
-    : [];
-
-  const [ordenesList, cortesActivos] = perfilIds.length > 0
+  const [pagosList, cargosList, ordenesList, cortesActivos] = perfilIds.length > 0
     ? await Promise.all([
+        db.query.pagos.findMany({
+          where: (p, { inArray, and, eq }) => and(
+            inArray(p.perfilId, perfilIds),
+            eq(p.fraccionamientoId, dbUser.fraccionamientoId!),
+          ),
+          columns: {
+            id: true,
+            perfilId: true,
+            mes: true,
+            anio: true,
+            monto: true,
+            montoBase: true,
+            montoNetoRepresentante: true,
+            estado: true,
+            fechaPago: true,
+          },
+        }),
+        db.query.cargosServicios.findMany({
+          where: (cargo, { inArray, and, eq }) => and(
+            inArray(cargo.perfilId, perfilIds),
+            eq(cargo.fraccionamientoId, dbUser.fraccionamientoId!),
+            eq(cargo.estado, 'pagado'),
+          ),
+          columns: {
+            id: true,
+            perfilId: true,
+            mes: true,
+            anio: true,
+            monto: true,
+            pagadoEn: true,
+          },
+          with: { fraccionamientoServicio: { with: { servicio: true } } },
+        }),
         db.query.ordenesTrabajo.findMany({
           where: (o, { and, eq, inArray }) => and(
             inArray(o.perfilId, perfilIds),
@@ -151,19 +164,36 @@ export async function GET(req: Request) {
           columns: { perfilId: true },
         }),
       ])
-    : [[], []];
+    : [[], [], [], []];
 
   const residentesData = residentes.map(r => {
     const pagosR = pagosList.filter(p => p.perfilId === r.id);
+    const cargosR = cargosList.filter(cargo =>
+      cargo.perfilId === r.id && cargo.fraccionamientoServicio?.servicio?.clave !== 'agua',
+    );
     const pagosAnio = periodos.map(({ mes, anio }) => {
       const p = pagosR.find(p => p.mes === mes && p.anio === anio && p.estado === 'pagado');
-      return { mes, anio, monto: p ? montoDisponibleFraccionamiento(p) : null, estado: p ? 'pagado' as const : 'pendiente' as const };
+      const totalServicios = cargosR
+        .filter(cargo => cargo.mes === mes && cargo.anio === anio)
+        .reduce((sum, cargo) => sum + Number(cargo.monto), 0);
+      const montoAgua = p ? montoDisponibleFraccionamiento(p) : 0;
+      return {
+        mes,
+        anio,
+        monto: p || totalServicios > 0 ? montoAgua + totalServicios : null,
+        estado: p ? ('pagado' as const) : ('pendiente' as const),
+      };
     });
     const totalPagado   = pagosAnio.reduce((s, p) => s + (p.monto ?? 0), 0);
     const mesesSinPagar = pagosAnio.filter(p => p.estado === 'pendiente').length;
-    const ultimoPago    = pagosR
-      .filter(p => p.estado === 'pagado' && p.fechaPago)
-      .sort((a, b) => new Date(b.fechaPago!).getTime() - new Date(a.fechaPago!).getTime())[0]?.fechaPago ?? null;
+    const ultimoPago    = [
+      ...pagosR
+        .filter(p => p.estado === 'pagado' && p.fechaPago)
+        .map(p => p.fechaPago!),
+      ...cargosR
+        .filter(cargo => cargo.pagadoEn)
+        .map(cargo => cargo.pagadoEn!),
+    ].sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0] ?? null;
     const ordenesR = ordenesList.filter(orden => orden.perfilId === r.id);
     const ordenEstado = (tipo: 'corte' | 'reconexion') =>
       ordenesR.find(orden => orden.tipo === tipo)?.estado ?? null;

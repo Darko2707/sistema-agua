@@ -336,6 +336,7 @@ export function ReporteFinanciero() {
     });
     const res = await fetch(`/api/reportes/financiero?${params}`);
     if (!res.ok) throw new Error('Error al generar el reporte');
+    const totalMovimientos = res.headers.get('X-Total-Movimientos');
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -346,6 +347,11 @@ export function ReporteFinanciero() {
     a.download = `reporte-financiero-${label}.xlsx`;
     a.click();
     URL.revokeObjectURL(url);
+    if (totalMovimientos !== null) {
+      mostrar(`${totalMovimientos} pagos exportados a Excel`);
+    } else {
+      mostrar('Reporte financiero exportado correctamente');
+    }
   }
 
   return (

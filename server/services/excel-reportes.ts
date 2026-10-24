@@ -49,6 +49,195 @@ function agregarLogo(wb: ExcelJS.Workbook, ws: ExcelJS.Worksheet, totalDataCols:
 }
 
 // ─────────────────────────────────────────────────────────────────
+// SEGURIDAD Y FORMATEO DE CELDAS (PREVENCIÓN DE INYECCIÓN DE FÓRMULAS)
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Previene la inyección de fórmulas en Excel (CSV / Spreadsheet Formula Injection).
+ * Si un valor textual comienza con =, +, -, @ o caracteres de control, antepone un apóstrofe (')
+ * para forzar a Excel a tratarlo como texto literal y no como una fórmula ejecutable.
+ */
+export function escapeExcelFormula(val: unknown): unknown {
+  if (val === null || val === undefined) return '';
+  if (typeof val !== 'string') return val;
+  if (/^[\t\r=+\-@]/.test(val) || /^[=+\-@]/.test(val.trim())) {
+    return `'${val}`;
+  }
+  return val;
+}
+
+export function formatMetodo(metodo: string | null | undefined): string {
+  if (!metodo) return 'Efectivo';
+  const m = metodo.toLowerCase().trim();
+  if (m === 'efectivo') return 'Efectivo';
+  if (m === 'transferencia') return 'Transferencia';
+  if (m === 'mercado_pago' || m === 'mercadopago') return 'Mercado Pago';
+  return metodo;
+}
+
+export function formatEstado(estado: string | null | undefined): string {
+  if (!estado) return 'Pagado';
+  const e = estado.toLowerCase().trim();
+  if (e === 'pagado') return 'Pagado';
+  if (e === 'pendiente') return 'Pendiente';
+  if (e === 'vencido') return 'Vencido';
+  if (e === 'cancelado') return 'Cancelado';
+  return estado;
+}
+
+export interface PagoReporteItem {
+  id: string;
+  fecha: Date;
+  fechaTexto?: string;
+  folio: string | null;
+  residenteNombre: string;
+  edificio: string;
+  departamento: string;
+  fraccionamiento: string;
+  servicio: string;
+  concepto: string;
+  monto: number;
+  estado: string;
+  metodo: string | null;
+  referenciaExterna: string | null;
+  mes: number;
+  anio: number;
+}
+
+export interface TotalPorServicio {
+  servicio: string;
+  total: number;
+  cantidad: number;
+}
+
+/**
+ * Agrega la hoja detallada de "Pagos" con todos los movimientos y conceptos cobrados.
+ */
+function agregarHojaPagos(
+  wb: ExcelJS.Workbook,
+  titulo: string,
+  subtitulo: string,
+  pagos: PagoReporteItem[] = [],
+) {
+  const wsP = wb.addWorksheet('Pagos');
+  const totalCols = 12;
+  agregarLogo(wb, wsP, totalCols);
+
+  wsP.mergeCells(1, 1, 1, totalCols);
+  const t = wsP.getCell('A1');
+  t.value = titulo;
+  t.font  = { bold: true, size: 14, color: { argb: 'FF' + COLOR_HEADER } };
+  t.alignment = { horizontal: 'center', vertical: 'middle' };
+  wsP.getRow(1).height = 36;
+
+  wsP.mergeCells(2, 1, 2, totalCols);
+  const sub = wsP.getCell('A2');
+  sub.value = subtitulo;
+  sub.font  = { size: 10, color: { argb: 'FF6B7280' } };
+  sub.alignment = { horizontal: 'center' };
+  wsP.getRow(2).height = 20;
+
+  wsP.addRow([]);
+
+  const phRow = wsP.addRow([
+    'Fecha',
+    'Folio / Identificador',
+    'Residente / Cuenta',
+    'Edificio',
+    'Depto.',
+    'Fraccionamiento',
+    'Servicio',
+    'Concepto',
+    'Método de pago',
+    'Referencia externa',
+    'Estado',
+    'Importe',
+  ]);
+  phRow.height = 20;
+  phRow.eachCell((cell) => {
+    cell.fill      = headerFill(COLOR_HEADER);
+    cell.font      = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.border    = border();
+  });
+
+  if (pagos.length === 0) {
+    const emptyRow = wsP.addRow(['Sin pagos registrados para este período', '', '', '', '', '', '', '', '', '', '', '']);
+    wsP.mergeCells(emptyRow.number, 1, emptyRow.number, totalCols);
+    emptyRow.getCell(1).alignment = { horizontal: 'center' };
+    emptyRow.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' } };
+  } else {
+    pagos.forEach((p, i) => {
+      const fechaStr = p.fechaTexto ?? (p.fecha ? new Date(p.fecha).toLocaleDateString('es-MX', { year: 'numeric', month: '2-digit', day: '2-digit' }) : '');
+      const row = wsP.addRow([
+        fechaStr,
+        escapeExcelFormula(p.folio ?? p.id),
+        escapeExcelFormula(p.residenteNombre),
+        escapeExcelFormula(p.edificio ? `Edif. ${p.edificio}` : '-'),
+        escapeExcelFormula(p.departamento ? `Depto. ${p.departamento}` : '-'),
+        escapeExcelFormula(p.fraccionamiento),
+        escapeExcelFormula(p.servicio),
+        escapeExcelFormula(p.concepto),
+        escapeExcelFormula(formatMetodo(p.metodo)),
+        escapeExcelFormula(p.referenciaExterna ?? '-'),
+        escapeExcelFormula(formatEstado(p.estado)),
+        Number(p.monto),
+      ]);
+      row.height = 18;
+      const isAlt = i % 2 === 1;
+      row.eachCell({ includeEmpty: true }, (cell, colNum) => {
+        cell.fill      = headerFill(isAlt ? COLOR_ROW_ALT : COLOR_WHITE);
+        cell.border    = border();
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.font      = { size: 10 };
+        if ([2, 3, 6, 8].includes(colNum)) cell.alignment.horizontal = 'left';
+        if (colNum === 7) cell.font = { bold: true, size: 10 };
+        if (colNum === 12) {
+          cell.numFmt    = '"$"#,##0.00';
+          cell.font      = { bold: true, color: { argb: 'FF065F46' }, size: 10 };
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+        }
+      });
+    });
+
+    const totalMonto = pagos.reduce((s, p) => s + Number(p.monto), 0);
+    const pTotalRow = wsP.addRow([
+      `TOTAL PAGOS (${pagos.length} ${pagos.length === 1 ? 'movimiento' : 'movimientos'})`,
+      '', '', '', '', '', '', '', '', '', '',
+      totalMonto,
+    ]);
+    pTotalRow.height = 20;
+    pTotalRow.eachCell({ includeEmpty: true }, (cell, colNum) => {
+      cell.fill      = headerFill('D1FAE5');
+      cell.font      = { bold: true, size: 10, color: { argb: 'FF065F46' } };
+      cell.border    = border();
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      if (colNum === 1) cell.alignment.horizontal = 'left';
+      if (colNum === 12) {
+        cell.numFmt = '"$"#,##0.00';
+        cell.alignment = { horizontal: 'right', vertical: 'middle' };
+      }
+    });
+  }
+
+  wsP.getColumn(1).width  = 14; // Fecha
+  wsP.getColumn(2).width  = 18; // Folio
+  wsP.getColumn(3).width  = 26; // Residente
+  wsP.getColumn(4).width  = 12; // Edificio
+  wsP.getColumn(5).width  = 12; // Depto
+  wsP.getColumn(6).width  = 22; // Fraccionamiento
+  wsP.getColumn(7).width  = 16; // Servicio
+  wsP.getColumn(8).width  = 32; // Concepto
+  wsP.getColumn(9).width  = 16; // Método
+  wsP.getColumn(10).width = 22; // Referencia externa
+  wsP.getColumn(11).width = 12; // Estado
+  wsP.getColumn(12).width = 16; // Importe
+
+  wsP.views = [{ state: 'frozen', xSplit: 0, ySplit: 3 }];
+}
+
+
+// ─────────────────────────────────────────────────────────────────
 // REPORTE DE RESIDENTES
 // ─────────────────────────────────────────────────────────────────
 export interface ResidenteReporte {
@@ -268,6 +457,8 @@ export async function generarReporteFinancieroExcel(params: {
   porEdificio: EdificioFinanciero[];
   gastos: GastoReporte[];
   ingresos?: IngresoAdicionalReporte[];
+  pagos?: PagoReporteItem[];
+  totalesPorServicio?: TotalPorServicio[];
 }): Promise<Buffer> {
   const ExcelJS = (await import('exceljs')).default;
   const wb = new ExcelJS.Workbook();
@@ -297,9 +488,16 @@ export async function generarReporteFinancieroExcel(params: {
 
   wsR.addRow([]);
 
+  const serviceKpis: [string, string | number, string][] = (params.totalesPorServicio ?? []).map(s => [
+    `    · ${s.servicio}`,
+    s.total,
+    '"$"#,##0.00',
+  ]);
+
   const kpis: [string, string | number, string][] = [
     ['Total Recaudado',         params.totalRecaudado,                     '"$"#,##0.00'],
     ['  · Pagos registrados',   params.totalPagos ?? params.totalRecaudado, '"$"#,##0.00'],
+    ...serviceKpis,
     ['  · Ingresos adicionales', params.totalIngresosAdicionales ?? 0,     '"$"#,##0.00'],
     ['Total Gastos',            params.totalGastos,                        '"$"#,##0.00'],
     ['Saldo',                   params.saldo,                              '"$"#,##0.00'],
@@ -334,6 +532,7 @@ export async function generarReporteFinancieroExcel(params: {
     else if (label === 'Total Recaudado')  row.getCell(2).font = { bold: true, color: { argb: 'FF065F46' }, size: 10 };
     else if (label === 'Total Gastos')     row.getCell(2).font = { bold: true, color: { argb: 'FF991B1B' }, size: 10 };
     else if (label === 'Morosos')          row.getCell(2).font = { bold: true, color: { argb: params.totalMorosos > 0 ? 'FF991B1B' : 'FF374151' }, size: 10 };
+    else if (label.startsWith('    ·'))   { row.getCell(1).font = { size: 8.5, italic: true }; row.getCell(2).font = { size: 8.5, italic: true }; }
     else if (label.startsWith('  ·'))     { row.getCell(1).font = { size: 9, italic: true }; row.getCell(2).font = { size: 9, italic: true }; }
   });
 
@@ -341,7 +540,17 @@ export async function generarReporteFinancieroExcel(params: {
   wsR.getColumn(2).width = 18;
 
   // ════════════════════════════════════════════
-  // Hoja 2: Por Edificio  (5 columnas de datos)
+  // Hoja 2: Pagos Registrados (todos los servicios)
+  // ════════════════════════════════════════════
+  agregarHojaPagos(
+    wb,
+    `Pagos Registrados — ${mesNombre} ${params.anio}`,
+    `Período: ${mesNombre} ${params.anio}   |   Generado: ${params.generadoEn.toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}`,
+    params.pagos ?? [],
+  );
+
+  // ════════════════════════════════════════════
+  // Hoja 3: Por Edificio  (5 columnas de datos)
   // ════════════════════════════════════════════
   const wsE = wb.addWorksheet('Por Edificio');
   agregarLogo(wb, wsE, 6); // logo en col G (índice 6), fuera del merge A1:F1
@@ -396,7 +605,7 @@ export async function generarReporteFinancieroExcel(params: {
   wsE.getColumn(5).width = 12;
 
   // ════════════════════════════════════════════
-  // Hoja 3: Gastos  (4 columnas de datos)
+  // Hoja 4: Gastos  (4 columnas de datos)
   // ════════════════════════════════════════════
   const wsG = wb.addWorksheet('Gastos');
   agregarLogo(wb, wsG, 5); // logo en col F (índice 5), fuera del merge A1:E1
@@ -425,7 +634,7 @@ export async function generarReporteFinancieroExcel(params: {
     emptyRow.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' } };
   } else {
     params.gastos.forEach((g, i) => {
-      const row = wsG.addRow([g.concepto, g.categoria, new Date(g.fecha).toLocaleDateString('es-MX'), Number(g.monto)]);
+      const row = wsG.addRow([escapeExcelFormula(g.concepto), escapeExcelFormula(g.categoria), new Date(g.fecha).toLocaleDateString('es-MX'), Number(g.monto)]);
       row.height = 18;
       const isAlt = i % 2 === 1;
       row.eachCell({ includeEmpty: true }, (cell, colNum) => {
@@ -456,7 +665,7 @@ export async function generarReporteFinancieroExcel(params: {
   wsG.getColumn(4).width = 14;
 
   // ════════════════════════════════════════════
-  // Hoja 4: Ingresos Adicionales  (3 columnas)
+  // Hoja 5: Ingresos Adicionales  (3 columnas)
   // ════════════════════════════════════════════
   const wsI = wb.addWorksheet('Ingresos Adicionales');
   agregarLogo(wb, wsI, 4); // logo en col E (índice 4), fuera del merge A1:D1
@@ -486,7 +695,7 @@ export async function generarReporteFinancieroExcel(params: {
     emptyRow.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' } };
   } else {
     ingresos.forEach((ing, i) => {
-      const row = wsI.addRow([ing.concepto, new Date(ing.fecha).toLocaleDateString('es-MX'), Number(ing.monto)]);
+      const row = wsI.addRow([escapeExcelFormula(ing.concepto), new Date(ing.fecha).toLocaleDateString('es-MX'), Number(ing.monto)]);
       row.height = 18;
       const isAlt = i % 2 === 1;
       row.eachCell({ includeEmpty: true }, (cell, colNum) => {
@@ -561,6 +770,8 @@ export async function generarReporteFinancieroRangoExcel(params: {
   gastos:       GastoRangoReporte[];
   ingresos:     IngresoRangoReporte[];
   porMes:       MesResumen[];
+  pagos?:       PagoReporteItem[];
+  totalesPorServicio?: TotalPorServicio[];
 }): Promise<Buffer> {
   const ExcelJS  = (await import('exceljs')).default;
   const wb = new ExcelJS.Workbook();
@@ -593,9 +804,16 @@ export async function generarReporteFinancieroRangoExcel(params: {
 
   wsR.addRow([]);
 
+  const serviceKpis: [string, string | number, string][] = (params.totalesPorServicio ?? []).map(s => [
+    `    · ${s.servicio}`,
+    s.total,
+    '"$"#,##0.00',
+  ]);
+
   const kpis: [string, string | number, string][] = [
     ['Total Recaudado',          params.totalRecaudado,           '"$"#,##0.00'],
     ['  · Pagos registrados',    params.totalPagos,               '"$"#,##0.00'],
+    ...serviceKpis,
     ['  · Ingresos adicionales', params.totalIngresosAdicionales, '"$"#,##0.00'],
     ['Total Gastos',             params.totalGastos,              '"$"#,##0.00'],
     ['Saldo Acumulado',          params.saldo,                    '"$"#,##0.00'],
@@ -626,6 +844,7 @@ export async function generarReporteFinancieroRangoExcel(params: {
     if (label === 'Saldo Acumulado')      row.getCell(2).font = { bold: true, color: { argb: params.saldo >= 0 ? 'FF065F46' : 'FF991B1B' }, size: 10 };
     else if (label === 'Total Recaudado') row.getCell(2).font = { bold: true, color: { argb: 'FF065F46' }, size: 10 };
     else if (label === 'Total Gastos')    row.getCell(2).font = { bold: true, color: { argb: 'FF991B1B' }, size: 10 };
+    else if (label.startsWith('    ·'))  { row.getCell(1).font = { size: 8.5, italic: true }; row.getCell(2).font = { size: 8.5, italic: true }; }
     else if (label.startsWith('  ·'))    { row.getCell(1).font = { size: 9, italic: true }; row.getCell(2).font = { size: 9, italic: true }; }
   });
 
@@ -711,7 +930,17 @@ export async function generarReporteFinancieroRangoExcel(params: {
   wsM.getColumn(7).width = 14;
 
   // ══════════════════════════════════════
-  // Hoja 3: Por Edificio (acumulado)
+  // Hoja 3: Pagos Registrados (rango completo)
+  // ══════════════════════════════════════
+  agregarHojaPagos(
+    wb,
+    `Pagos Registrados — ${periodoLabel}`,
+    `Período: ${periodoLabel}   |   Generado: ${params.generadoEn.toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}`,
+    params.pagos ?? [],
+  );
+
+  // ══════════════════════════════════════
+  // Hoja 4: Por Edificio (acumulado)
   // ══════════════════════════════════════
   const wsE = wb.addWorksheet('Por Edificio');
   agregarLogo(wb, wsE, 6);
@@ -755,7 +984,7 @@ export async function generarReporteFinancieroRangoExcel(params: {
   wsE.getColumn(5).width = 12;
 
   // ══════════════════════════════════════
-  // Hoja 4: Gastos (todos en el rango)
+  // Hoja 5: Gastos (todos en el rango)
   // ══════════════════════════════════════
   const wsG = wb.addWorksheet('Gastos');
   agregarLogo(wb, wsG, 6);
@@ -786,8 +1015,8 @@ export async function generarReporteFinancieroRangoExcel(params: {
     params.gastos.forEach((g, i) => {
       const row = wsG.addRow([
         `${MESES_ES[g.mes - 1]} ${g.anio}`,
-        g.concepto,
-        g.categoria,
+        escapeExcelFormula(g.concepto),
+        escapeExcelFormula(g.categoria),
         new Date(g.fecha).toLocaleDateString('es-MX'),
         Number(g.monto),
       ]);
@@ -822,7 +1051,7 @@ export async function generarReporteFinancieroRangoExcel(params: {
   wsG.getColumn(5).width = 14;
 
   // ══════════════════════════════════════
-  // Hoja 5: Ingresos Adicionales (todos)
+  // Hoja 6: Ingresos Adicionales (todos)
   // ══════════════════════════════════════
   const wsI2 = wb.addWorksheet('Ingresos Adicionales');
   agregarLogo(wb, wsI2, 5);
@@ -853,7 +1082,7 @@ export async function generarReporteFinancieroRangoExcel(params: {
     params.ingresos.forEach((ing, i) => {
       const row = wsI2.addRow([
         `${MESES_ES[ing.mes - 1]} ${ing.anio}`,
-        ing.concepto,
+        escapeExcelFormula(ing.concepto),
         new Date(ing.fecha).toLocaleDateString('es-MX'),
         Number(ing.monto),
       ]);
