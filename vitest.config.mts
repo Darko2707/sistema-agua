@@ -1,4 +1,3 @@
-
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
@@ -11,8 +10,6 @@ export default defineConfig({
       '**/node_modules/**',
       'tests/integration/**',
       'tests/e2e/**',
-      'tests/security.spec.ts',
-      'tests/load-test.spec.ts',
     ],
   },
   resolve: {
