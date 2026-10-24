@@ -186,7 +186,7 @@ describe('Reportes de Tesorería — Exportación Excel de Todos los Servicios',
     });
 
     const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(buffer as any);
+    await wb.xlsx.load(buffer as unknown as ExcelJS.Buffer);
     const wsPagos = wb.getWorksheet('Pagos');
     expect(wsPagos).toBeDefined();
 
@@ -234,7 +234,7 @@ describe('Reportes de Tesorería — Exportación Excel de Todos los Servicios',
     });
 
     const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(buffer as any);
+    await wb.xlsx.load(buffer as unknown as ExcelJS.Buffer);
     const wsPagos = wb.getWorksheet('Pagos')!;
 
     const serviciosEncontrados: string[] = [];
@@ -364,7 +364,7 @@ describe('Reportes de Tesorería — Exportación Excel de Todos los Servicios',
     });
 
     const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(buffer as any);
+    await wb.xlsx.load(buffer as unknown as ExcelJS.Buffer);
 
     // Check Resumen sheet
     const wsResumen = wb.getWorksheet('Resumen')!;
@@ -421,7 +421,7 @@ describe('Reportes de Tesorería — Exportación Excel de Todos los Servicios',
     });
 
     const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(buffer as any);
+    await wb.xlsx.load(buffer as unknown as ExcelJS.Buffer);
     const wsPagos = wb.getWorksheet('Pagos')!;
 
     const serviciosEncontrados: string[] = [];
@@ -462,7 +462,7 @@ describe('Reportes de Tesorería — Exportación Excel de Todos los Servicios',
     });
 
     const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(buffer as any);
+    await wb.xlsx.load(buffer as unknown as ExcelJS.Buffer);
 
     const sheetNames = wb.worksheets.map((s) => s.name);
     expect(sheetNames).toContain('Resumen');
@@ -577,7 +577,7 @@ describe('Reportes de Tesorería — Exportación Excel de Todos los Servicios',
 
     const blob = await res.arrayBuffer();
     const wb = new ExcelJS.Workbook();
-    await wb.xlsx.load(blob as any);
+    await wb.xlsx.load(Buffer.from(blob) as unknown as ExcelJS.Buffer);
     const ws = wb.getWorksheet('Residentes')!;
 
     // Find the resident data row by looking for resident name
