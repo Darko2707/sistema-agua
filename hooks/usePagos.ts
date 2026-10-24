@@ -79,7 +79,11 @@ export function useCheckoutCombinadoMP() {
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function checkout(input: { mesesAgua: number; cargoIds: string[] }) {
+  async function checkout(input: {
+    mesesAgua: number;
+    cargoIds?: string[];
+    servicios?: Array<{ fraccionamientoServicioId: string; meses: number }>;
+  }) {
     setIsPending(true);
     setError(null);
     try {

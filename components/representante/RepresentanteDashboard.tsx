@@ -31,7 +31,7 @@ const FS = "var(--font-space-grotesk), 'Space Grotesk', sans-serif";
 type TabId = 'residentes' | 'morosos' | 'personal';
 
 const ROL_LABEL: Record<string, string> = {
-  tesorera:         'Tesorera/o',
+  tesorera:         'Tesorería',
   cuadrilla_cortes: 'Cuadrilla de cortes',
 };
 
@@ -319,10 +319,10 @@ export function RepresentanteDashboard() {
                     {fraccionamiento?.nombre ? `Fraccionamiento ${fraccionamiento.nombre}` : 'Representante — SISCO'}
                   </div>
                 </div>
-                <button role="menuitem" onClick={() => { setMenuOpen(false); router.push('/residente'); }}
+                <button role="menuitem" onClick={() => { setMenuOpen(false); router.push('/representante'); }}
                   style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: 'none', border: 'none', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#1F2A22', fontFamily: FM, textAlign: 'left' }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-                  Inicio
+                  Mi panel
                 </button>
                 <div style={{ height: 1, background: '#E4E1D5', margin: '4px 9px' }} />
                 <button role="menuitem" onClick={() => { setMenuOpen(false); void salir(); }}
@@ -430,7 +430,7 @@ export function RepresentanteDashboard() {
             <div style={{ padding: '16px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
               <div>
                 <div style={{ fontFamily: FS, fontSize: 15, fontWeight: 700, color: C.textMain }}>Personal del fraccionamiento</div>
-                <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2 }}>Tesorera/o y cuadrilla de cortes de tu fraccionamiento</div>
+                <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2 }}>Personal de tesorería y cuadrilla de cortes de tu fraccionamiento</div>
               </div>
               <Btn onClick={() => { setModalPersonal(true); setResidenteSelId(''); setRolSeleccionado('tesorera'); setErrorPersonal(''); }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/></svg>
@@ -694,7 +694,7 @@ export function RepresentanteDashboard() {
                   onChange={e => setRolSeleccionado(e.target.value as 'tesorera' | 'cuadrilla_cortes')}
                   style={{ width: '100%', height: 40, borderRadius: 10, border: `1.5px solid ${C.border}`, padding: '0 12px', fontSize: 13, fontFamily: FM, background: '#fff', color: C.textMain }}
                 >
-                  <option value="tesorera">Tesorera/o</option>
+                  <option value="tesorera">Tesorería</option>
                   <option value="cuadrilla_cortes">Cuadrilla de cortes</option>
                 </select>
               </div>

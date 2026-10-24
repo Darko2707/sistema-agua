@@ -98,9 +98,9 @@ export default function AdminTesorerasPage() {
 
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-3xl font-bold">Tesorera/o</h1>
+            <h1 className="text-3xl font-bold">Tesorería</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Asigna fraccionamientos para cada tesorero/a.
+              Asigna fraccionamientos para el personal de tesorería.
             </p>
           </div>
           <Button variant="outline" onClick={() => router.push('/admin')}>
@@ -112,8 +112,8 @@ export default function AdminTesorerasPage() {
         <div className="flex items-start gap-3 rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-800">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-600" />
           <p>
-            Para añadir un tesorero/a, cambia el rol de un residente a{' '}
-            <strong>Tesorera/o</strong> desde la pestaña{' '}
+            Para añadir personal de tesorería, asigna el rol de{' '}
+            <strong>Tesorería</strong> desde la pestaña{' '}
             <strong>Personal</strong> en el panel de administrador.
             Después aparecerá aquí para asignarle un fraccionamiento y sus credenciales de Mercado Pago.
           </p>
@@ -124,14 +124,14 @@ export default function AdminTesorerasPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Tesorera/o registrados</CardTitle>
+            <CardTitle>Personal de tesorería registrado</CardTitle>
           </CardHeader>
           <CardContent>
             {cargando ? (
               <p className="py-10 text-center text-muted-foreground">Cargando...</p>
             ) : tesoreras.length === 0 ? (
               <p className="py-10 text-center text-muted-foreground">
-                No hay usuarios con rol de tesorero/a. Asigna el rol desde la pestaña Personal.
+                No hay personal de tesorería registrado. Asigna el rol desde la pestaña Personal.
               </p>
             ) : (
               <Table>
@@ -191,7 +191,7 @@ export default function AdminTesorerasPage() {
           <div className="w-full max-w-md rounded-lg bg-background p-6 shadow-xl">
             <div className="mb-5 flex items-center justify-between">
               <div>
-                <h2 className="text-lg font-semibold">Configurar tesorera</h2>
+                <h2 className="text-lg font-semibold">Configurar personal de tesorería</h2>
                 <p className="text-sm text-muted-foreground">{editando.name} · {editando.email}</p>
               </div>
               <Button size="icon" variant="ghost" onClick={cerrarModal}>

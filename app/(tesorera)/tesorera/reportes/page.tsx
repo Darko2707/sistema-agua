@@ -67,7 +67,7 @@ export default function TesoreraReportesPage() {
             </span>
             <div>
               <div style={{ fontFamily: FS, fontSize: 15, fontWeight: 700, color: '#fff', lineHeight: 1.2 }}>
-                Tesorera — SISCO
+                Tesorería — SISCo
               </div>
               {fraccionamientoQuery.data?.nombre && (
                 <div style={{ fontSize: 11.5, color: '#9FC2AC', marginTop: 1 }}>
@@ -98,13 +98,13 @@ export default function TesoreraReportesPage() {
                 <div style={{ padding: '10px 14px 9px', borderBottom: '1px solid #E4E1D5', marginBottom: 4 }}>
                   <div style={{ fontWeight: 700, fontSize: 14, color: '#1F2A22', fontFamily: FS, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{nombre}</div>
                   <div style={{ fontSize: 12, color: '#8A8879', marginTop: 2, fontFamily: FM }}>
-                    {fraccionamientoQuery.data?.nombre ? `Fraccionamiento ${fraccionamientoQuery.data.nombre}` : 'Tesorera — SISCO'}
+                    {fraccionamientoQuery.data?.nombre ? `Fraccionamiento ${fraccionamientoQuery.data.nombre}` : 'Tesorería — SISCo'}
                   </div>
                 </div>
-                <button role="menuitem" onClick={() => { setMenuOpen(false); router.push('/residente'); }}
+                <button role="menuitem" onClick={() => { setMenuOpen(false); router.push('/tesorera'); }}
                   style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: 'none', border: 'none', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#1F2A22', fontFamily: FM, textAlign: 'left' }}>
                   <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-                  Inicio
+                  Mi panel
                 </button>
                 <div style={{ height: 1, background: '#E4E1D5', margin: '4px 9px' }} />
                 <button role="menuitem" onClick={() => { setMenuOpen(false); void salir(); }}
