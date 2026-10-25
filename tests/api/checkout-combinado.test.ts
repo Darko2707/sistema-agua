@@ -210,12 +210,16 @@ vi.mock('@/lib/crypto', () => ({
   decryptTokenSafe: mockDecryptTokenSafe,
 }));
 
-vi.mock('@/lib/mercadopago', () => ({
-  createMercadoPagoClients: vi.fn(() => ({
-    preferenceClient: { create: mockPreferenceCreate },
-    paymentClient: {},
-  })),
-}));
+vi.mock('@/lib/mercadopago', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/mercadopago')>();
+  return {
+    ...actual,
+    createMercadoPagoClients: vi.fn(() => ({
+      preferenceClient: { create: mockPreferenceCreate },
+      paymentClient: {},
+    })),
+  };
+});
 
 vi.mock('@/src/infrastructure/mercadopago/payment-intent', () => ({
   persistMercadoPagoPaymentIntent: mockPersistPaymentIntent,
@@ -380,5 +384,117 @@ describe('POST /api/mercadopago/checkout-combinado - Adelanto de todos los servi
     expect(res.status).toBe(400);
     const data = await res.json();
     expect(data.error).toBeDefined();
+    expect(data.code).toBe('SISCO-400');
+  });
+
+  it('captura errores de la API de Mercado Pago y responde JSON seguro con correlationId', async () => {
+    mockPreferenceCreate.mockRejectedValueOnce({
+      status: 400,
+      message: 'collector_id cannot be the same as payer_id',
+    });
+
+    const req = new Request('https://sistema-agua.vercel.app/api/mercadopago/checkout-combinado', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mesesAgua: 1,
+        servicios: [],
+        cargoIds: [],
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.code).toBe('SISCO-301');
+    expect(data.error).toContain('misma cuenta administradora');
+    expect(data.correlationId).toMatch(/^req_[a-f0-9]{16}$/);
+  });
+
+  it('captura fallos de conexión hacia Mercado Pago y responde 504 con correlationId', async () => {
+    mockPreferenceCreate.mockRejectedValueOnce(new TypeError('fetch failed'));
+
+    const req = new Request('https://sistema-agua.vercel.app/api/mercadopago/checkout-combinado', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mesesAgua: 1,
+        servicios: [],
+        cargoIds: [],
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(504);
+    const data = await res.json();
+    expect(data.code).toBe('SISCO-301');
+    expect(data.error).toContain('No se pudo conectar con Mercado Pago');
+    expect(data.correlationId).toMatch(/^req_[a-f0-9]{16}$/);
+  });
+
+  it('responde 429 con JSON estructurado cuando se excede el rate limit', async () => {
+    mockCheckoutAccountLimit.mockResolvedValueOnce({ success: false, remaining: 0, reset: Date.now() + 60000 });
+
+    const req = new Request('https://sistema-agua.vercel.app/api/mercadopago/checkout-combinado', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mesesAgua: 1,
+        servicios: [],
+        cargoIds: [],
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(429);
+    const data = await res.json();
+    expect(data.code).toBe('SISCO-429');
+    expect(data.error).toContain('Demasiadas solicitudes');
+  });
+
+  it('rechaza con SISCO-423 cuando el fraccionamiento no tiene suscripcion operativa', async () => {
+    mockRequireOperational.mockRejectedValueOnce(new Error('Suscripcion inactiva'));
+
+    const req = new Request('https://sistema-agua.vercel.app/api/mercadopago/checkout-combinado', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mesesAgua: 1,
+        servicios: [],
+        cargoIds: [],
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(403);
+    const data = await res.json();
+    expect(data.code).toBe('SISCO-423');
+    expect(data.error).toContain('suscripcion operativa vigente');
+  });
+
+  it('rechaza con SISCO-203 cuando el perfil tiene reconexion pendiente', async () => {
+    mockFindByUserIdWithPaymentConfig.mockResolvedValueOnce({
+      id: UUID_PERFIL,
+      userId: 'usr-1',
+      fraccionamientoId: UUID_FRACC,
+      responsableCargos: true,
+      estadoAgua: 'pendiente_reconexion',
+    });
+
+    const req = new Request('https://sistema-agua.vercel.app/api/mercadopago/checkout-combinado', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        mesesAgua: 1,
+        servicios: [],
+        cargoIds: [],
+      }),
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(409);
+    const data = await res.json();
+    expect(data.code).toBe('SISCO-203');
+    expect(data.error).toContain('reconexion esta pendiente');
   });
 });

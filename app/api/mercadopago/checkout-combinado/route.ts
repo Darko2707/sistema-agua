@@ -5,7 +5,7 @@ import { z } from 'zod';
 
 import { auth } from '@/lib/auth';
 import { db } from '@/db';
-import { createMercadoPagoClients } from '@/lib/mercadopago';
+import { createMercadoPagoClients, extractMercadoPagoError } from '@/lib/mercadopago';
 import { decryptTokenSafe } from '@/lib/crypto';
 import { checkoutAccountLimiter } from '@/lib/ratelimit';
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit-guard';
@@ -16,6 +16,7 @@ import { calcularDesglosePago, calcularMontoServicio } from '@/src/domain/pagos/
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
 import { cargosServicios, fraccionamientoMetodosPago, fraccionamientoServicios, fraccionamientos, pagos, servicios } from '@/db/schema';
 import { persistMercadoPagoPaymentIntent, type MercadoPagoPaymentIntentPeriod } from '@/src/infrastructure/mercadopago/payment-intent';
+import { logger } from '@/lib/logger';
 
 const inputSchema = z.object({
   mesesAgua: z.number().int().min(0).max(12).default(0),
@@ -145,41 +146,92 @@ async function nextUnpaidCargosForService({
 
 export async function POST(request: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
-  if (!session?.user) return Response.json({ error: 'No autorizado' }, { status: 401 });
-  const decision = checkoutAccountLimiter ? await consumeRateLimit({ limiter: checkoutAccountLimiter, key: opaqueRateLimitKey('account', session.user.id), boundary: 'combined_checkout', scope: 'checkout_account', failOpen: false }) : null;
+  if (!session?.user) {
+    return Response.json({ error: 'No autorizado', code: 'SISCO-403' }, { status: 401 });
+  }
+
+  const decision = checkoutAccountLimiter
+    ? await consumeRateLimit({
+        limiter: checkoutAccountLimiter,
+        key: opaqueRateLimitKey('account', session.user.id),
+        boundary: 'combined_checkout',
+        scope: 'checkout_account',
+        failOpen: false,
+      })
+    : null;
   if (decision && !decision.success) return rateLimitResponse(decision);
+
   const parsed = inputSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success) return Response.json({ error: 'Selecciona conceptos validos para pagar' }, { status: 400 });
+  if (!parsed.success) {
+    return Response.json({ error: 'Selecciona conceptos validos para pagar', code: 'SISCO-400' }, { status: 400 });
+  }
 
   const perfil = await residenteRepo.findByUserIdWithPaymentConfig(session.user.id);
-  if (!perfil?.fraccionamientoId) return Response.json({ error: 'Perfil sin fraccionamiento' }, { status: 403 });
-  if (perfil.responsableCargos === false) return Response.json({ error: 'Esta cuenta no tiene cargos de vivienda habilitados' }, { status: 403 });
-  try { await subscriptionService.requireOperational(perfil.fraccionamientoId); } catch { return Response.json({ error: 'El fraccionamiento no tiene una suscripcion operativa vigente' }, { status: 403 }); }
-  const [config] = await db.select({ activo: fraccionamientos.activo, montoMensual: fraccionamientos.montoMensual, montoReconexion: fraccionamientos.montoReconexion, accessToken: fraccionamientoMetodosPago.accessTokenCifrado, collectorId: fraccionamientoMetodosPago.collectorId }).from(fraccionamientos).leftJoin(fraccionamientoMetodosPago, and(eq(fraccionamientoMetodosPago.fraccionamientoId, fraccionamientos.id), eq(fraccionamientoMetodosPago.proveedor, 'mercado_pago'), eq(fraccionamientoMetodosPago.activo, true))).where(eq(fraccionamientos.id, perfil.fraccionamientoId)).limit(1);
-  if (!config?.activo) return Response.json({ error: 'El fraccionamiento esta desactivado' }, { status: 403 });
+  if (!perfil?.fraccionamientoId) {
+    return Response.json({ error: 'Perfil sin fraccionamiento asignado', code: 'SISCO-403' }, { status: 403 });
+  }
+  if (perfil.responsableCargos === false) {
+    return Response.json({ error: 'Esta cuenta no tiene cargos de vivienda habilitados', code: 'SISCO-403' }, { status: 403 });
+  }
+
+  try {
+    await subscriptionService.requireOperational(perfil.fraccionamientoId);
+  } catch {
+    return Response.json({ error: 'El fraccionamiento no tiene una suscripcion operativa vigente', code: 'SISCO-423' }, { status: 403 });
+  }
+
+  const [config] = await db
+    .select({
+      activo: fraccionamientos.activo,
+      montoMensual: fraccionamientos.montoMensual,
+      montoReconexion: fraccionamientos.montoReconexion,
+      accessToken: fraccionamientoMetodosPago.accessTokenCifrado,
+      collectorId: fraccionamientoMetodosPago.collectorId,
+    })
+    .from(fraccionamientos)
+    .leftJoin(
+      fraccionamientoMetodosPago,
+      and(
+        eq(fraccionamientoMetodosPago.fraccionamientoId, fraccionamientos.id),
+        eq(fraccionamientoMetodosPago.proveedor, 'mercado_pago'),
+        eq(fraccionamientoMetodosPago.activo, true),
+      ),
+    )
+    .where(eq(fraccionamientos.id, perfil.fraccionamientoId))
+    .limit(1);
+
+  if (!config?.activo) {
+    return Response.json({ error: 'El fraccionamiento esta desactivado', code: 'SISCO-423' }, { status: 403 });
+  }
+
   const accessToken = decryptTokenSafe(config.accessToken);
-  if (!accessToken) return Response.json({ error: 'Mercado Pago no esta configurado para este fraccionamiento' }, { status: 400 });
+  if (!accessToken) {
+    return Response.json({ error: 'Mercado Pago no esta configurado para este fraccionamiento', code: 'SISCO-301' }, { status: 400 });
+  }
 
   const allCargoIdsSet = new Set<string>(parsed.data.cargoIds);
 
   for (const item of parsed.data.servicios) {
-    const [svc] = await db.select({
-      id: fraccionamientoServicios.id,
-      montoMensual: fraccionamientoServicios.montoMensual,
-    })
-    .from(fraccionamientoServicios)
-    .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
-    .where(and(
-      eq(fraccionamientoServicios.id, item.fraccionamientoServicioId),
-      eq(fraccionamientoServicios.fraccionamientoId, perfil.fraccionamientoId),
-      eq(fraccionamientoServicios.estado, 'activo'),
-      eq(servicios.activo, true),
-      ne(servicios.clave, 'agua'),
-    ))
-    .limit(1);
+    const [svc] = await db
+      .select({
+        id: fraccionamientoServicios.id,
+        montoMensual: fraccionamientoServicios.montoMensual,
+      })
+      .from(fraccionamientoServicios)
+      .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
+      .where(
+        and(
+          eq(fraccionamientoServicios.id, item.fraccionamientoServicioId),
+          eq(fraccionamientoServicios.fraccionamientoId, perfil.fraccionamientoId),
+          eq(fraccionamientoServicios.estado, 'activo'),
+          eq(servicios.activo, true),
+          ne(servicios.clave, 'agua'),
+        ),
+      )
+      .limit(1);
 
     if (!svc) {
-      return Response.json({ error: 'Uno de los servicios seleccionados no esta disponible' }, { status: 400 });
+      return Response.json({ error: 'Uno de los servicios seleccionados no esta disponible', code: 'SISCO-404' }, { status: 400 });
     }
 
     const serviceCargoIds = await nextUnpaidCargosForService({
@@ -191,7 +243,7 @@ export async function POST(request: Request) {
     });
 
     if (serviceCargoIds.length !== item.meses) {
-      return Response.json({ error: 'No se pudieron programar todos los periodos del servicio' }, { status: 409 });
+      return Response.json({ error: 'No se pudieron programar todos los periodos del servicio', code: 'SISCO-409' }, { status: 409 });
     }
 
     for (const id of serviceCargoIds) {
@@ -207,31 +259,60 @@ export async function POST(request: Request) {
     eq(cargosServicios.estado, 'pendiente'),
     ne(servicios.clave, 'agua'),
   );
-  const selectedCharges = cargoIds.length === 0 ? [] : await db.select({ id: cargosServicios.id, monto: cargosServicios.monto, nombre: servicios.nombre })
-    .from(cargosServicios)
-    .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, cargosServicios.fraccionamientoServicioId))
-    .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
-    .where(and(mandatoryChargeWhere, inArray(cargosServicios.id, cargoIds)));
-  if (selectedCharges.length !== cargoIds.length) return Response.json({ error: 'Uno o mas cargos ya no estan disponibles; actualiza la pagina' }, { status: 409 });
+  const selectedCharges =
+    cargoIds.length === 0
+      ? []
+      : await db
+          .select({ id: cargosServicios.id, monto: cargosServicios.monto, nombre: servicios.nombre })
+          .from(cargosServicios)
+          .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, cargosServicios.fraccionamientoServicioId))
+          .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
+          .where(and(mandatoryChargeWhere, inArray(cargosServicios.id, cargoIds)));
+
+  if (selectedCharges.length !== cargoIds.length) {
+    return Response.json({ error: 'Uno o mas cargos ya no estan disponibles; actualiza la pagina', code: 'SISCO-202' }, { status: 409 });
+  }
 
   const periods = await nextUnpaidPeriods(perfil.id, perfil.fraccionamientoId, parsed.data.mesesAgua);
-  if (periods.length !== parsed.data.mesesAgua) return Response.json({ error: 'No hay suficientes periodos de agua disponibles' }, { status: 409 });
-  if (periods.length > 0 && perfil.estadoAgua === 'pendiente_reconexion') return Response.json({ error: 'La reconexion esta pendiente de ser realizada' }, { status: 409 });
+  if (periods.length !== parsed.data.mesesAgua) {
+    return Response.json({ error: 'No hay suficientes periodos de agua disponibles', code: 'SISCO-202' }, { status: 409 });
+  }
+  if (periods.length > 0 && perfil.estadoAgua === 'pendiente_reconexion') {
+    return Response.json({ error: 'La reconexion esta pendiente de ser realizada', code: 'SISCO-203' }, { status: 409 });
+  }
+
   const serviceConfig = periods.length > 0 && residenteRepo.findWaterServiceConfig ? await residenteRepo.findWaterServiceConfig(perfil.id) : null;
   const waterConfig = serviceConfig ?? { montoMensual: config.montoMensual, montoReconexion: config.montoReconexion, conCorteFisico: true };
   const isReconnection = periods.length > 0 && perfil.estadoAgua === 'cortado';
-  const waterPeriods: MercadoPagoPaymentIntentPeriod[] = periods.map((period, index) => ({ ...period, monto: calcularMontoServicio(waterConfig, { incluyeReconexion: index === 0 && isReconnection }).toFixed(2), esReconexion: index === 0 && isReconnection }));
+  const waterPeriods: MercadoPagoPaymentIntentPeriod[] = periods.map((period, index) => ({
+    ...period,
+    monto: calcularMontoServicio(waterConfig, { incluyeReconexion: index === 0 && isReconnection }).toFixed(2),
+    esReconexion: index === 0 && isReconnection,
+  }));
   const waterBase = waterPeriods.reduce((sum, period) => sum + Number(period.monto), 0);
   const serviceTotal = selectedCharges.reduce((sum, charge) => sum + Number(charge.monto), 0);
   const totalBase = waterBase + serviceTotal;
-  if (totalBase <= 0) return Response.json({ error: 'Selecciona al menos un concepto para pagar' }, { status: 400 });
+  if (totalBase <= 0) {
+    return Response.json({ error: 'Selecciona al menos un concepto para pagar', code: 'SISCO-400' }, { status: 400 });
+  }
   const total = Number(calcularDesglosePago(totalBase).total).toFixed(2);
 
-  const now = new Date(); const windowStart = Math.floor(now.getTime() / WINDOW_MS) * WINDOW_MS;
+  const now = new Date();
+  const windowStart = Math.floor(now.getTime() / WINDOW_MS) * WINDOW_MS;
   const canonical = JSON.stringify({ perfilId: perfil.id, fraccionamientoId: perfil.fraccionamientoId, waterPeriods, cargoIds, total, collectorId: config.collectorId ?? null, windowStart });
   const reference = `mix_${createHash('sha256').update(canonical).digest('hex').slice(0, 48)}`;
   const expiresAt = new Date(windowStart + WINDOW_MS * 2);
-  await persistMercadoPagoPaymentIntent({ externalReference: reference, tipo: 'mixto', perfilId: perfil.id, cargosServicioIds: cargoIds, periodos: waterPeriods, total, collectorId: config.collectorId, expiresAt });
+
+  await persistMercadoPagoPaymentIntent({
+    externalReference: reference,
+    tipo: 'mixto',
+    perfilId: perfil.id,
+    cargosServicioIds: cargoIds,
+    periodos: waterPeriods,
+    total,
+    collectorId: config.collectorId,
+    expiresAt,
+  });
 
   const baseUrl = (process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin).replace(/\/$/, '');
   const titleParts: string[] = [];
@@ -243,9 +324,78 @@ export async function POST(request: Request) {
   }
   const title = titleParts.join(' y ') || 'Pago de servicios';
 
-  const { preferenceClient } = createMercadoPagoClients(accessToken);
-  const preference = await preferenceClient.create({ body: { external_reference: reference, items: [{ id: reference, title: `Pago: ${title}`, quantity: 1, currency_id: 'MXN', unit_price: Number(total) }], payer: { email: session.user.email, name: session.user.name }, notification_url: `${baseUrl}/api/mercadopago/webhook?ref=${encodeURIComponent(reference)}`, back_urls: { success: `${baseUrl}/api/mercadopago/return?ref=${encodeURIComponent(reference)}`, pending: `${baseUrl}/residente?payment=pending`, failure: `${baseUrl}/residente?payment=failure` }, auto_return: 'approved', binary_mode: true, expires: true, expiration_date_to: expiresAt.toISOString() }, requestOptions: { idempotencyKey: `mix-${createHash('sha256').update(`${reference}|${windowStart}`).digest('hex').slice(0, 40)}` } });
+  const correlationId = `req_${createHash('sha256').update(`${reference}|${Date.now()}`).digest('hex').slice(0, 16)}`;
+
+  let preference;
+  try {
+    const { preferenceClient } = createMercadoPagoClients(accessToken);
+    preference = await preferenceClient.create({
+      body: {
+        external_reference: reference,
+        items: [
+          {
+            id: reference,
+            title: `Pago: ${title}`,
+            quantity: 1,
+            currency_id: 'MXN',
+            unit_price: Number(total),
+          },
+        ],
+        payer: {
+          email: session.user.email,
+          name: session.user.name || undefined,
+        },
+        notification_url: `${baseUrl}/api/mercadopago/webhook?ref=${encodeURIComponent(reference)}`,
+        back_urls: {
+          success: `${baseUrl}/api/mercadopago/return?ref=${encodeURIComponent(reference)}`,
+          pending: `${baseUrl}/residente?payment=pending`,
+          failure: `${baseUrl}/residente?payment=failure`,
+        },
+        auto_return: 'approved',
+        binary_mode: true,
+        expires: true,
+        expiration_date_to: expiresAt.toISOString(),
+      },
+      requestOptions: {
+        idempotencyKey: `mix-${createHash('sha256').update(`${reference}|${windowStart}`).digest('hex').slice(0, 40)}`,
+      },
+    });
+  } catch (err: unknown) {
+    const errorDetails = extractMercadoPagoError(err);
+    logger.error('mp.checkout_combinado.preference_error', err instanceof Error ? err : undefined, {
+      correlationId,
+      perfilId: perfil.id,
+      fraccionamientoId: perfil.fraccionamientoId,
+      status: errorDetails.status,
+      message: errorDetails.message,
+    });
+
+    return Response.json(
+      {
+        error: errorDetails.userMessage,
+        code: errorDetails.code,
+        correlationId,
+      },
+      { status: errorDetails.httpStatus },
+    );
+  }
+
   const url = preference.init_point ?? preference.sandbox_init_point;
-  if (!url) return Response.json({ error: 'Mercado Pago no devolvio una URL de pago' }, { status: 502 });
+  if (!url) {
+    logger.error('mp.checkout_combinado.no_url', undefined, {
+      correlationId,
+      perfilId: perfil.id,
+      fraccionamientoId: perfil.fraccionamientoId,
+    });
+    return Response.json(
+      {
+        error: 'Mercado Pago no devolvio una URL de pago',
+        code: 'SISCO-301',
+        correlationId,
+      },
+      { status: 502 },
+    );
+  }
+
   return Response.json({ url, total });
 }

@@ -11,7 +11,6 @@ import {
   LogOut,
   Users,
   Wallet,
-  Landmark,
 } from 'lucide-react';
 
 import { useAdmin, MESES } from '@/hooks/useAdmin';
@@ -149,14 +148,6 @@ export function AdminDashboard() {
           </Button>
           <Button variant="outline" onClick={() => router.push('/admin/asignaciones')}>
             Personal operativo
-          </Button>
-          <Button
-            variant="outline"
-            className="flex items-center gap-2"
-            onClick={() => router.push('/admin/tesoreras')}
-          >
-            <Landmark className="h-4 w-4" />
-            Tesorería
           </Button>
           <Button
             variant={tab === 'operacion' ? 'default' : 'outline'}

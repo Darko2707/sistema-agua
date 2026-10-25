@@ -14,9 +14,6 @@ export type RepresentanteData = UserData & {
   fraccionamiento: { id: string; nombre: string | null } | null;
 };
 
-export type TesoreraData = UserData & {
-  fraccionamiento: { id: string; nombre: string | null; mercadoPagoCollectorId: string | null } | null;
-};
 
 export type CreatePersonalInput = {
   nombre:   string;
@@ -36,12 +33,14 @@ export type UpdatePersonalInput = {
 export type CambiarRolInput = {
   userId:   string;
   nuevoRol: UserRole;
+  actorId?: string;
 };
 
 export type CambiarRolEnFraccionamientoInput = {
   userId:     string;
   nuevoRol:   'residente' | 'tesorera' | 'cuadrilla_cortes' | 'operador_pozo';
   fraccionamientoId: string;
+  actorId?:   string;
 };
 
 export interface UserRepository {
@@ -56,7 +55,6 @@ export interface UserRepository {
 
   // List queries
   listarRepresentantes(): Promise<RepresentanteData[]>;
-  listarTesoreras(): Promise<TesoreraData[]>;
   listarNonResidente(): Promise<UserData[]>;
 
   // Atomic role transitions (DB transaction encapsulated internally)

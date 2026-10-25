@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "db:migrate": "dotenv -e .env.local -- drizzle-kit migrate",
+    "db:prepare-checkout-mixto": "dotenv -e .env.local -- tsx db/scripts/prepare-checkout-mixto.ts",
     "db:migrate:staging": "dotenv -e .env.staging -- drizzle-kit migrate",
     "db:generate": "dotenv -e .env.local -- drizzle-kit generate",
     "db:generate:staging": "dotenv -e .env.staging -- drizzle-kit generate",

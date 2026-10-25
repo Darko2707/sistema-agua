@@ -377,7 +377,7 @@ export const usuariosRouter = router({
       if (!fraccionamiento?.activo || fraccionamiento.representanteId !== ctx.user.id) {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'No eres representante activo de este fraccionamiento' });
       }
-      await userRepo.cambiarRolEnFraccionamiento({ userId: input.userId, nuevoRol: input.rol, fraccionamientoId: fraccionamiento.id });
+      await userRepo.cambiarRolEnFraccionamiento({ userId: input.userId, nuevoRol: input.rol, fraccionamientoId: fraccionamiento.id, actorId: ctx.user.id });
       return { ok: true };
     }),
 
@@ -578,30 +578,6 @@ export const usuariosRouter = router({
       return { ok: true };
     }),
 
-  asignarTesorera: roleProcedure('admin')
-    .input(z.object({ fraccionamientoId: z.string().uuid(), userId: z.string().min(1) }))
-    .mutation(async ({ ctx, input }) => {
-      await subscriptionService.requireOperational(input.fraccionamientoId);
-      const [fraccionamiento] = await db.select({ id: fraccionamientos.id, tesoreraId: fraccionamientos.tesoreraId })
-        .from(fraccionamientos).where(eq(fraccionamientos.id, input.fraccionamientoId)).limit(1);
-      if (!fraccionamiento) throw new TRPCError({ code: 'NOT_FOUND', message: 'Fraccionamiento no encontrado' });
-      const usuario = await userRepo.findById(input.userId);
-      if (!usuario) throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
-      if (usuario.fraccionamientoId && usuario.fraccionamientoId !== input.fraccionamientoId) {
-        throw new TRPCError({ code: 'FORBIDDEN', message: 'El usuario pertenece a otro fraccionamiento' });
-      }
-      await db.transaction(async (tx) => {
-        if (fraccionamiento.tesoreraId && fraccionamiento.tesoreraId !== input.userId) {
-          await tx.update(user).set({ role: 'residente', updatedAt: new Date() }).where(eq(user.id, fraccionamiento.tesoreraId));
-        }
-        await tx.update(fraccionamientos).set({ tesoreraId: input.userId, updatedAt: new Date() }).where(eq(fraccionamientos.id, input.fraccionamientoId));
-      });
-      await userRepo.updateRole(input.userId, 'tesorera');
-      await userRepo.update(input.userId, { fraccionamientoId: input.fraccionamientoId });
-      await db.insert(auditoria).values({ actorId: ctx.user.id, accion: 'fraccionamiento.tesorera.asignada', entidad: 'fraccionamientos', entidadId: input.fraccionamientoId, detalle: { userId: input.userId } });
-      return { ok: true };
-    }),
-
   listarRepresentantes: roleProcedure('admin').query(async () => {
     return userRepo.listarRepresentantes();
   }),
@@ -648,9 +624,6 @@ export const usuariosRouter = router({
   // CRUD TESORERAS
   // ══════════════════════════════════════════════════════════════════════════
   */
-  listarTesoreras: roleProcedure('admin').query(async () => {
-    return userRepo.listarTesoreras();
-  }),
 
   /* CRUD heredado por circuito retirado. Las asignaciones se hacen por fraccionamiento.
   crearTesorera: roleProcedure('admin')

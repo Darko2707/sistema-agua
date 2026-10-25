@@ -56,13 +56,20 @@ export function rateLimitHeaders(decision: RateLimitDecision): Record<string, st
 
 export function rateLimitResponse(decision: RateLimitDecision): Response {
   const retryAfter = Math.max(1, Math.ceil((decision.reset - Date.now()) / 1000));
-  return new Response('Too Many Requests', {
-    status: 429,
-    headers: {
-      ...rateLimitHeaders(decision),
-      'Retry-After': String(retryAfter),
-      'Content-Type': 'text/plain; charset=utf-8',
-      'Cache-Control': 'private, no-store',
+  return Response.json(
+    {
+      error: 'Demasiadas solicitudes. Espera un momento antes de volver a intentar.',
+      code: 'SISCO-429',
+      retryAfter,
     },
-  });
+    {
+      status: 429,
+      headers: {
+        ...rateLimitHeaders(decision),
+        'Retry-After': String(retryAfter),
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'private, no-store',
+      },
+    },
+  );
 }

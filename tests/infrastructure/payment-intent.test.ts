@@ -22,6 +22,7 @@ vi.mock('@/db', () => ({
       from: () => ({
         where: () => ({
           limit: mocks.selectRows,
+          then: (onf?: (val: unknown) => unknown, onr?: (err: unknown) => unknown) => mocks.selectRows().then(onf, onr),
         }),
       }),
     })),
@@ -92,6 +93,41 @@ describe('intenciones de pago de Mercado Pago', () => {
       total: '120.91',
       currency: 'MXN',
       collectorId: '98765',
+    }));
+  });
+
+  it('persiste intencion combinada (mixto) con cargosServicioIds y periodos de agua', async () => {
+    const MIXED_REF = 'mix_' + 'b'.repeat(48);
+    const CARGO_ID_1 = '11111111-1111-4111-8111-111111111111';
+    mocks.selectRows
+      .mockResolvedValueOnce([{ fraccionamientoId: TENANT_ID }])
+      .mockResolvedValueOnce([
+        { id: CARGO_ID_1, perfilId: INPUT.perfilId, fraccionamientoId: TENANT_ID, estado: 'pendiente' },
+      ]);
+    mocks.insertReturning.mockResolvedValueOnce([storedIntent({
+      externalReference: MIXED_REF,
+      tipo: 'mixto',
+      cargosServicioIds: [CARGO_ID_1],
+      total: '250.00',
+    })]);
+
+    const result = await persistMercadoPagoPaymentIntent({
+      externalReference: MIXED_REF,
+      tipo: 'mixto',
+      perfilId: INPUT.perfilId,
+      cargosServicioIds: [CARGO_ID_1],
+      periodos: INPUT.periodos,
+      total: '250.00',
+      collectorId: '98765',
+      expiresAt: INPUT.expiresAt,
+    });
+
+    expect(result.externalReference).toBe(MIXED_REF);
+    expect(mocks.insertedValues).toHaveBeenCalledWith(expect.objectContaining({
+      externalReference: MIXED_REF,
+      tipo: 'mixto',
+      cargosServicioIds: [CARGO_ID_1],
+      periodos: INPUT.periodos,
     }));
   });
 

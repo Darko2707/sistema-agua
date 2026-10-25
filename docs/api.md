@@ -265,7 +265,7 @@ Lista el personal (no residentes) del sistema.
 
 ### `usuarios.cambiarRol` — Mutation
 **Roles:** `admin`  
-Cambia el rol de cualquier usuario.  
+Cambia el rol de cualquier usuario. Gestiona de forma atómica la asignación y revocación de tesorería y representación en el fraccionamiento, la invalidación de sesiones y el registro de auditoría.  
 **Input:** `{ userId: string; rol: 'admin' | 'representante' | 'tesorera' | 'cuadrilla_cortes' | 'residente' }`
 
 ### `usuarios.cambiarRolEnCircuito` — Mutation
@@ -282,9 +282,6 @@ Asigna un representante a un circuito.
 **Roles:** `admin`  
 CRUD de representantes. `eliminarRepresentante` realiza soft delete.
 
-### `usuarios.crearTesorera` / `actualizarTesorera` / `eliminarTesorera` — Mutations
-**Roles:** `admin`  
-CRUD de tesoreras. `eliminarTesorera` realiza soft delete.
 
 ---
 

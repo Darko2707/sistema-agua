@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
 
 import { auth } from '@/lib/auth';
-import { createMercadoPagoClients } from '@/lib/mercadopago';
+import { createMercadoPagoClients, extractMercadoPagoError } from '@/lib/mercadopago';
 import { decryptTokenSafe } from '@/lib/crypto';
 import { checkoutAccountLimiter } from '@/lib/ratelimit';
 import { consumeRateLimit, rateLimitResponse } from '@/lib/rate-limit-guard';
@@ -19,6 +19,7 @@ import {
   type MercadoPagoPaymentIntentPeriod,
 } from '@/src/infrastructure/mercadopago/payment-intent';
 import { subscriptionService } from '@/src/infrastructure/db/services/subscription.service';
+import { logger } from '@/lib/logger';
 
 const checkoutSchema = z.object({
   esReconexion:     z.boolean().optional(),
@@ -235,7 +236,6 @@ export async function POST(request: Request) {
   });
   const baseUrl = appUrl.replace(/\/$/, '');
   const referenceParam = encodeURIComponent(externalReference);
-  const { preferenceClient } = createMercadoPagoClients(accessToken);
   const mesesLabel = mesesAdelantados === 1 ? '1 mes' : `${mesesAdelantados} meses`;
   const primerPeriodo = periodosSolicitados[0];
   const checkoutMetadata = mercadoPagoCheckoutMetadata({
@@ -255,34 +255,72 @@ export async function POST(request: Request) {
     expiresAt: new Date(checkoutMetadata.expirationDateTo),
   });
 
-  const preference = await preferenceClient.create({
-    body: {
-      items: [{
-        id:          externalReference,
-        title:       esReconexion ? 'Pago de agua, reconexion y meses adelantados' : 'Pago de agua adelantado',
-        description: `${mesesLabel} desde ${primerPeriodo.mes}/${primerPeriodo.anio}`,
-        quantity:    1,
-        currency_id: 'MXN',
-        unit_price:  Number(desglose.total),
-      }],
-      payer:              { email: session.user.email, name: session.user.name },
-      external_reference: externalReference,
-      notification_url:   `${baseUrl}/api/mercadopago/webhook?ref=${referenceParam}`,
-      back_urls: {
-        success: `${baseUrl}/api/mercadopago/return?ref=${referenceParam}`,
-        pending: `${baseUrl}/residente?payment=pending`,
-        failure: `${baseUrl}/residente?payment=failure`,
+  const correlationId = `req_${createHash('sha256').update(`${externalReference}|${Date.now()}`).digest('hex').slice(0, 16)}`;
+
+  let preference;
+  try {
+    const { preferenceClient } = createMercadoPagoClients(accessToken);
+    preference = await preferenceClient.create({
+      body: {
+        items: [{
+          id:          externalReference,
+          title:       esReconexion ? 'Pago de agua, reconexion y meses adelantados' : 'Pago de agua adelantado',
+          description: `${mesesLabel} desde ${primerPeriodo.mes}/${primerPeriodo.anio}`,
+          quantity:    1,
+          currency_id: 'MXN',
+          unit_price:  Number(desglose.total),
+        }],
+        payer:              { email: session.user.email, name: session.user.name || undefined },
+        external_reference: externalReference,
+        notification_url:   `${baseUrl}/api/mercadopago/webhook?ref=${referenceParam}`,
+        back_urls: {
+          success: `${baseUrl}/api/mercadopago/return?ref=${referenceParam}`,
+          pending: `${baseUrl}/residente?payment=pending`,
+          failure: `${baseUrl}/residente?payment=failure`,
+        },
+        auto_return:  'approved',
+        binary_mode:  true,
+        expires: true,
+        expiration_date_to: checkoutMetadata.expirationDateTo,
       },
-      auto_return:  'approved',
-      binary_mode:  true,
-      expires: true,
-      expiration_date_to: checkoutMetadata.expirationDateTo,
-    },
-    requestOptions: { idempotencyKey: checkoutMetadata.idempotencyKey },
-  });
+      requestOptions: { idempotencyKey: checkoutMetadata.idempotencyKey },
+    });
+  } catch (err: unknown) {
+    const errorDetails = extractMercadoPagoError(err);
+    logger.error('mp.checkout.preference_error', err instanceof Error ? err : undefined, {
+      correlationId,
+      perfilId: perfil.id,
+      fraccionamientoId: perfil.fraccionamientoId,
+      status: errorDetails.status,
+      message: errorDetails.message,
+    });
+
+    return Response.json(
+      {
+        error: errorDetails.userMessage,
+        code: errorDetails.code,
+        correlationId,
+      },
+      { status: errorDetails.httpStatus },
+    );
+  }
 
   const url = preference.init_point ?? preference.sandbox_init_point;
-  if (!url) return Response.json({ error: 'Mercado Pago no devolvio una URL de pago' }, { status: 502 });
+  if (!url) {
+    logger.error('mp.checkout.no_url', undefined, {
+      correlationId,
+      perfilId: perfil.id,
+      fraccionamientoId: perfil.fraccionamientoId,
+    });
+    return Response.json(
+      {
+        error: 'Mercado Pago no devolvio una URL de pago',
+        code: 'SISCO-301',
+        correlationId,
+      },
+      { status: 502 },
+    );
+  }
 
   return Response.json({ url, desglose });
 }

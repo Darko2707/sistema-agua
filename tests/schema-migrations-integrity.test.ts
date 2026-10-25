@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { user, session, pagos, cargosServicios, ordenesTrabajo, perfilesResidente } from '@/db/schema';
+import { user, session, pagos, cargosServicios, ordenesTrabajo, perfilesResidente, mercadoPagoPaymentIntents } from '@/db/schema';
 import { getTableColumns } from 'drizzle-orm';
 import { z } from 'zod';
 
@@ -69,6 +69,17 @@ describe('SCRUM-43: Integridad de Esquema, Restricciones y Migraciones', () => {
     expect(sessionCols.token.notNull).toBe(true);
     expect(sessionCols.userId.notNull).toBe(true);
     expect(sessionCols.expiresAt.notNull).toBe(true);
+  });
+
+  // ─── 6. Integridad de esquema de intenciones de pago Mercado Pago ──────────
+  it('6. La tabla mercado_pago_payment_intents incluye cargos_servicio_ids como jsonb no nulo', () => {
+    const intentCols = getTableColumns(mercadoPagoPaymentIntents);
+
+    expect(intentCols.cargosServicioIds).toBeDefined();
+    expect(intentCols.cargosServicioIds.notNull).toBe(true);
+    expect(intentCols.tipo).toBeDefined();
+    expect(intentCols.cargoServicioId).toBeDefined();
+    expect(intentCols.periodos).toBeDefined();
   });
 });
 

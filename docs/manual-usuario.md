@@ -134,13 +134,10 @@ El administrador configura y supervisa todo el sistema.
 
 Funciones principales:
 
-- Crear y editar circuitos.
-- Activar o desactivar circuitos.
-- Configurar montos mensuales y reconexion.
-- Asignar representantes.
-- Crear, editar o eliminar representantes y tesoreras.
-- Cambiar roles de usuarios.
-- Registrar pagos por efectivo o transferencia para meses atrasados, actuales o adelantados.
+- **Administración → Personal:** Asignar y administrar roles de usuarios (representantes, tesoreras/os, cuadrilla y residentes), vinculación a fraccionamientos y control de cuentas sin cargos.
+- **Administración → Fraccionamientos:** Datos del fraccionamiento, cuotas mensuales, reconexión y credenciales de Mercado Pago.
+- **Panel de Tesorería (/tesorera):** Registro y seguimiento operativo de cobros en efectivo/transferencia y exportación de reportes.
+- Registrar pagos manuales de contingencia para meses atrasados, actuales o adelantados.
 
 ### Registrar pagos manuales como admin
 

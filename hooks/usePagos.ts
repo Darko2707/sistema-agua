@@ -62,8 +62,23 @@ export function useCheckoutMP() {
         body: JSON.stringify({ esReconexion, mesesAdelantados }),
         credentials: 'include',
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'No se pudo iniciar el pago');
+      let data: { url?: string; error?: string; code?: string; correlationId?: string } = {};
+      const text = await res.text();
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { error: res.statusText || 'Error inesperado del servidor' };
+      }
+      if (!res.ok) {
+        const errorMsg = data.error || 'No se pudo iniciar el pago';
+        const errObj = Object.assign(new Error(errorMsg), {
+          code: data.code,
+          correlationId: data.correlationId,
+          status: res.status,
+        });
+        throw errObj;
+      }
+      if (!data.url) throw new Error('Mercado Pago no devolvió una URL de pago');
       window.location.href = data.url;
     } catch (err: unknown) {
       setError(userFacingError(err, 'SISCO-301'));
@@ -93,8 +108,23 @@ export function useCheckoutCombinadoMP() {
         body: JSON.stringify(input),
         credentials: 'include',
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'No se pudo iniciar el pago');
+      let data: { url?: string; error?: string; code?: string; correlationId?: string } = {};
+      const text = await res.text();
+      try {
+        data = text ? JSON.parse(text) : {};
+      } catch {
+        data = { error: res.statusText || 'Error inesperado del servidor' };
+      }
+      if (!res.ok) {
+        const errorMsg = data.error || 'No se pudo iniciar el pago';
+        const errObj = Object.assign(new Error(errorMsg), {
+          code: data.code,
+          correlationId: data.correlationId,
+          status: res.status,
+        });
+        throw errObj;
+      }
+      if (!data.url) throw new Error('Mercado Pago no devolvió una URL de pago');
       window.location.href = data.url;
     } catch (err: unknown) {
       setError(userFacingError(err, 'SISCO-302'));

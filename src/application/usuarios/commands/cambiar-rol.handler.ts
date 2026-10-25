@@ -17,7 +17,7 @@ export class CambiarRolHandler {
     if (cmd.actorId === cmd.userId && cmd.nuevoRol !== 'admin') {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'No puedes quitarte tu propio acceso de administrador' });
     }
-    await this.deps.userRepo.cambiarRol({ userId: cmd.userId, nuevoRol: cmd.nuevoRol });
+    await this.deps.userRepo.cambiarRol({ userId: cmd.userId, nuevoRol: cmd.nuevoRol, actorId: cmd.actorId });
     logger.info('usuario.rol.cambiado', { actorId: cmd.actorId, userId: cmd.userId, nuevoRol: cmd.nuevoRol });
   }
 }
