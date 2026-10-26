@@ -16,7 +16,9 @@ import {
   suscripcionesFraccionamiento,
   user,
 } from '@/db/schema';
-import { encryptToken } from '@/lib/crypto';
+import { decryptTokenSafe, encryptToken } from '@/lib/crypto';
+import { validateMercadoPagoAccount } from '@/lib/mercadopago';
+import { logger } from '@/lib/logger';
 import { router, publicProcedure, roleProcedure } from '../trpc';
 
 /** Convierte el nombre visible en el identificador público del tenant. */
@@ -257,7 +259,7 @@ export const fraccionamientosRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const existing = await db.query.fraccionamientoMetodosPago.findFirst({
-        columns: { accessTokenCifrado: true },
+        columns: { accessTokenCifrado: true, collectorId: true },
         where: and(
           eq(fraccionamientoMetodosPago.fraccionamientoId, input.fraccionamientoId),
           eq(fraccionamientoMetodosPago.proveedor, 'mercado_pago'),
@@ -265,6 +267,27 @@ export const fraccionamientosRouter = router({
       });
       if (!existing?.accessTokenCifrado && !input.accessToken) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'El Access Token es obligatorio al configurar Mercado Pago por primera vez' });
+      }
+
+      const accessTokenToValidate = input.accessToken ?? decryptTokenSafe(existing?.accessTokenCifrado);
+      if (!accessTokenToValidate) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'El Access Token guardado no se puede leer. Ingresa nuevamente el token de Mercado Pago.',
+        });
+      }
+
+      // Antes era posible conservar un token y sustituir únicamente el collectorId.
+      // GET /users/me no crea pagos y confirma que ambos datos pertenecen a la
+      // misma cuenta antes de persistir la configuración.
+      const validation = await validateMercadoPagoAccount(accessTokenToValidate, input.collectorId);
+      if (!validation.ok) {
+        logger.warn('mp.config.validation_failed', {
+          fraccionamientoId: input.fraccionamientoId,
+          providerCode: validation.diagnostic.providerCode,
+          causeCodes: validation.diagnostic.causeCodes,
+        });
+        throw new TRPCError({ code: 'BAD_REQUEST', message: validation.userMessage });
       }
 
       const encryptedAccessToken = input.accessToken ? encryptToken(input.accessToken) : undefined;

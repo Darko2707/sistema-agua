@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import { extractMercadoPagoError } from '@/lib/mercadopago';
+import { describe, expect, it, vi } from 'vitest';
+import { User } from 'mercadopago';
+import { extractMercadoPagoError, validateMercadoPagoAccount } from '@/lib/mercadopago';
 import { userFacingError } from '@/lib/user-facing-error';
 import { rateLimitResponse, type RateLimitDecision } from '@/lib/rate-limit-guard';
 
@@ -24,6 +25,29 @@ describe('extractMercadoPagoError', () => {
     expect(error.code).toBe('SISCO-301');
     expect(error.httpStatus).toBe(502);
     expect(error.userMessage).toContain('credenciales de Mercado Pago del fraccionamiento son inválidas');
+  });
+
+  it('extrae de forma segura causa y codigo del SDK en un 401', () => {
+    const error = extractMercadoPagoError({
+      api_response: { status: 401 },
+      message: 'At least one policy returned UNAUTHORIZED.',
+      error: 'unauthorized',
+      cause: [{ code: 'policy_unauthorized', description: 'not logged' }],
+    });
+
+    expect(error.category).toBe('authentication');
+    expect(error.diagnostic).toEqual({
+      providerCode: 'unauthorized',
+      providerMessage: 'At least one policy returned UNAUTHORIZED.',
+      causeCodes: ['policy_unauthorized'],
+    });
+  });
+
+  it('clasifica una politica no autorizada sin afirmar que el token esta vencido', () => {
+    const error = extractMercadoPagoError({ status: 403, message: 'At least one policy returned UNAUTHORIZED.' });
+
+    expect(error.category).toBe('authorization');
+    expect(error.userMessage).toContain('cuenta vendedora');
   });
 
   it('detecta fallos de conectividad y timeout (fetch failed)', () => {
@@ -54,6 +78,18 @@ describe('extractMercadoPagoError', () => {
     expect(error.userMessage).not.toContain('APP_USR');
     expect(error.userMessage).not.toContain('secret');
     expect(error.userMessage).toBe('Mercado Pago no pudo procesar la solicitud de pago.');
+    expect(error.diagnostic.providerMessage).not.toContain('APP_USR');
+    expect(error.diagnostic.providerMessage).not.toContain('secret');
+  });
+
+  it('descarta causas que contienen campos sensibles', () => {
+    const error = extractMercadoPagoError({
+      status: 401,
+      message: 'unauthorized',
+      cause: [{ code: 'ignored', authorization: 'Bearer APP_USR-secret-token' }],
+    });
+
+    expect(error.diagnostic.causeCodes).toBeUndefined();
   });
 });
 
@@ -107,6 +143,39 @@ describe('userFacingError - Códigos y Correlación', () => {
     const formatted = userFacingError(err, 'SISCO-302');
     expect(formatted).toContain('SISCO-302:');
     expect(formatted).toContain('No pudimos completar la accion');
+  });
+});
+
+describe('validateMercadoPagoAccount', () => {
+  it('acepta un token cuando /users/me devuelve el mismo collector', async () => {
+    const get = vi.spyOn(User.prototype, 'get').mockResolvedValueOnce({ id: 12345 } as never);
+
+    await expect(validateMercadoPagoAccount('test-token', '12345')).resolves.toEqual({ ok: true, collectorId: '12345' });
+    get.mockRestore();
+  });
+
+  it('rechaza mezclar el token de una cuenta con el Collector ID de otra', async () => {
+    const get = vi.spyOn(User.prototype, 'get').mockResolvedValueOnce({ id: 12345 } as never);
+
+    const result = await validateMercadoPagoAccount('test-token', '98765');
+    expect(result).toMatchObject({ ok: false, diagnostic: { providerCode: 'collector_token_mismatch' } });
+    if (!result.ok) expect(result.userMessage).toContain('Collector ID no corresponde');
+    get.mockRestore();
+  });
+
+  it('no filtra el error del proveedor cuando el token no puede validarse', async () => {
+    const get = vi.spyOn(User.prototype, 'get').mockRejectedValueOnce({
+      status: 401,
+      message: 'invalid access token APP_USR-12345678-secret-token',
+    });
+
+    const result = await validateMercadoPagoAccount('test-token', '12345');
+    expect(result).toMatchObject({ ok: false });
+    if (!result.ok) {
+      expect(result.userMessage).not.toContain('APP_USR');
+      expect(result.diagnostic.providerMessage).not.toContain('APP_USR');
+    }
+    get.mockRestore();
   });
 });
 

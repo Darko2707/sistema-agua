@@ -287,12 +287,13 @@ export async function POST(request: Request) {
     });
   } catch (err: unknown) {
     const errorDetails = extractMercadoPagoError(err);
-    logger.error('mp.checkout.preference_error', err instanceof Error ? err : undefined, {
+    logger.error('mp.checkout.preference_error', undefined, {
       correlationId,
       perfilId: perfil.id,
       fraccionamientoId: perfil.fraccionamientoId,
       status: errorDetails.status,
-      message: errorDetails.message,
+      category: errorDetails.category,
+      ...errorDetails.diagnostic,
     });
 
     return Response.json(
