@@ -579,6 +579,27 @@ export const ordenesTrabajo = pgTable('ordenes_trabajo', {
   index('idx_ordenes_trabajo_tenant_estado').on(t.fraccionamientoId, t.estado, t.creadoEn),
   index('idx_ordenes_trabajo_trabajador_estado').on(t.trabajadorId, t.estado, t.creadoEn),
   index('idx_ordenes_trabajo_perfil').on(t.perfilId, t.creadoEn),
+  uniqueIndex('uq_ordenes_trabajo_id_tenant').on(t.id, t.fraccionamientoId),
+]);
+
+// Referencias internas a archivos privados; las URLs nunca se persisten ni se
+// exponen directamente. El fraccionamiento se mantiene para aislar consultas.
+export const evidenciasOrdenTrabajo = pgTable('evidencias_orden_trabajo', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  ordenTrabajoId: uuid('orden_trabajo_id').notNull(),
+  fraccionamientoId: uuid('fraccionamiento_id').notNull(),
+  subidoPor: text('subido_por').notNull().references(() => user.id, { onDelete: 'restrict' }),
+  referenciaArchivo: text('referencia_archivo').notNull().unique(),
+  contentType: text('content_type').notNull(),
+  tamanoBytes: integer('tamano_bytes').notNull(),
+  creadoEn: timestamp('creado_en').notNull().defaultNow(),
+}, (t) => [
+  foreignKey({ columns: [t.ordenTrabajoId, t.fraccionamientoId], foreignColumns: [ordenesTrabajo.id, ordenesTrabajo.fraccionamientoId] })
+    .onDelete('cascade'),
+  index('idx_evidencias_orden_trabajo').on(t.ordenTrabajoId, t.creadoEn),
+  index('idx_evidencias_fraccionamiento').on(t.fraccionamientoId, t.creadoEn),
+  check('chk_evidencias_tipo_imagen', sql`${t.contentType} IN ('image/jpeg', 'image/png', 'image/webp')`),
+  check('chk_evidencias_tamano', sql`${t.tamanoBytes} BETWEEN 1 AND 5242880`),
 ]);
 
 export const notificaciones = pgTable('notificaciones', {
@@ -758,7 +779,7 @@ export const cortesRelations = relations(cortes, ({ one }) => ({
   }),
 }));
 
-export const ordenesTrabajoRelations = relations(ordenesTrabajo, ({ one }) => ({
+export const ordenesTrabajoRelations = relations(ordenesTrabajo, ({ one, many }) => ({
   fraccionamiento: one(fraccionamientos, {
     fields: [ordenesTrabajo.fraccionamientoId],
     references: [fraccionamientos.id],
@@ -786,6 +807,18 @@ export const ordenesTrabajoRelations = relations(ordenesTrabajo, ({ one }) => ({
   corte: one(cortes, {
     fields: [ordenesTrabajo.corteId],
     references: [cortes.id],
+  }),
+  evidencias: many(evidenciasOrdenTrabajo),
+}));
+
+export const evidenciasOrdenTrabajoRelations = relations(evidenciasOrdenTrabajo, ({ one }) => ({
+  ordenTrabajo: one(ordenesTrabajo, {
+    fields: [evidenciasOrdenTrabajo.ordenTrabajoId],
+    references: [ordenesTrabajo.id],
+  }),
+  subidoPorUsuario: one(user, {
+    fields: [evidenciasOrdenTrabajo.subidoPor],
+    references: [user.id],
   }),
 }));
 
