@@ -58,6 +58,7 @@ export interface CorteOperacionTransaction {
     actorId: string;
     accion: 'corte_confirmado' | 'reconexion_confirmada';
     nota: string;
+    fotoUrl?: string | null;
   }): Promise<{ id: string }>;
   insertAuditoria(input: {
     actorId: string;
@@ -127,7 +128,7 @@ export class CorteOperacionService {
     private readonly now: () => Date = () => new Date(),
   ) {}
 
-  async confirmarCorte(input: { perfilId: string; trabajadorId: string; ordenId?: string }): Promise<CorteOperacionData> {
+  async confirmarCorte(input: { perfilId: string; trabajadorId: string; ordenId?: string; evidenciaUrl?: string }): Promise<CorteOperacionData> {
     return this.database.transaction(async (tx) => {
       const perfil = await tx.lockPerfil(input.perfilId);
       if (!perfil) throw new TRPCError({ code: 'NOT_FOUND' });
@@ -195,6 +196,7 @@ export class CorteOperacionService {
         actorId: input.trabajadorId,
         accion: 'corte_confirmado',
         nota: 'Corte confirmado desde el panel operativo',
+        fotoUrl: input.evidenciaUrl ?? null,
       });
       await tx.insertAuditoria({
         actorId: input.trabajadorId,

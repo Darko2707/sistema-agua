@@ -77,7 +77,7 @@ export type CrearPagosManualBatchInput = {
   pushNotification: PushNotificationInput;
   auditoria: {
     actorId: string;
-    accion: 'pago.manual.tesorera' | 'pago.retroactivo.admin';
+    accion: 'pago.manual.tesorera' | 'pago.retroactivo.admin' | 'pago.transferencia.aprobado';
     metodo: 'efectivo' | 'transferencia';
   };
 };

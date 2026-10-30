@@ -33,6 +33,11 @@ export const estadoPagoEnum = pgEnum('estado_pago', ['pendiente', 'pagado', 'ven
 export const tenenciaEnum   = pgEnum('tenencia', ['propietario', 'inquilino']);
 export const sexoEnum       = pgEnum('sexo', ['masculino', 'femenino', 'otro']);
 export const metodoPagoEnum = pgEnum('metodo_pago', ['efectivo', 'transferencia', 'mercado_pago']);
+export const estadoComprobanteTransferenciaEnum = pgEnum('estado_comprobante_transferencia', [
+  'pendiente_validacion',
+  'aprobado',
+  'rechazado',
+]);
 export const estadoNotificacionEnum = pgEnum('estado_notificacion', ['pendiente', 'enviada', 'fallida']);
 
 // ============================================
@@ -128,6 +133,11 @@ export const fraccionamientos = pgTable('fraccionamientos', {
   montoReconexion:   decimal('monto_reconexion', { precision: 10, scale: 2 }).notNull().default('300.00'),
   diaCorte:          integer('dia_corte').notNull().default(5),
   activo:            boolean('activo').notNull().default(true),
+  banco:             text('banco'),
+  clabe:             text('clabe'),
+  titularCuenta:     text('titular_cuenta'),
+  numeroCuenta:      text('numero_cuenta'),
+  instruccionesTransferencia: text('instrucciones_transferencia'),
   createdAt:         timestamp('created_at').notNull().defaultNow(),
   updatedAt:         timestamp('updated_at').notNull().defaultNow(),
 }, (t) => [
@@ -458,6 +468,33 @@ export const pagos = pgTable('pagos', {
   index('idx_pagos_fecha_pago').on(t.fechaPago),
 ]);
 
+export const comprobantesTransferencia = pgTable('comprobantes_transferencia', {
+  id:                uuid('id').defaultRandom().primaryKey(),
+  perfilId:          uuid('perfil_id').notNull().references(() => perfilesResidente.id, { onDelete: 'cascade' }),
+  fraccionamientoId: uuid('fraccionamiento_id').notNull().references(() => fraccionamientos.id, { onDelete: 'restrict' }),
+  monto:             decimal('monto', { precision: 10, scale: 2 }).notNull(),
+  concepto:          text('concepto').notNull(),
+  comprobanteUrl:    text('comprobante_url').notNull(),
+  estado:            estadoComprobanteTransferenciaEnum('estado').notNull().default('pendiente_validacion'),
+  motivoRechazo:     text('motivo_rechazo'),
+  fechaEmision:      timestamp('fecha_emision').notNull().defaultNow(),
+  fechaRevision:     timestamp('fecha_revision'),
+  revisadoPor:       text('revisado_por').references(() => user.id, { onDelete: 'set null' }),
+  pagoId:            uuid('pago_id').references(() => pagos.id, { onDelete: 'set null' }),
+  metadatos:         jsonb('metadatos').$type<{
+    meses?: Array<{ mes: number; anio: number }>;
+    cargosServicioIds?: string[];
+    esReconexion?: boolean;
+    notas?: string;
+  }>(),
+  creadoEn:          timestamp('creado_en').notNull().defaultNow(),
+  actualizadoEn:     timestamp('actualizado_en').notNull().defaultNow(),
+}, (t) => [
+  index('idx_comprobantes_transferencia_fracc_estado').on(t.fraccionamientoId, t.estado),
+  index('idx_comprobantes_transferencia_perfil').on(t.perfilId, t.estado),
+  index('idx_comprobantes_transferencia_creado_en').on(t.creadoEn),
+]);
+
 export const cortes = pgTable('cortes', {
   id:              uuid('id').defaultRandom().primaryKey(),
   perfilId:        uuid('perfil_id').references(() => perfilesResidente.id).notNull(),
@@ -716,6 +753,7 @@ export const perfilesResidenteRelations = relations(perfilesResidente, ({ one, m
     references: [fraccionamientos.id],
   }),
   pagos:  many(pagos),
+  comprobantesTransferencia: many(comprobantesTransferencia),
   cargosServicios: many(cargosServicios),
   cortes: many(cortes),
   ordenesTrabajo: many(ordenesTrabajo),
@@ -765,6 +803,25 @@ export const pagosRelations = relations(pagos, ({ one }) => ({
     relationName: 'pago_ticket',
     fields: [pagos.id],
     references: [tickets.pagoId],
+  }),
+}));
+
+export const comprobantesTransferenciaRelations = relations(comprobantesTransferencia, ({ one }) => ({
+  perfil: one(perfilesResidente, {
+    fields: [comprobantesTransferencia.perfilId],
+    references: [perfilesResidente.id],
+  }),
+  fraccionamiento: one(fraccionamientos, {
+    fields: [comprobantesTransferencia.fraccionamientoId],
+    references: [fraccionamientos.id],
+  }),
+  revisor: one(user, {
+    fields: [comprobantesTransferencia.revisadoPor],
+    references: [user.id],
+  }),
+  pago: one(pagos, {
+    fields: [comprobantesTransferencia.pagoId],
+    references: [pagos.id],
   }),
 }));
 

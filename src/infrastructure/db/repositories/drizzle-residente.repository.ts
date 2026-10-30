@@ -20,6 +20,11 @@ const fraccionamientoCobroColumns = {
   representanteId: true,
   tesoreraId: true,
   activo: true,
+  banco: true,
+  clabe: true,
+  titularCuenta: true,
+  numeroCuenta: true,
+  instruccionesTransferencia: true,
 } as const;
 
 type WithRelaciones = typeof perfilesResidente.$inferSelect & {

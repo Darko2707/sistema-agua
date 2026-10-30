@@ -139,6 +139,7 @@ export async function POST(req: Request) {
     return Response.json({
       ok: true,
       reference: storedReference,
+      url: `/api/upload?ref=${encodeURIComponent(storedReference)}`,
       contentType: mimeType,
       size: file.size,
       name: typeof file.name === 'string' ? path.basename(file.name) : `${fileId}${extension}`,
@@ -146,6 +147,52 @@ export async function POST(req: Request) {
   } catch (error) {
     logger.error('file.upload_error', error, { userId: session.user.id, safeFilename });
     return Response.json({ error: 'Error al almacenar el archivo' }, { status: 500 });
+  }
+}
+
+export async function GET(req: Request) {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session?.user) {
+    return Response.json({ error: 'No autorizado' }, { status: 401 });
+  }
+
+  const url = new URL(req.url);
+  const ref = url.searchParams.get('ref');
+  if (!ref || typeof ref !== 'string') {
+    return Response.json({ error: 'Referencia inválida' }, { status: 400 });
+  }
+
+  // Prevención de directory traversal
+  const normalized = path.normalize(ref).replace(/^(\.\.(\/|\\|$))+/, '');
+  if (!normalized.startsWith('uploads/') && !normalized.startsWith('uploads\\')) {
+    return Response.json({ error: 'Ruta no permitida' }, { status: 400 });
+  }
+
+  const extension = path.extname(normalized).toLowerCase();
+  const mimeMap: Record<string, string> = {
+    '.pdf': 'application/pdf',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.webp': 'image/webp',
+  };
+  const contentType = mimeMap[extension] || 'application/octet-stream';
+
+  try {
+    const relativePart = normalized.replace(/^uploads[/\\]/, '');
+    const localPath = path.join(process.cwd(), '.uploads', relativePart);
+    const fileBuffer = await fs.readFile(localPath);
+
+    return new Response(fileBuffer, {
+      status: 200,
+      headers: {
+        'Content-Type': contentType,
+        'Cache-Control': 'private, max-age=3600',
+      },
+    });
+  } catch (error) {
+    logger.warn('file.serve_not_found', { ref: normalized, error });
+    return Response.json({ error: 'Archivo no encontrado' }, { status: 404 });
   }
 }
 

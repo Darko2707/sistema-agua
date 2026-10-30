@@ -90,6 +90,13 @@ export function PagosTesorera() {
   const [mesesSel, setMesesSel] = useState<MesAnio[]>([]);
   const [cargosSel, setCargosSel] = useState<string[]>([]);
 
+  // ── Transferencias ──
+  const [tabActiva, setTabActiva] = useState<'cobros' | 'transferencias'>('cobros');
+  const [visorComprobante, setVisorComprobante] = useState<string | null>(null);
+  const [rechazandoId, setRechazandoId] = useState<string | null>(null);
+  const [motivoRechazo, setMotivoRechazo] = useState('');
+  const [procesandoComprobante, setProcesandoComprobante] = useState<string | null>(null);
+
   const utils    = trpcReact.useUtils();
   const query    = trpcReact.pagos.listarResidentesParaPago.useQuery();
   const mutation = trpcReact.pagos.registrarManualTesorera.useMutation({
@@ -99,6 +106,19 @@ export function PagosTesorera() {
     onSettled: () => {
       void utils.pagos.listarResidentesParaPago.invalidate();
     },
+  });
+
+  // ── Transferencias ──
+  const comprobantesQuery = trpcReact.pagos.obtenerComprobantesPendientes.useQuery();
+  const aprobarMutation   = trpcReact.pagos.aprobarComprobante.useMutation({
+    onSettled: () => { void comprobantesQuery.refetch(); },
+    onSuccess: () => mostrar('Comprobante aprobado y pago registrado', 'ok'),
+    onError: (e) => mostrar(userFacingError(e, 'SISCO-210'), 'error'),
+  });
+  const rechazarMutation  = trpcReact.pagos.rechazarComprobante.useMutation({
+    onSettled: () => { void comprobantesQuery.refetch(); },
+    onSuccess: () => mostrar('Comprobante rechazado', 'ok'),
+    onError: (e) => mostrar(userFacingError(e, 'SISCO-211'), 'error'),
   });
 
   const fraccionamiento = query.data?.fraccionamiento;
@@ -240,6 +260,32 @@ export function PagosTesorera() {
 
   const pagadosEsteMes = residentes.filter(r => r.pagoEsteMes).length;
   const pendientes = residentes.filter(r => r.accionDisponible !== 'adelantar').length;
+  const comprobantes = comprobantesQuery.data ?? [];
+  const comprobantesCount = comprobantes.length;
+
+  async function handleAprobar(id: string) {
+    setProcesandoComprobante(id);
+    try {
+      await aprobarMutation.mutateAsync({ comprobanteId: id });
+    } finally {
+      setProcesandoComprobante(null);
+    }
+  }
+
+  async function handleRechazar(id: string) {
+    if (!motivoRechazo.trim()) {
+      mostrar('Escribe el motivo del rechazo', 'error');
+      return;
+    }
+    setProcesandoComprobante(id);
+    try {
+      await rechazarMutation.mutateAsync({ comprobanteId: id, motivoRechazo: motivoRechazo.trim() });
+      setRechazandoId(null);
+      setMotivoRechazo('');
+    } finally {
+      setProcesandoComprobante(null);
+    }
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, fontFamily: FM }}>
@@ -290,36 +336,74 @@ export function PagosTesorera() {
         </div>
       </div>
 
-      {/* ── Filtros + búsqueda ── */}
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <FilterBtn active={filtro === 'pendientes'} onClick={() => setFiltro('pendientes')} label={`Pendientes (${pendientes})`} />
-          <FilterBtn active={filtro === 'todos'}      onClick={() => setFiltro('todos')}      label={`Todos (${residentes.length})`} />
-        </div>
-
-        <div style={{ position: 'relative', flex: 1, maxWidth: 260 }}>
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={C.textMuted} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-            style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} aria-hidden="true">
-            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-          </svg>
-          <input
-            value={busqueda}
-            onChange={e => setBusqueda(e.target.value)}
-            placeholder="Buscar residente o vivienda..."
-            style={{
-              paddingLeft: 36, paddingRight: 14, height: 38, borderRadius: 12,
-              border: `1.5px solid ${C.border}`, background: C.card,
-              fontSize: 13, fontFamily: FM, color: C.textMain, outline: 'none', width: '100%', maxWidth: 260,
-            }}
-          />
-        </div>
+      {/* ── Selector de pestañas ── */}
+      <div style={{ display: 'flex', gap: 8, borderBottom: `2px solid ${C.border}`, paddingBottom: 0 }}>
+        <button
+          type="button"
+          onClick={() => setTabActiva('cobros')}
+          style={{
+            border: 'none', background: 'none', cursor: 'pointer', padding: '10px 16px',
+            fontFamily: FM, fontWeight: 700, fontSize: 13.5,
+            color: tabActiva === 'cobros' ? C.green : C.textMuted,
+            borderBottom: tabActiva === 'cobros' ? `3px solid ${C.green}` : '3px solid transparent',
+            marginBottom: -2,
+          }}
+        >
+          Cobros presenciales
+        </button>
+        <button
+          type="button"
+          onClick={() => setTabActiva('transferencias')}
+          style={{
+            border: 'none', background: 'none', cursor: 'pointer', padding: '10px 16px',
+            fontFamily: FM, fontWeight: 700, fontSize: 13.5, display: 'flex', alignItems: 'center', gap: 6,
+            color: tabActiva === 'transferencias' ? C.green : C.textMuted,
+            borderBottom: tabActiva === 'transferencias' ? `3px solid ${C.green}` : '3px solid transparent',
+            marginBottom: -2,
+          }}
+        >
+          Verificar transferencias
+          {comprobantesCount > 0 && (
+            <span style={{ background: C.danger, color: '#fff', borderRadius: 20, padding: '2px 7px', fontSize: 11, fontWeight: 800 }}>
+              {comprobantesCount}
+            </span>
+          )}
+        </button>
       </div>
 
-      {/* ── Lista ── */}
-      <div style={{ background: C.card, borderRadius: 20, border: `1px solid ${C.border}`, overflow: 'hidden', boxShadow: '0 4px 16px rgba(20,40,30,.06)' }}>
-        <div style={{ padding: '14px 20px', borderBottom: `1px solid ${C.border}`, fontFamily: FS, fontSize: 14, fontWeight: 700, color: C.textMain }}>
-          {filtro === 'pendientes' ? 'Residentes con pago pendiente' : 'Todos los residentes'}
-        </div>
+      {/* ── TAB: Cobros presenciales ── */}
+      {tabActiva === 'cobros' && (
+        <>
+          {/* Filtros + búsqueda */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <FilterBtn active={filtro === 'pendientes'} onClick={() => setFiltro('pendientes')} label={`Pendientes (${pendientes})`} />
+              <FilterBtn active={filtro === 'todos'}      onClick={() => setFiltro('todos')}      label={`Todos (${residentes.length})`} />
+            </div>
+
+            <div style={{ position: 'relative', flex: 1, maxWidth: 260 }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke={C.textMuted} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} aria-hidden="true">
+                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+              </svg>
+              <input
+                value={busqueda}
+                onChange={e => setBusqueda(e.target.value)}
+                placeholder="Buscar residente o vivienda..."
+                style={{
+                  paddingLeft: 36, paddingRight: 14, height: 38, borderRadius: 12,
+                  border: `1.5px solid ${C.border}`, background: C.card,
+                  fontSize: 13, fontFamily: FM, color: C.textMain, outline: 'none', width: '100%', maxWidth: 260,
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Lista */}
+          <div style={{ background: C.card, borderRadius: 20, border: `1px solid ${C.border}`, overflow: 'hidden', boxShadow: '0 4px 16px rgba(20,40,30,.06)' }}>
+            <div style={{ padding: '14px 20px', borderBottom: `1px solid ${C.border}`, fontFamily: FS, fontSize: 14, fontWeight: 700, color: C.textMain }}>
+              {filtro === 'pendientes' ? 'Residentes con pago pendiente' : 'Todos los residentes'}
+            </div>
 
         {lista.length === 0 ? (
           <div style={{ padding: '48px 20px', textAlign: 'center' }}>
@@ -412,6 +496,10 @@ export function PagosTesorera() {
         )}
       </div>
 
+        </>
+      )}
+
+      {/* Modal cobro presencial */}
       {modalPago && residenteModal && (
         <div
           role="dialog"
@@ -544,6 +632,166 @@ export function PagosTesorera() {
                   {registrando ? 'Registrando...' : `Registrar pago completo (${mesesSeleccionados.length || 0} ${mesesSeleccionados.length === 1 ? 'mes' : 'meses'})`}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── TAB: Verificar transferencias ── */}
+      {tabActiva === 'transferencias' && (
+        <div style={{ background: C.card, borderRadius: 20, border: `1px solid ${C.border}`, overflow: 'hidden', boxShadow: '0 4px 16px rgba(20,40,30,.06)' }}>
+          <div style={{ padding: '14px 20px', borderBottom: `1px solid ${C.border}`, fontFamily: FS, fontSize: 14, fontWeight: 700, color: C.textMain, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>Comprobantes de transferencia pendientes</span>
+            {comprobantesQuery.isLoading && <span style={{ fontSize: 12, color: C.textMuted }}>Cargando…</span>}
+          </div>
+
+          {comprobantes.length === 0 ? (
+            <div style={{ padding: '48px 20px', textAlign: 'center' }}>
+              <span style={{ width: 52, height: 52, borderRadius: '50%', background: C.greenLight, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }} aria-hidden="true">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={C.greenText} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M5 12l4 4 10-11"/>
+                </svg>
+              </span>
+              <p style={{ fontSize: 14, color: C.textMuted, fontWeight: 600 }}>No hay comprobantes pendientes de revisión</p>
+            </div>
+          ) : (
+            <div>
+              {comprobantes.map((comp, i) => {
+                const esPdf = comp.comprobanteUrl?.toLowerCase().endsWith('.pdf') ?? false;
+                const enProceso = procesandoComprobante === comp.id;
+                return (
+                  <div
+                    key={comp.id}
+                    style={{
+                      padding: '16px 20px',
+                      borderBottom: i < comprobantes.length - 1 ? `1px solid ${C.border}` : 'none',
+                      display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', justifyContent: 'space-between',
+                    }}
+                  >
+                    {/* Info residente */}
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: C.textMain }}>
+                        {comp.residenteNombre ?? 'Sin nombre'}
+                      </div>
+                      <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2 }}>
+                        {comp.concepto}
+                      </div>
+                      <div style={{ fontSize: 11.5, color: C.textMuted, marginTop: 2 }}>
+                        {new Date(comp.fechaEmision).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' })}
+                      </div>
+                    </div>
+
+                    {/* Monto */}
+                    <div style={{ textAlign: 'right', minWidth: 80 }}>
+                      <div style={{ fontFamily: FS, fontSize: 18, fontWeight: 800, color: C.green }}>
+                        ${Number(comp.monto).toFixed(2)}
+                      </div>
+                      <div style={{ fontSize: 11, color: C.textMuted }}>MXN</div>
+                    </div>
+
+                    {/* Acciones */}
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                      {comp.comprobanteUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setVisorComprobante(comp.comprobanteUrl ?? null)}
+                          style={{ border: `1.5px solid ${C.border}`, background: '#fff', color: C.textMain, borderRadius: 10, padding: '7px 12px', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}
+                        >
+                          {esPdf ? '📄 Ver PDF' : '🖼 Ver imagen'}
+                        </button>
+                      )}
+                      <ActionBtn
+                        label={enProceso ? 'Procesando…' : 'Aprobar'}
+                        loading={enProceso}
+                        disabled={enProceso || rechazandoId === comp.id}
+                        danger={false}
+                        onClick={() => void handleAprobar(comp.id)}
+                      />
+                      <ActionBtn
+                        label="Rechazar"
+                        loading={false}
+                        disabled={enProceso || rechazandoId === comp.id}
+                        danger
+                        outline
+                        onClick={() => { setRechazandoId(comp.id); setMotivoRechazo(''); }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Modal visor de comprobante */}
+      {visorComprobante && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Visor de comprobante"
+          style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(0,0,0,.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18 }}
+          onClick={e => { if (e.target === e.currentTarget) setVisorComprobante(null); }}
+        >
+          <div style={{ width: '100%', maxWidth: 720, maxHeight: '90vh', background: '#fff', borderRadius: 18, overflow: 'hidden', boxShadow: '0 22px 70px rgba(0,0,0,.35)', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '12px 18px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontFamily: FS, fontWeight: 700, fontSize: 15, color: C.textMain }}>Comprobante de transferencia</span>
+              <button type="button" aria-label="Cerrar visor" onClick={() => setVisorComprobante(null)} style={{ border: 'none', background: C.greenLight, color: C.green, borderRadius: 10, width: 34, height: 34, cursor: 'pointer', fontWeight: 800 }}>×</button>
+            </div>
+            <div style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, background: '#F8F8F6' }}>
+              {visorComprobante.toLowerCase().endsWith('.pdf') ? (
+                <iframe
+                  src={visorComprobante}
+                  title="Comprobante PDF"
+                  style={{ width: '100%', height: '70vh', border: 'none', borderRadius: 8 }}
+                />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={visorComprobante}
+                  alt="Comprobante de transferencia"
+                  style={{ maxWidth: '100%', maxHeight: '70vh', objectFit: 'contain', borderRadius: 8 }}
+                />
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de rechazo */}
+      {rechazandoId && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="titulo-rechazo"
+          style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(0,0,0,.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18 }}
+          onClick={e => { if (e.target === e.currentTarget && !procesandoComprobante) { setRechazandoId(null); setMotivoRechazo(''); } }}
+        >
+          <div style={{ width: '100%', maxWidth: 420, background: '#fff', borderRadius: 18, padding: 20, boxShadow: '0 22px 70px rgba(0,0,0,.25)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+              <h2 id="titulo-rechazo" style={{ fontFamily: FS, fontSize: 17, color: C.danger, fontWeight: 800, margin: 0 }}>Rechazar comprobante</h2>
+              <button type="button" aria-label="Cerrar" onClick={() => { setRechazandoId(null); setMotivoRechazo(''); }} disabled={!!procesandoComprobante} style={{ border: 'none', background: C.dangerBg, color: C.danger, borderRadius: 10, width: 34, height: 34, cursor: 'pointer', fontWeight: 800 }}>×</button>
+            </div>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 700, color: C.textMain, marginBottom: 6 }}>
+              Motivo del rechazo <span style={{ color: C.danger }}>*</span>
+            </label>
+            <textarea
+              value={motivoRechazo}
+              onChange={e => setMotivoRechazo(e.target.value)}
+              rows={4}
+              placeholder="Ej: El comprobante no corresponde al monto indicado..."
+              style={{ width: '100%', borderRadius: 12, border: `1.5px solid ${C.border}`, padding: '10px 12px', fontFamily: FM, fontSize: 13, color: C.textMain, resize: 'vertical', boxSizing: 'border-box' }}
+            />
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
+              <button type="button" onClick={() => { setRechazandoId(null); setMotivoRechazo(''); }} disabled={!!procesandoComprobante} style={{ border: `1px solid ${C.border}`, background: '#fff', color: C.textMain, borderRadius: 10, padding: '9px 14px', fontWeight: 800, cursor: 'pointer' }}>Cancelar</button>
+              <button
+                type="button"
+                onClick={() => void handleRechazar(rechazandoId)}
+                disabled={!!procesandoComprobante || !motivoRechazo.trim()}
+                style={{ border: 'none', background: C.danger, color: '#fff', borderRadius: 10, padding: '9px 14px', fontWeight: 800, cursor: procesandoComprobante || !motivoRechazo.trim() ? 'not-allowed' : 'pointer', opacity: procesandoComprobante || !motivoRechazo.trim() ? .65 : 1 }}
+              >
+                {procesandoComprobante ? 'Rechazando…' : 'Confirmar rechazo'}
+              </button>
             </div>
           </div>
         </div>

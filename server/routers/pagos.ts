@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { router, protectedProcedure, roleProcedure, operationalRoleProcedure } from '../trpc';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
-import { and, eq, inArray, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne } from 'drizzle-orm';
 
 import { residenteRepo, pagoRepo } from '@/src/infrastructure/db/repositories';
 import { RegistrarPagoManualHandler } from '@/src/application/pagos/commands/registrar-pago-manual.handler';
@@ -11,7 +11,16 @@ import { ResumenMesHandler } from '@/src/application/pagos/queries/resumen-mes.h
 import { MetricasAdminHandler } from '@/src/application/pagos/queries/metricas-admin.handler';
 // eslint-disable-next-line no-restricted-imports -- inline MP webhook queries not yet in a repo
 import { db } from '@/db';
-import { auditoria, cargosServicios, fraccionamientoServicios, servicios } from '@/db/schema';
+import {
+  auditoria,
+  cargosServicios,
+  comprobantesTransferencia,
+  fraccionamientoServicios,
+  fraccionamientos,
+  perfilesResidente,
+  servicios,
+  user,
+} from '@/db/schema';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
 import {
   compararPeriodos,
@@ -521,5 +530,287 @@ export const pagosRouter = router({
       });
       if (registrados > 0) schedulePushDispatch();
       return { registrados, omitidos };
+    }),
+
+  // ── Residente: registrar comprobante de transferencia ─────────────────────
+  registrarComprobanteTransferencia: protectedProcedure
+    .input(z.object({
+      monto:         z.number().positive(),
+      concepto:      z.string().trim().min(1).max(500),
+      comprobanteUrl: z.string().trim().min(1).max(2000),
+      metadatos: z.object({
+        meses: z.array(z.object({ mes: z.number().int().min(1).max(12), anio: z.number().int().min(2020).max(2100) })).optional(),
+        cargosServicioIds: z.array(z.string().uuid()).optional(),
+        esReconexion: z.boolean().optional(),
+        notas: z.string().max(500).optional(),
+      }).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const perfil = await residenteRepo.findByUserId(ctx.user.id);
+      if (!perfil) throw new TRPCError({ code: 'NOT_FOUND', message: 'Perfil no encontrado' });
+      if (!perfil.fraccionamientoId) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes fraccionamiento asignado' });
+
+      // Verificar si ya tiene un comprobante pendiente
+      const [existente] = await db
+        .select({ id: comprobantesTransferencia.id })
+        .from(comprobantesTransferencia)
+        .where(and(
+          eq(comprobantesTransferencia.perfilId, perfil.id),
+          eq(comprobantesTransferencia.fraccionamientoId, perfil.fraccionamientoId),
+          eq(comprobantesTransferencia.estado, 'pendiente_validacion'),
+        ))
+        .limit(1);
+
+      if (existente) {
+        throw new TRPCError({
+          code: 'CONFLICT',
+          message: 'Ya tienes un comprobante en revisión. Espera la confirmación de tu tesorera antes de enviar otro.',
+        });
+      }
+
+      const [creado] = await db.insert(comprobantesTransferencia).values({
+        perfilId:          perfil.id,
+        fraccionamientoId: perfil.fraccionamientoId,
+        monto:             input.monto.toFixed(2),
+        concepto:          input.concepto,
+        comprobanteUrl:    input.comprobanteUrl,
+        estado:            'pendiente_validacion',
+        metadatos:         input.metadatos ?? null,
+      }).returning({ id: comprobantesTransferencia.id });
+
+      logger.info('comprobante_transferencia.creado', {
+        id: creado?.id,
+        perfilId: perfil.id,
+        fraccionamientoId: perfil.fraccionamientoId,
+        monto: input.monto,
+      });
+
+      return { ok: true, id: creado?.id };
+    }),
+
+  // ── Residente: consultar si tiene un comprobante pendiente ─────────────────
+  miComprobantePendiente: protectedProcedure
+    .query(async ({ ctx }) => {
+      const perfil = await residenteRepo.findByUserId(ctx.user.id);
+      if (!perfil?.fraccionamientoId) return null;
+
+      const [comprobante] = await db
+        .select({
+          id:             comprobantesTransferencia.id,
+          estado:         comprobantesTransferencia.estado,
+          monto:          comprobantesTransferencia.monto,
+          concepto:       comprobantesTransferencia.concepto,
+          fechaEmision:   comprobantesTransferencia.fechaEmision,
+          motivoRechazo:  comprobantesTransferencia.motivoRechazo,
+        })
+        .from(comprobantesTransferencia)
+        .where(and(
+          eq(comprobantesTransferencia.perfilId, perfil.id),
+          eq(comprobantesTransferencia.fraccionamientoId, perfil.fraccionamientoId),
+        ))
+        .orderBy(desc(comprobantesTransferencia.creadoEn))
+        .limit(1);
+
+      return comprobante ?? null;
+    }),
+
+  // ── Tesorería: listar comprobantes pendientes ─────────────────────────────
+  obtenerComprobantesPendientes: operationalRoleProcedure('tesorera', 'admin')
+    .query(async ({ ctx }) => {
+      if (!ctx.user.fraccionamientoId) return [];
+
+      const comprobantes = await db
+        .select({
+          id:             comprobantesTransferencia.id,
+          estado:         comprobantesTransferencia.estado,
+          monto:          comprobantesTransferencia.monto,
+          concepto:       comprobantesTransferencia.concepto,
+          comprobanteUrl: comprobantesTransferencia.comprobanteUrl,
+          fechaEmision:   comprobantesTransferencia.fechaEmision,
+          motivoRechazo:  comprobantesTransferencia.motivoRechazo,
+          metadatos:      comprobantesTransferencia.metadatos,
+          perfilId:       comprobantesTransferencia.perfilId,
+          residenteNombre: user.name,
+          residenteEmail:  user.email,
+          edificio:        perfilesResidente.edificio,
+          departamento:    perfilesResidente.departamento,
+        })
+        .from(comprobantesTransferencia)
+        .innerJoin(perfilesResidente, eq(perfilesResidente.id, comprobantesTransferencia.perfilId))
+        .innerJoin(user, eq(user.id, perfilesResidente.userId))
+        .where(and(
+          eq(comprobantesTransferencia.fraccionamientoId, ctx.user.fraccionamientoId),
+          eq(comprobantesTransferencia.estado, 'pendiente_validacion'),
+        ))
+        .orderBy(desc(comprobantesTransferencia.creadoEn));
+
+      return comprobantes;
+    }),
+
+  // ── Tesorería: aprobar comprobante ────────────────────────────────────────
+  aprobarComprobante: operationalRoleProcedure('tesorera', 'admin')
+    .input(z.object({
+      comprobanteId: z.string().uuid(),
+      meses: z.array(z.object({
+        mes:  z.number().int().min(1).max(12),
+        anio: z.number().int().min(2020).max(2100),
+      })).min(1).max(36).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.user.fraccionamientoId) throw new TRPCError({ code: 'FORBIDDEN', message: 'Sin fraccionamiento asignado' });
+
+      return db.transaction(async (tx) => {
+        // Lock del comprobante
+        const [comprobante] = await tx
+          .select()
+          .from(comprobantesTransferencia)
+          .where(and(
+            eq(comprobantesTransferencia.id, input.comprobanteId),
+            eq(comprobantesTransferencia.fraccionamientoId, ctx.user.fraccionamientoId!),
+            eq(comprobantesTransferencia.estado, 'pendiente_validacion'),
+          ))
+          .limit(1);
+
+        if (!comprobante) throw new TRPCError({ code: 'NOT_FOUND', message: 'Comprobante no encontrado o ya procesado' });
+
+        const perfil = await residenteRepo.findById(comprobante.perfilId);
+        if (!perfil) throw new TRPCError({ code: 'NOT_FOUND', message: 'Residente no encontrado' });
+
+        const fraccionamiento = await tx.query.fraccionamientos.findFirst({
+          where: (f, { and, eq }) => and(eq(f.id, ctx.user.fraccionamientoId!), eq(f.activo, true)),
+          columns: { montoMensual: true, montoReconexion: true, representanteId: true },
+        });
+        if (!fraccionamiento) throw new TRPCError({ code: 'FORBIDDEN', message: 'Fraccionamiento no disponible' });
+
+        // Determinar meses a registrar (del metadato del comprobante o del input)
+        const mesesInput = input.meses ?? (comprobante.metadatos as { meses?: Array<{mes:number;anio:number}> } | null)?.meses;
+
+        let pagoId: string | null = null;
+        if (mesesInput && mesesInput.length > 0) {
+          const servicioAgua = residenteRepo.findWaterServiceConfig
+            ? await residenteRepo.findWaterServiceConfig(perfil.id)
+            : null;
+          const esReconexion = (comprobante.metadatos as { esReconexion?: boolean } | null)?.esReconexion ?? false;
+          const loteId = randomUUID();
+          const fechaPago = new Date();
+
+          const pagosLote = mesesInput.map((periodo, index) => {
+            const incluyeReconexion = index === 0 && esReconexion;
+            const montoBase = calcularMontoServicio(
+              servicioAgua ?? { montoMensual: fraccionamiento.montoMensual, montoReconexion: fraccionamiento.montoReconexion, conCorteFisico: true },
+              { incluyeReconexion },
+            );
+            const desglose = calcularDesgloseServicio(montoBase, 'manual');
+            return {
+              perfilId:               perfil.id,
+              fraccionamientoId:      perfil.fraccionamientoId ?? undefined,
+              representanteId:        fraccionamiento.representanteId ?? null,
+              mes:                    periodo.mes,
+              anio:                   periodo.anio,
+              monto:                  desglose.total,
+              montoBase:              desglose.montoBase,
+              iva:                    desglose.iva,
+              comisionMercadoPago:    desglose.comisionMercadoPago,
+              retencionIsr:           desglose.retencionIsr,
+              retencionIva:           desglose.retencionIva,
+              montoNetoRepresentante: desglose.montoNetoRepresentante,
+              mercadoPagoCollectorId: null,
+              estado:                 'pagado' as const,
+              metodo:                 'transferencia' as const,
+              folio:                  FolioVO.generate().toString(),
+              esReconexion:           incluyeReconexion,
+              fechaPago,
+            };
+          });
+
+          const batchResult = await pagoRepo.createManualBatchWithLock({
+            perfilId: perfil.id,
+            pagos: pagosLote,
+            actualizarEstadoAgua: true,
+            pushNotification: {
+              userId: perfil.userId,
+              perfilId: perfil.id,
+              tipo: 'pago_confirmado',
+              mensaje: 'Tu transferencia fue verificada y tu pago confirmado. Abre la app para ver los detalles.',
+              dedupeKey: `pago_transferencia_confirmado:${perfil.id}:${loteId}`,
+            },
+            auditoria: {
+              actorId: ctx.user.id,
+              accion: 'pago.transferencia.aprobado',
+              metodo: 'transferencia',
+            },
+            politica: { tipo: 'tesorera_escalonada' },
+          });
+          pagoId = batchResult.pagos[0]?.id ?? null;
+          if (batchResult.pagos.length > 0) schedulePushDispatch();
+        }
+
+        // Marcar comprobante como aprobado
+        await tx.update(comprobantesTransferencia).set({
+          estado:        'aprobado',
+          fechaRevision: new Date(),
+          revisadoPor:   ctx.user.id,
+          pagoId,
+          actualizadoEn: new Date(),
+        }).where(eq(comprobantesTransferencia.id, input.comprobanteId));
+
+        await tx.insert(auditoria).values({
+          actorId:   ctx.user.id,
+          accion:    'comprobante_transferencia.aprobado',
+          entidad:   'comprobantes_transferencia',
+          entidadId: input.comprobanteId,
+          detalle:   { perfilId: perfil.id, pagoId, meses: mesesInput },
+        });
+
+        logger.info('comprobante_transferencia.aprobado', { id: input.comprobanteId, pagoId, tesoreraId: ctx.user.id });
+        return { ok: true, pagoId };
+      });
+    }),
+
+  // ── Tesorería: rechazar comprobante ──────────────────────────────────────
+  rechazarComprobante: operationalRoleProcedure('tesorera', 'admin')
+    .input(z.object({
+      comprobanteId: z.string().uuid(),
+      motivoRechazo: z.string().trim().min(5, 'El motivo debe tener al menos 5 caracteres').max(500),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (!ctx.user.fraccionamientoId) throw new TRPCError({ code: 'FORBIDDEN', message: 'Sin fraccionamiento asignado' });
+
+      const [comprobante] = await db
+        .select({ id: comprobantesTransferencia.id, perfilId: comprobantesTransferencia.perfilId })
+        .from(comprobantesTransferencia)
+        .where(and(
+          eq(comprobantesTransferencia.id, input.comprobanteId),
+          eq(comprobantesTransferencia.fraccionamientoId, ctx.user.fraccionamientoId),
+          eq(comprobantesTransferencia.estado, 'pendiente_validacion'),
+        ))
+        .limit(1);
+
+      if (!comprobante) throw new TRPCError({ code: 'NOT_FOUND', message: 'Comprobante no encontrado o ya procesado' });
+
+      const perfil = await residenteRepo.findById(comprobante.perfilId);
+
+      await db.update(comprobantesTransferencia).set({
+        estado:        'rechazado',
+        motivoRechazo: input.motivoRechazo,
+        fechaRevision: new Date(),
+        revisadoPor:   ctx.user.id,
+        actualizadoEn: new Date(),
+      }).where(eq(comprobantesTransferencia.id, input.comprobanteId));
+
+      if (perfil) {
+        schedulePushDispatch();
+      }
+
+      await db.insert(auditoria).values({
+        actorId:   ctx.user.id,
+        accion:    'comprobante_transferencia.rechazado',
+        entidad:   'comprobantes_transferencia',
+        entidadId: input.comprobanteId,
+        detalle:   { perfilId: comprobante.perfilId, motivo: input.motivoRechazo },
+      });
+
+      logger.info('comprobante_transferencia.rechazado', { id: input.comprobanteId, tesoreraId: ctx.user.id });
+      return { ok: true };
     }),
 });

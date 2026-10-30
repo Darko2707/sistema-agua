@@ -132,6 +132,12 @@ export function TrabajadorDashboard() {
   const [menuOpen, setMenuOpen]   = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
+  // ── Modal evidencia corte ──
+  const [modalCorte, setModalCorte] = useState<{ perfilId: string; nombre: string } | null>(null);
+  const [fotoCorte, setFotoCorte]   = useState<File | null>(null);
+  const [previewCorte, setPreviewCorte] = useState<string | null>(null);
+  const [subiendoFoto, setSubiendoFoto] = useState(false);
+
   useEffect(() => {
     function handler(e: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) setMenuOpen(false);
@@ -173,13 +179,37 @@ export function TrabajadorDashboard() {
   const total              = pendientesCorte.length + pendientesReconexion.length;
 
   async function handleCorte(perfilId: string) {
+    // Abre modal de evidencia fotográfica en lugar de confirmar directamente
+    const job = pendientesCorte.find(j => j.id === perfilId);
+    setFotoCorte(null);
+    setPreviewCorte(null);
+    setModalCorte({ perfilId, nombre: job?.usuario?.name ?? 'Residente' });
+  }
+
+  async function handleSubmitCorte() {
+    if (!modalCorte) return;
+    const { perfilId } = modalCorte;
+    setSubiendoFoto(true);
     setProcesando(perfilId);
     setError(null);
     try {
-      await confirmarCorte({ perfilId });
+      let evidenciaUrl: string | undefined;
+      if (fotoCorte) {
+        const fd = new FormData();
+        fd.append('file', fotoCorte);
+        const resp = await fetch('/api/upload', { method: 'POST', body: fd });
+        if (!resp.ok) throw new Error('No se pudo subir la fotografía de evidencia');
+        const data = await resp.json() as { url?: string };
+        evidenciaUrl = data.url;
+      }
+      await confirmarCorte({ perfilId, evidenciaUrl });
+      setModalCorte(null);
+      setFotoCorte(null);
+      setPreviewCorte(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al confirmar corte');
     } finally {
+      setSubiendoFoto(false);
       setProcesando(null);
     }
   }
@@ -370,6 +400,103 @@ export function TrabajadorDashboard() {
           </div>
         </div>
       </div>
+
+      {/* ── Modal evidencia fotográfica de corte ── */}
+      {modalCorte && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="titulo-evidencia-corte"
+          style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 0 }}
+          onClick={e => { if (e.target === e.currentTarget && !subiendoFoto) { setModalCorte(null); setFotoCorte(null); setPreviewCorte(null); } }}
+        >
+          <div style={{ width: '100%', maxWidth: 460, background: '#fff', borderRadius: '20px 20px 0 0', padding: '20px 20px 32px', boxShadow: '0 -8px 40px rgba(0,0,0,.22)' }}>
+            {/* Handle bar */}
+            <div style={{ width: 40, height: 4, background: '#E4E1D5', borderRadius: 4, margin: '0 auto 18px' }} />
+
+            <h2 id="titulo-evidencia-corte" style={{ fontFamily: FS, fontSize: 17, fontWeight: 800, color: C.bgHeader, margin: '0 0 4px' }}>
+              Confirmar corte
+            </h2>
+            <p style={{ fontSize: 13, color: C.textMuted, margin: '0 0 18px' }}>
+              {modalCorte.nombre} · Adjunta una foto como evidencia (opcional)
+            </p>
+
+            {/* Selector de foto */}
+            <label
+              style={{
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                gap: 10, border: `2px dashed ${previewCorte ? C.ok : '#DEDACB'}`,
+                borderRadius: 16, padding: '20px 16px', cursor: 'pointer', background: previewCorte ? C.okBg : '#FAFAF8',
+                marginBottom: 16, minHeight: previewCorte ? 'auto' : 100,
+              }}
+            >
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                style={{ display: 'none' }}
+                onChange={e => {
+                  const file = e.target.files?.[0] ?? null;
+                  setFotoCorte(file);
+                  if (file) {
+                    const url = URL.createObjectURL(file);
+                    setPreviewCorte(url);
+                  } else {
+                    setPreviewCorte(null);
+                  }
+                }}
+              />
+              {previewCorte ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={previewCorte}
+                  alt="Vista previa de evidencia"
+                  style={{ maxWidth: '100%', maxHeight: 200, objectFit: 'contain', borderRadius: 10 }}
+                />
+              ) : (
+                <>
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke={C.textMuted} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                    <circle cx="12" cy="13" r="4"/>
+                  </svg>
+                  <span style={{ fontSize: 13, color: C.textMuted, fontWeight: 600, textAlign: 'center' }}>
+                    Toca para tomar foto o seleccionar imagen
+                  </span>
+                </>
+              )}
+            </label>
+
+            {previewCorte && (
+              <button
+                type="button"
+                onClick={() => { setFotoCorte(null); setPreviewCorte(null); }}
+                style={{ display: 'block', width: '100%', marginBottom: 12, border: '1px solid #DEDACB', background: '#fff', color: C.textMuted, borderRadius: 12, padding: '8px 0', fontSize: 12.5, fontWeight: 700, fontFamily: FM, cursor: 'pointer' }}
+              >
+                Quitar foto
+              </button>
+            )}
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button
+                type="button"
+                onClick={() => { setModalCorte(null); setFotoCorte(null); setPreviewCorte(null); }}
+                disabled={subiendoFoto}
+                style={{ flex: 1, border: '1.5px solid #DEDACB', background: '#fff', color: C.textMain, borderRadius: 14, padding: '12px 0', fontSize: 14, fontWeight: 700, fontFamily: FM, cursor: subiendoFoto ? 'not-allowed' : 'pointer', opacity: subiendoFoto ? 0.6 : 1 }}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSubmitCorte()}
+                disabled={subiendoFoto}
+                style={{ flex: 2, border: 'none', background: subiendoFoto ? '#888' : C.danger, color: '#fff', borderRadius: 14, padding: '12px 0', fontSize: 14, fontWeight: 800, fontFamily: FM, cursor: subiendoFoto ? 'not-allowed' : 'pointer', opacity: subiendoFoto ? 0.8 : 1 }}
+              >
+                {subiendoFoto ? 'Enviando...' : 'Confirmar y enviar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

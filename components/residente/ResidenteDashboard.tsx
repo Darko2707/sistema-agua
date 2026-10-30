@@ -289,6 +289,17 @@ export function ResidenteDashboard() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
 
+  // ── Estados para pago por transferencia ────────────────────────────────────
+  const [modalTransferencia, setModalTransferencia] = useState(false);
+  const [archivoComprobante, setArchivoComprobante] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [subiendoComprobante, setSubiendoComprobante] = useState(false);
+  const [errorTransferencia, setErrorTransferencia] = useState<string | null>(null);
+  const [mensajeTransferencia, setMensajeTransferencia] = useState<string | null>(null);
+
+  const registrarComprobanteMutation = trpcReact.pagos.registrarComprobanteTransferencia.useMutation();
+  const { data: comprobantePendiente } = trpcReact.pagos.miComprobantePendiente.useQuery();
+
   // Estados de selección independientes por servicio
   const [mesesAgua, setMesesAgua] = useState(1);
   const [incluirAgua, setIncluirAgua] = useState(true);
@@ -481,6 +492,43 @@ export function ResidenteDashboard() {
       servicios: adelantosServicios,
       cargoIds: [],
     });
+  }
+
+  async function handleSubirComprobante() {
+    if (!archivoComprobante) { setErrorTransferencia('Selecciona un archivo de comprobante'); return; }
+    setSubiendoComprobante(true);
+    setErrorTransferencia(null);
+    try {
+      const formData = new FormData();
+      formData.append('file', archivoComprobante);
+      const res = await fetch('/api/upload', { method: 'POST', body: formData });
+      if (!res.ok) {
+        const data = await res.json() as { error?: string };
+        throw new Error(data.error ?? 'Error al subir el archivo');
+      }
+      const uploaded = await res.json() as { url?: string; reference?: string };
+      const comprobanteUrl = uploaded.url ?? `/api/upload?ref=${encodeURIComponent(uploaded.reference ?? '')}`;
+
+      const concepto = `Pago mensual agua${mesesAgua > 1 ? ` (${mesesAgua} meses)` : ''} – ${periodoTarjetaLabel}`;
+      await registrarComprobanteMutation.mutateAsync({
+        monto: totalBaseCheckout,
+        concepto,
+        comprobanteUrl,
+        metadatos: {
+          meses: periodosPendientesTarjeta.slice(0, mesesAgua),
+          esReconexion,
+        },
+      });
+      setMensajeTransferencia('¡Comprobante enviado! Tu tesorera lo revisará en breve.');
+      setModalTransferencia(false);
+      setArchivoComprobante(null);
+      setPreviewUrl(null);
+      void utils.pagos.miComprobantePendiente.invalidate();
+    } catch (err: unknown) {
+      setErrorTransferencia(err instanceof Error ? err.message : 'Error al enviar el comprobante');
+    } finally {
+      setSubiendoComprobante(false);
+    }
   }
 
   // Datos para la tarjeta de Agua
@@ -678,6 +726,63 @@ export function ResidenteDashboard() {
               </div>
             </div>
           )}
+
+          {/* ── Banner: comprobante pendiente ── */}
+          {comprobantePendiente && comprobantePendiente.estado === 'pendiente_validacion' && (
+            <div role="status" style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 20, padding: '15px 16px', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+              <span style={{ flexShrink: 0, width: 36, height: 36, borderRadius: '50%', background: '#93C5FD', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Clock size={17} color="#fff" aria-hidden="true" />
+              </span>
+              <div>
+                <div style={{ fontFamily: FB, fontWeight: 700, fontSize: 15, color: '#1E40AF' }}>Comprobante de transferencia en revisión</div>
+                <div style={{ fontSize: 13, color: '#3B82F6', marginTop: 3, lineHeight: 1.5 }}>
+                  Enviaste un comprobante de ${Number(comprobantePendiente.monto).toFixed(2)} MXN el {formatFecha(comprobantePendiente.fechaEmision)}. Tu tesorera lo verificará pronto.
+                </div>
+              </div>
+            </div>
+          )}
+          {comprobantePendiente && comprobantePendiente.estado === 'rechazado' && mensajeTransferencia === null && (
+            <div role="alert" style={{ background: '#FBEAE9', border: '1px solid #F3BFBF', borderRadius: 20, padding: '15px 16px', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+              <span style={{ flexShrink: 0, width: 36, height: 36, borderRadius: '50%', background: '#F4A0A0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <XCircle size={17} color="#fff" aria-hidden="true" />
+              </span>
+              <div>
+                <div style={{ fontFamily: FB, fontWeight: 700, fontSize: 15, color: C.pendingText }}>Comprobante rechazado</div>
+                <div style={{ fontSize: 13, color: '#B5683C', marginTop: 3, lineHeight: 1.5 }}>
+                  {comprobantePendiente.motivoRechazo ?? 'El comprobante no fue aceptado.'} Puedes enviar uno nuevo.
+                </div>
+              </div>
+            </div>
+          )}
+          {mensajeTransferencia && (
+            <div role="status" style={{ background: '#E6F4EC', border: '1px solid #B7E3C8', borderRadius: 20, padding: '14px 16px', fontSize: 14, color: C.successText, fontWeight: 600 }}>
+              {mensajeTransferencia}
+            </div>
+          )}
+
+          {/* ── Banner: pagar por transferencia ── */}
+          {!comprobantePendiente || comprobantePendiente.estado === 'rechazado' ? (
+            perfil.fraccionamiento?.clabe || perfil.fraccionamiento?.numeroCuenta ? (
+              <div style={{ background: 'linear-gradient(135deg, #E8F5E9 0%, #F1F8E9 100%)', border: '1px solid #C8E6C9', borderRadius: 20, padding: '16px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span style={{ width: 38, height: 38, borderRadius: '50%', background: '#A5D6A7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2E7D32" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="13" rx="2"/><path d="M16 8V6a4 4 0 00-8 0v2"/><path d="M12 13v4"/></svg>
+                  </span>
+                  <div>
+                    <div style={{ fontFamily: FB, fontWeight: 700, fontSize: 14.5, color: '#2E7D32' }}>¿Quieres pagar con transferencia?</div>
+                    <div style={{ fontSize: 12, color: '#388E3C', marginTop: 2 }}>Sin comisiones de Mercado Pago</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setModalTransferencia(true); setErrorTransferencia(null); setMensajeTransferencia(null); }}
+                  style={{ background: '#2E7D32', color: '#fff', border: 'none', borderRadius: 14, padding: '9px 16px', cursor: 'pointer', fontFamily: FB, fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}
+                >
+                  Ver datos
+                </button>
+              </div>
+            ) : null
+          ) : null}
 
           {/* ── Services section (Uniform symmetrical cards) ── */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -915,6 +1020,142 @@ export function ResidenteDashboard() {
           </div>
         </div>
       </div>
+
+      {/* ── Modal: datos bancarios + subir comprobante ── */}
+      {modalTransferencia && perfil.fraccionamiento && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+          onClick={(e) => { if (e.target === e.currentTarget) setModalTransferencia(false); }}
+        >
+          <div style={{ background: '#fff', borderRadius: 26, padding: 26, width: '100%', maxWidth: 440, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 60px rgba(0,0,0,0.22)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 18 }}>
+              <div>
+                <div style={{ fontFamily: FB, fontSize: 18, fontWeight: 800, color: '#2E7D32' }}>Pago por transferencia</div>
+                <div style={{ fontSize: 12, color: '#388E3C', marginTop: 3 }}>Sin comisiones · {perfil.fraccionamiento.nombre}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setModalTransferencia(false)}
+                aria-label="Cerrar"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#888" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+
+            {/* Datos bancarios */}
+            <div style={{ background: '#F1F8E9', borderRadius: 16, padding: '14px 16px', marginBottom: 16, fontSize: 13 }}>
+              <div style={{ fontFamily: FB, fontWeight: 700, fontSize: 14, color: '#2E7D32', marginBottom: 10 }}>Datos para tu transferencia (SPEI)</div>
+              {perfil.fraccionamiento.banco && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ color: '#555' }}>Banco</span>
+                  <span style={{ fontWeight: 700, color: C.textMain }}>{perfil.fraccionamiento.banco}</span>
+                </div>
+              )}
+              {perfil.fraccionamiento.titularCuenta && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ color: '#555' }}>Titular</span>
+                  <span style={{ fontWeight: 700, color: C.textMain }}>{perfil.fraccionamiento.titularCuenta}</span>
+                </div>
+              )}
+              {perfil.fraccionamiento.clabe && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ color: '#555' }}>CLABE</span>
+                  <span style={{ fontFamily: 'monospace', fontWeight: 700, color: C.textMain }}>{perfil.fraccionamiento.clabe}</span>
+                </div>
+              )}
+              {perfil.fraccionamiento.numeroCuenta && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ color: '#555' }}>No. de cuenta</span>
+                  <span style={{ fontFamily: 'monospace', fontWeight: 700, color: C.textMain }}>{perfil.fraccionamiento.numeroCuenta}</span>
+                </div>
+              )}
+              {perfil.fraccionamiento.instruccionesTransferencia && (
+                <div style={{ marginTop: 10, background: '#FFF9C4', borderRadius: 10, padding: '8px 10px', fontSize: 12, color: '#6D4C00' }}>
+                  📝 {perfil.fraccionamiento.instruccionesTransferencia}
+                </div>
+              )}
+            </div>
+
+            {/* Desglose del monto */}
+            <div style={{ background: '#F8F4EF', borderRadius: 14, padding: '12px 14px', marginBottom: 16, fontSize: 13 }}>
+              <div style={{ fontFamily: FB, fontWeight: 700, fontSize: 13.5, color: C.green, marginBottom: 8 }}>Monto a transferir</div>
+              {incluirAgua && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ color: '#666' }}>Agua ({mesesAgua} mes{mesesAgua > 1 ? 'es' : ''})</span>
+                  <span style={{ fontWeight: 700 }}>${montoBaseAgua.toFixed(2)}</span>
+                </div>
+              )}
+              {esReconexion && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ color: '#666' }}>Cargo reconexión</span>
+                  <span style={{ fontWeight: 700 }}>${montoReconexion.toFixed(2)}</span>
+                </div>
+              )}
+              <div style={{ height: 1, background: '#E0D8CC', margin: '6px 0' }}/>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: 14.5, color: C.green }}>
+                <span>Total</span>
+                <span>${totalBaseCheckout.toFixed(2)} MXN</span>
+              </div>
+              <div style={{ fontSize: 11, color: '#777', marginTop: 4 }}>Sin comisión de Mercado Pago ✓</div>
+            </div>
+
+            {/* Subir comprobante */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontFamily: FB, fontWeight: 700, fontSize: 14, color: C.textMain, marginBottom: 8 }}>
+                Adjunta tu comprobante de pago
+              </label>
+              <input
+                type="file"
+                accept="image/*,application/pdf"
+                onChange={(e) => {
+                  const file = e.target.files?.[0] ?? null;
+                  setArchivoComprobante(file);
+                  if (file && file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = (ev) => setPreviewUrl(ev.target?.result as string);
+                    reader.readAsDataURL(file);
+                  } else {
+                    setPreviewUrl(null);
+                  }
+                }}
+                style={{ display: 'block', width: '100%', fontSize: 13, padding: '10px', border: '2px dashed #C8E6C9', borderRadius: 12, cursor: 'pointer', background: '#F9FFF9', boxSizing: 'border-box' }}
+              />
+              {previewUrl && (
+                <div style={{ marginTop: 10, borderRadius: 12, overflow: 'hidden', border: '1px solid #C8E6C9' }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={previewUrl} alt="Vista previa del comprobante" style={{ width: '100%', maxHeight: 200, objectFit: 'contain', display: 'block' }} />
+                </div>
+              )}
+              {archivoComprobante && !previewUrl && (
+                <div style={{ marginTop: 8, fontSize: 12, color: '#388E3C' }}>📄 {archivoComprobante.name}</div>
+              )}
+            </div>
+
+            {errorTransferencia && (
+              <div role="alert" style={{ background: '#FBEAE9', borderRadius: 12, padding: '10px 14px', fontSize: 13, color: C.pendingText, fontWeight: 600, marginBottom: 12 }}>
+                {errorTransferencia}
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={handleSubirComprobante}
+              disabled={subiendoComprobante || !archivoComprobante}
+              style={{
+                width: '100%', padding: '15px', background: subiendoComprobante || !archivoComprobante ? '#A5D6A7' : '#2E7D32',
+                color: '#fff', border: 'none', borderRadius: 16, cursor: subiendoComprobante || !archivoComprobante ? 'not-allowed' : 'pointer',
+                fontFamily: FB, fontSize: 15, fontWeight: 700, transition: 'background .15s',
+              }}
+            >
+              {subiendoComprobante ? 'Enviando...' : 'Enviar comprobante'}
+            </button>
+            <div style={{ textAlign: 'center', fontSize: 11.5, color: C.textWarm3, marginTop: 10 }}>
+              Tu tesorera revisará y confirmará el pago manualmente.
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
