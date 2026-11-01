@@ -68,6 +68,56 @@ const PAYMENT_RESULT = {
   },
 } as const;
 
+// ── Compresión de imágenes en cliente ──────────────────────────────────────────
+/**
+ * Comprime una imagen usando canvas si supera `maxBytes` (por defecto 2 MB).
+ * Devuelve un nuevo File comprimido en JPEG o el archivo original si ya cumple
+ * con el límite o si no es una imagen (p.ej., PDF).
+ */
+async function comprimirImagen(file: File, maxBytes = 2 * 1024 * 1024): Promise<File> {
+  if (!file.type.startsWith('image/') || file.size <= maxBytes) return file;
+
+  return new Promise<File>((resolve) => {
+    const img = new window.Image();
+    const objectUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
+      const canvas = document.createElement('canvas');
+      // Escalar proporcionalmente para que el lado más largo no exceda 1920px
+      const MAX_DIM = 1920;
+      let { width, height } = img;
+      if (width > MAX_DIM || height > MAX_DIM) {
+        if (width >= height) {
+          height = Math.round((height * MAX_DIM) / width);
+          width = MAX_DIM;
+        } else {
+          width = Math.round((width * MAX_DIM) / height);
+          height = MAX_DIM;
+        }
+      }
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) { resolve(file); return; }
+      ctx.drawImage(img, 0, 0, width, height);
+      // Intentar calidad 0.82 primero; si aún supera el límite bajar a 0.65
+      canvas.toBlob((blob) => {
+        if (!blob) { resolve(file); return; }
+        if (blob.size <= maxBytes) {
+          resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }));
+        } else {
+          canvas.toBlob((blob2) => {
+            if (!blob2) { resolve(file); return; }
+            resolve(new File([blob2], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }));
+          }, 'image/jpeg', 0.55);
+        }
+      }, 'image/jpeg', 0.82);
+    };
+    img.onerror = () => { URL.revokeObjectURL(objectUrl); resolve(file); };
+    img.src = objectUrl;
+  });
+}
+
 function formatFecha(date: Date | string | null | undefined): string {
   if (!date) return '';
   try {
@@ -597,8 +647,16 @@ export function ResidenteDashboard() {
     setSubiendoComprobante(true);
     setErrorTransferencia(null);
     try {
+      // Comprimir imagen automáticamente si supera 2 MB
+      const archivoFinal = await comprimirImagen(archivoComprobante);
+
+      const MAX_CLIENT_BYTES = 5 * 1024 * 1024; // 5 MB (igual que el servidor)
+      if (archivoFinal.size > MAX_CLIENT_BYTES) {
+        throw new Error('El archivo excede el tamaño máximo permitido de 5 MB. Elige una imagen más pequeña o un PDF.');
+      }
+
       const formData = new FormData();
-      formData.append('file', archivoComprobante);
+      formData.append('file', archivoFinal);
       const res = await fetch('/api/upload', { method: 'POST', body: formData });
       if (!res.ok) {
         const data = await res.json() as { error?: string };
@@ -1333,15 +1391,20 @@ export function ResidenteDashboard() {
               </label>
               <input
                 type="file"
-                accept="image/*,application/pdf"
+                accept="image/jpeg,image/png,image/webp,application/pdf"
                 onChange={(e) => {
-                  const file = e.target.files?.[0] ?? null;
-                  setArchivoComprobante(file);
-                  if (file && file.type.startsWith('image/')) {
-                    const reader = new FileReader();
-                    reader.onload = (ev) => setPreviewUrl(ev.target?.result as string);
-                    reader.readAsDataURL(file);
+                  const raw = e.target.files?.[0] ?? null;
+                  if (!raw) { setArchivoComprobante(null); setPreviewUrl(null); return; }
+                  if (raw.type.startsWith('image/')) {
+                    // Comprimir al seleccionar y actualizar la vista previa con el archivo comprimido
+                    void comprimirImagen(raw).then((comprimido) => {
+                      setArchivoComprobante(comprimido);
+                      const reader = new FileReader();
+                      reader.onload = (ev) => setPreviewUrl(ev.target?.result as string);
+                      reader.readAsDataURL(comprimido);
+                    });
                   } else {
+                    setArchivoComprobante(raw);
                     setPreviewUrl(null);
                   }
                 }}
@@ -1356,6 +1419,9 @@ export function ResidenteDashboard() {
               {archivoComprobante && !previewUrl && (
                 <div style={{ marginTop: 8, fontSize: 12, color: '#388E3C' }}>📄 {archivoComprobante.name}</div>
               )}
+              <div style={{ fontSize: 11, color: '#888', marginTop: 5 }}>
+                JPG, PNG, WEBP o PDF · máx. 5 MB · las imágenes grandes se comprimen automáticamente
+              </div>
             </div>
 
             {totalBaseCheckout <= 0 && (

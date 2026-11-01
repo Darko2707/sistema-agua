@@ -7,6 +7,9 @@ import { get, put } from '@vercel/blob';
 import { auth } from '@/lib/auth';
 import { logger } from '@/lib/logger';
 
+// Dar más tiempo a la función en Vercel para procesar uploads grandes
+export const maxDuration = 30; // segundos
+
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
 
 const ALLOWED_MIME_TYPES: Record<string, string> = {
@@ -84,7 +87,7 @@ export async function POST(req: Request) {
   // 3. Validación de tamaño
   if (file.size > MAX_FILE_SIZE_BYTES) {
     return Response.json(
-      { error: `El archivo excede el límite máximo permitido de ${MAX_FILE_SIZE_BYTES / (1024 * 1024)} MB` },
+      { error: `El archivo excede el tamaño máximo permitido de ${MAX_FILE_SIZE_BYTES / (1024 * 1024)} MB. Usa una imagen más pequeña o un PDF comprimido.` },
       { status: 413 },
     );
   }
@@ -134,9 +137,24 @@ export async function POST(req: Request) {
     } else {
       // En entornos serverless/efímeros sin bucket de storage externo,
       // formatear como Data URL base64 para persistir el archivo de manera garantizada
-      // en la base de datos sin depender de /var/task/.uploads
+      // en la base de datos sin depender de /var/task/.uploads.
+      // Límite defensivo: el Data URL base64 aumenta ~33% el tamaño; si supera 4 MB
+      // codificado se rechaza para evitar columnas TEXT demasiado grandes en la BD.
+      const base64 = buffer.toString('base64');
+      const dataUrl = `data:${mimeType};base64,${base64}`;
+      const DATA_URL_LIMIT = 4 * 1024 * 1024; // 4 MB codificado
+      if (dataUrl.length > DATA_URL_LIMIT) {
+        return Response.json(
+          {
+            error:
+              'El archivo es demasiado grande para almacenarlo. ' +
+              'Comprime la imagen a menos de 2 MB o configura un bucket de almacenamiento (BLOB_READ_WRITE_TOKEN).',
+          },
+          { status: 413 },
+        );
+      }
       storedReference = safeFilename;
-      fileUrl = `data:${mimeType};base64,${buffer.toString('base64')}`;
+      fileUrl = dataUrl;
 
       // En desarrollo local intentamos escribir en disco como cache/backup
       try {
@@ -170,8 +188,26 @@ export async function POST(req: Request) {
       name: typeof file.name === 'string' ? path.basename(file.name) : `${fileId}${extension}`,
     });
   } catch (error) {
-    logger.error('file.upload_error', error, { userId: session.user.id, safeFilename });
-    return Response.json({ error: 'Error al almacenar el archivo' }, { status: 500 });
+    const errMsg = error instanceof Error ? error.message : String(error);
+    logger.error('file.upload_error', { userId: session.user.id, safeFilename, message: errMsg });
+
+    // Devolver un mensaje amigable según el tipo de error detectado
+    if (errMsg.includes('413') || errMsg.includes('too large') || errMsg.includes('size')) {
+      return Response.json(
+        { error: `El archivo excede el tamaño máximo permitido de ${MAX_FILE_SIZE_BYTES / (1024 * 1024)} MB` },
+        { status: 413 },
+      );
+    }
+    if (errMsg.includes('timeout') || errMsg.includes('aborted')) {
+      return Response.json(
+        { error: 'El servidor tardó demasiado en procesar el archivo. Intenta con una imagen más pequeña.' },
+        { status: 504 },
+      );
+    }
+    return Response.json(
+      { error: 'Error al almacenar el archivo. Intenta de nuevo o usa un archivo más pequeño.' },
+      { status: 500 },
+    );
   }
 }
 
