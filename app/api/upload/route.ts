@@ -87,7 +87,7 @@ export async function POST(req: Request) {
   // 3. Validación de tamaño
   if (file.size > MAX_FILE_SIZE_BYTES) {
     return Response.json(
-      { error: `El archivo excede el tamaño máximo permitido de ${MAX_FILE_SIZE_BYTES / (1024 * 1024)} MB. Usa una imagen más pequeña o un PDF comprimido.` },
+      { error: `El archivo excede el límite y tamaño máximo permitido de ${MAX_FILE_SIZE_BYTES / (1024 * 1024)} MB. Usa una imagen más pequeña o un PDF comprimido.` },
       { status: 413 },
     );
   }
@@ -194,7 +194,7 @@ export async function POST(req: Request) {
     // Devolver un mensaje amigable según el tipo de error detectado
     if (errMsg.includes('413') || errMsg.includes('too large') || errMsg.includes('size')) {
       return Response.json(
-        { error: `El archivo excede el tamaño máximo permitido de ${MAX_FILE_SIZE_BYTES / (1024 * 1024)} MB` },
+        { error: `El archivo excede el límite y tamaño máximo permitido de ${MAX_FILE_SIZE_BYTES / (1024 * 1024)} MB` },
         { status: 413 },
       );
     }

@@ -367,6 +367,7 @@ export function ResidenteDashboard() {
 
   const menuRef      = useRef<HTMLDivElement>(null);
   const announcerRef = useRef<HTMLDivElement>(null);
+  const haSincronizado = useRef(false);
 
   const paymentResult = searchParams.get('payment') as keyof typeof PAYMENT_RESULT | null;
 
@@ -397,9 +398,16 @@ export function ResidenteDashboard() {
   }, [paymentResult, refetchHistorial]);
 
   useEffect(() => {
-    if (!sessionData?.user || !historial?.perfil || sincronizarCargos.isPending || sincronizarCargos.isSuccess) return;
-    sincronizarCargos.mutate();
-  }, [sessionData?.user, historial?.perfil, sincronizarCargos]);
+    if (haSincronizado.current) return;
+    if (!sessionData?.user || !historial?.perfil) return;
+    haSincronizado.current = true;
+    sincronizarCargos.mutate(undefined, {
+      onError: (err) => {
+        // Silencioso en segundo plano para no interrumpir al residente
+        console.warn('sincronizarMisCargos error:', err);
+      },
+    });
+  }, [sessionData?.user, historial?.perfil]);
 
   const roleWithoutResidentProfile = sessionData?.user?.role;
   const workerHome = homePathForRole(roleWithoutResidentProfile);
@@ -659,8 +667,29 @@ export function ResidenteDashboard() {
       formData.append('file', archivoFinal);
       const res = await fetch('/api/upload', { method: 'POST', body: formData });
       if (!res.ok) {
-        const data = await res.json() as { error?: string };
-        throw new Error(data.error ?? 'Error al subir el archivo');
+        let errorMsg = 'Error al subir el archivo';
+        try {
+          const contentType = res.headers.get('content-type') ?? '';
+          if (contentType.includes('application/json')) {
+            const data = await res.json() as { error?: string; message?: string };
+            errorMsg = data.error ?? data.message ?? errorMsg;
+          } else {
+            const text = await res.text();
+            if (text && text.length < 200) {
+              errorMsg = text;
+            }
+          }
+        } catch {
+          // Fallback en caso de que no sea parseable
+        }
+        if (res.status === 429) {
+          errorMsg = 'Demasiadas solicitudes. Por favor espera unos momentos antes de reintentar.';
+        } else if (res.status === 413) {
+          errorMsg = 'El archivo excede el tamaño máximo permitido de 5 MB. Elige una imagen más pequeña o un PDF.';
+        } else if (res.status === 504) {
+          errorMsg = 'El servidor tardó demasiado en procesar el archivo. Intenta de nuevo con una imagen más ligera.';
+        }
+        throw new Error(errorMsg);
       }
       const uploaded = await res.json() as { url?: string; reference?: string };
       const comprobanteUrl = uploaded.url ?? `/api/upload?ref=${encodeURIComponent(uploaded.reference ?? '')}`;
@@ -705,7 +734,14 @@ export function ResidenteDashboard() {
       void utils.pagos.miComprobantePendiente.invalidate();
       void utils.pagos.misComprobantesPendientes.invalidate();
     } catch (err: unknown) {
-      setErrorTransferencia(err instanceof Error ? err.message : 'Error al enviar el comprobante');
+      let mensaje = 'Error al enviar el comprobante';
+      if (err instanceof Error) {
+        mensaje = err.message;
+        if (err.message.includes('fetch') || err.message.includes('Network') || err.message.includes('Failed to fetch')) {
+          mensaje = 'Fallo de conexión al subir el comprobante. Verifica tu conexión a internet e intenta de nuevo.';
+        }
+      }
+      setErrorTransferencia(mensaje);
     } finally {
       setSubiendoComprobante(false);
     }
