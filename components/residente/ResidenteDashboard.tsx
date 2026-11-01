@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { authClient } from '@/lib/auth-client';
@@ -301,6 +301,7 @@ export function ResidenteDashboard() {
 
   const registrarComprobanteMutation = trpcReact.pagos.registrarComprobanteTransferencia.useMutation();
   const { data: comprobantePendiente } = trpcReact.pagos.miComprobantePendiente.useQuery();
+  const { data: comprobantesPendientes = [] } = trpcReact.pagos.misComprobantesPendientes.useQuery();
 
   // Estados de selección independientes por servicio
   const [mesesAgua, setMesesAgua] = useState(1);
@@ -352,11 +353,51 @@ export function ResidenteDashboard() {
     router.replace(workerHome);
   }, [historialLoading, sessionPending, historial?.perfil, roleWithoutResidentProfile, router, workerHome]);
 
+  const comprobantesPendientesList = useMemo(() => {
+    if (comprobantesPendientes && comprobantesPendientes.length > 0) return comprobantesPendientes;
+    if (comprobantePendiente && comprobantePendiente.estado === 'pendiente_validacion') return [comprobantePendiente];
+    return [];
+  }, [comprobantesPendientes, comprobantePendiente]);
+
+  const mesesEnRevision = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of comprobantesPendientesList) {
+      if (c.estado === 'pendiente_validacion' && c.metadatos) {
+        const meta = typeof c.metadatos === 'string' ? JSON.parse(c.metadatos) : c.metadatos;
+        if (meta?.meses && Array.isArray(meta.meses)) {
+          for (const m of meta.meses) {
+            set.add(`${m.anio}-${m.mes}`);
+          }
+        }
+      }
+    }
+    return set;
+  }, [comprobantesPendientesList]);
+
+  const cargosEnRevision = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of comprobantesPendientesList) {
+      if (c.estado === 'pendiente_validacion' && c.metadatos) {
+        const meta = typeof c.metadatos === 'string' ? JSON.parse(c.metadatos) : c.metadatos;
+        if (meta?.cargosServicioIds && Array.isArray(meta.cargosServicioIds)) {
+          for (const id of meta.cargosServicioIds) {
+            set.add(id);
+          }
+        }
+      }
+    }
+    return set;
+  }, [comprobantesPendientesList]);
+
   function estaServicioSeleccionado(servicioId: string) {
     if (servicioId in serviciosSeleccionados) {
       return Boolean(serviciosSeleccionados[servicioId]);
     }
-    return (cargos ?? []).some(c => c.fraccionamientoServicioId === servicioId && c.estado === 'pendiente');
+    return (cargos ?? []).some(c =>
+      c.fraccionamientoServicioId === servicioId &&
+      c.estado === 'pendiente' &&
+      !cargosEnRevision.has(c.id)
+    );
   }
 
   // Close menu on outside click
@@ -404,7 +445,7 @@ export function ResidenteDashboard() {
 
   function calcularSubtotalServicio(s: { id: string; montoMensual: string | number }, count: number) {
     const pendingCargos = (cargos ?? [])
-      .filter(c => c.fraccionamientoServicioId === s.id && c.estado === 'pendiente')
+      .filter(c => c.fraccionamientoServicioId === s.id && c.estado === 'pendiente' && !cargosEnRevision.has(c.id))
       .sort((a, b) => (a.anio !== b.anio ? a.anio - b.anio : a.mes - b.mes));
     const countFromPending = Math.min(pendingCargos.length, count);
     const sumPending = pendingCargos.slice(0, countFromPending).reduce((acc, c) => acc + Number(c.monto), 0);
@@ -431,15 +472,34 @@ export function ResidenteDashboard() {
 
   const initials = userName.trim().split(/\s+/).map(n => n[0]).slice(0, 2).join('').toUpperCase();
   const periodoActual = `${MESES[mesActual - 1]} ${anioActual}`;
-  const pagadosKeys = new Set(pagos.filter(p => p.estado === 'pagado').map(pagoKey));
-  const periodosPendientesTarjeta: Array<{ mes: number; anio: number }> = [];
-  for (let offset = 0; periodosPendientesTarjeta.length < 12; offset += 1) {
-    const periodo = addMonths(mesActual, anioActual, offset);
-    if (periodo.anio > 2100) break;
-    if (!pagadosKeys.has(pagoKey(periodo))) periodosPendientesTarjeta.push(periodo);
-  }
-  const primerPeriodoTarjeta = periodosPendientesTarjeta[0] ?? { mes: mesActual, anio: anioActual };
-  const periodoTarjetaLabel = `${MESES[primerPeriodoTarjeta.mes - 1]} ${primerPeriodoTarjeta.anio}`;
+  const pagadosKeys = useMemo(
+    () => new Set(pagos.filter(p => p.estado === 'pagado').map(pagoKey)),
+    [pagos],
+  );
+
+  // Proyecta los siguientes 1 a 12 meses futuros disponibles (no pagados y no en revisión)
+  const periodosDisponiblesAgua = useMemo(() => {
+    const disponibles: Array<{ mes: number; anio: number }> = [];
+    for (let offset = 0; disponibles.length < 12; offset += 1) {
+      const periodo = addMonths(mesActual, anioActual, offset);
+      if (periodo.anio > 2100) break;
+      const key = pagoKey(periodo);
+      if (!pagadosKeys.has(key) && !mesesEnRevision.has(key)) {
+        disponibles.push(periodo);
+      }
+    }
+    return disponibles;
+  }, [mesActual, anioActual, pagadosKeys, mesesEnRevision]);
+
+  const primerPeriodoAgua = periodosDisponiblesAgua[0] ?? { mes: mesActual, anio: anioActual };
+  const idxUltimoPeriodo = Math.min(mesesAgua, Math.max(1, periodosDisponiblesAgua.length)) - 1;
+  const ultimoPeriodoAgua = periodosDisponiblesAgua[idxUltimoPeriodo] ?? primerPeriodoAgua;
+  const periodoAguaInicioLabel = `${MESES[primerPeriodoAgua.mes - 1]} ${primerPeriodoAgua.anio}`;
+  const periodoAguaFinLabel = `${MESES[ultimoPeriodoAgua.mes - 1]} ${ultimoPeriodoAgua.anio}`;
+  const tieneMesesAguaDisponibles = periodosDisponiblesAgua.length > 0;
+  const periodosPendientesTarjeta = periodosDisponiblesAgua;
+  const primerPeriodoTarjeta = primerPeriodoAgua;
+  const periodoTarjetaLabel = periodoAguaInicioLabel;
 
   const puedePagarConTarjeta = totalBaseCheckout > 0 && (incluirAgua ? perfil.estadoAgua !== 'pendiente_reconexion' : true);
 
@@ -539,7 +599,7 @@ export function ResidenteDashboard() {
         concepto,
         comprobanteUrl,
         metadatos: {
-          meses: incluirAgua ? periodosPendientesTarjeta.slice(0, mesesAgua) : [],
+          meses: incluirAgua ? periodosDisponiblesAgua.slice(0, mesesAgua) : [],
           cargosServicioIds: selectedCargoIds.length > 0 ? selectedCargoIds : undefined,
           esReconexion,
         },
@@ -549,6 +609,7 @@ export function ResidenteDashboard() {
       setArchivoComprobante(null);
       setPreviewUrl(null);
       void utils.pagos.miComprobantePendiente.invalidate();
+      void utils.pagos.misComprobantesPendientes.invalidate();
     } catch (err: unknown) {
       setErrorTransferencia(err instanceof Error ? err.message : 'Error al enviar el comprobante');
     } finally {
@@ -557,29 +618,41 @@ export function ResidenteDashboard() {
   }
 
   // Datos para la tarjeta de Agua
+  const aguaEnRevisionActual = mesesEnRevision.has(pagoKey({ mes: mesActual, anio: anioActual }));
+  const aguaDeshabilitada = perfil.estadoAgua === 'pendiente_reconexion' || !tieneMesesAguaDisponibles;
+
   const badgeAguaText =
     perfil.estadoAgua === 'cortado' ? 'Suspendido' :
     perfil.estadoAgua === 'pendiente_corte' ? 'Riesgo de corte' :
     perfil.estadoAgua === 'pendiente_reconexion' ? 'Reconexión en proceso' :
-    yaPagoEsteMes ? 'Pagado ✓' : 'Pendiente';
+    aguaEnRevisionActual ? 'En revisión' :
+    yaPagoEsteMes ? 'Al corriente ✓' :
+    'Pendiente';
 
   const badgeAguaBg =
     perfil.estadoAgua === 'cortado' ? C.pendingBg :
     perfil.estadoAgua === 'pendiente_corte' ? C.alertBg :
     perfil.estadoAgua === 'pendiente_reconexion' ? '#EFF6FF' :
+    aguaEnRevisionActual ? '#EFF6FF' :
     yaPagoEsteMes ? C.greenBg : C.pendingBg;
 
   const badgeAguaColor =
     perfil.estadoAgua === 'cortado' ? C.pendingText :
     perfil.estadoAgua === 'pendiente_corte' ? C.alertText :
     perfil.estadoAgua === 'pendiente_reconexion' ? '#1E40AF' :
+    aguaEnRevisionActual ? '#1E40AF' :
     yaPagoEsteMes ? C.green2 : C.pendingText;
 
   const detalleAgua =
     esReconexion ? 'Cuota mensual + cargo por reconexión física' :
-    yaPagoEsteMes ? `Adelanto a partir del siguiente periodo (${periodoTarjetaLabel})` :
-    mesesAgua === 1 ? `Periodo vigente: ${periodoActual}` :
-    `${mesesAgua} periodos consecutivos no pagados`;
+    !tieneMesesAguaDisponibles ? 'Todos los periodos proyectados (12 meses) se encuentran cubiertos o en revisión' :
+    (yaPagoEsteMes || aguaEnRevisionActual)
+      ? (mesesAgua === 1
+          ? `Adelanto de 1 mes: ${periodoAguaInicioLabel}`
+          : `Adelanto de ${mesesAgua} meses: ${periodoAguaInicioLabel} a ${periodoAguaFinLabel}`)
+      : (mesesAgua === 1
+          ? `Periodo a pagar: ${periodoAguaInicioLabel}`
+          : `Cubre ${mesesAgua} periodos consecutivos: ${periodoAguaInicioLabel} a ${periodoAguaFinLabel}`);
 
   return (
     <div style={{ minHeight: '100vh', background: C.bg, paddingBottom: 64, fontFamily: FM }}>
@@ -829,13 +902,13 @@ export function ResidenteDashboard() {
               estadoBadge={badgeAguaText}
               badgeBg={badgeAguaBg}
               badgeColor={badgeAguaColor}
-              seleccionado={incluirAgua}
+              seleccionado={!aguaDeshabilitada && incluirAgua}
               onToggle={setIncluirAgua}
               meses={mesesAgua}
               onMesesChange={setMesesAgua}
               subtotal={montoBaseAgua}
               periodoDetalle={detalleAgua}
-              deshabilitado={perfil.estadoAgua === 'pendiente_reconexion'}
+              deshabilitado={aguaDeshabilitada}
             />
 
             {/* Other Catalog Services Cards */}
@@ -844,26 +917,33 @@ export function ResidenteDashboard() {
               const pendientesServicio = cargosServicio
                 .filter(c => c.estado === 'pendiente')
                 .sort((a, b) => a.anio !== b.anio ? a.anio - b.anio : a.mes - b.mes);
+              const cargosDisponiblesServicio = pendientesServicio.filter(c => !cargosEnRevision.has(c.id));
               const pagadosServicio = cargosServicio.filter(c => c.estado === 'pagado');
               const pagadoEsteMesServicio = pagadosServicio.some(c => c.mes === mesActual && c.anio === anioActual);
+              const todoEnRevision = pendientesServicio.length > 0 && cargosDisponiblesServicio.length === 0;
 
               const badgeServicioText =
-                pendientesServicio.length > 0 ? 'Pendiente' :
+                todoEnRevision ? 'En revisión' :
+                cargosDisponiblesServicio.length > 0 ? 'Pendiente' :
                 pagadoEsteMesServicio ? 'Al corriente ✓' : 'Al corriente';
 
               const badgeServicioBg =
-                pendientesServicio.length > 0 ? C.pendingBg : C.greenBg;
+                todoEnRevision ? '#EFF6FF' :
+                cargosDisponiblesServicio.length > 0 ? C.pendingBg : C.greenBg;
 
               const badgeServicioColor =
-                pendientesServicio.length > 0 ? C.pendingText : C.green2;
+                todoEnRevision ? '#1E40AF' :
+                cargosDisponiblesServicio.length > 0 ? C.pendingText : C.green2;
 
               const mesesS = mesesPorServicio[servicio.id] || 1;
               const subtotalS = calcularSubtotalServicio(servicio, mesesS);
 
               const detalleServicio =
-                pendientesServicio.length > 0
-                  ? `Cubre ${mesesS === 1 ? `periodo pendiente (${MESES[pendientesServicio[0].mes - 1]} ${pendientesServicio[0].anio})` : `${mesesS} periodos consecutivos a partir de ${MESES[pendientesServicio[0].mes - 1]} ${pendientesServicio[0].anio}`}`
-                  : `Adelanto de ${mesesS} ${mesesS === 1 ? 'periodo' : 'periodos consecutivos'}`;
+                todoEnRevision
+                  ? 'Comprobante de transferencia en proceso de validación por tu tesorera'
+                  : cargosDisponiblesServicio.length > 0
+                    ? `Cubre ${mesesS === 1 ? `periodo pendiente (${MESES[cargosDisponiblesServicio[0].mes - 1]} ${cargosDisponiblesServicio[0].anio})` : `${mesesS} periodos a partir de ${MESES[cargosDisponiblesServicio[0].mes - 1]} ${cargosDisponiblesServicio[0].anio}`}`
+                    : `Adelanto de ${mesesS} ${mesesS === 1 ? 'periodo' : 'periodos consecutivos'}`;
 
               return (
                 <ServiceCard
@@ -873,12 +953,13 @@ export function ResidenteDashboard() {
                   estadoBadge={badgeServicioText}
                   badgeBg={badgeServicioBg}
                   badgeColor={badgeServicioColor}
-                  seleccionado={estaServicioSeleccionado(servicio.id)}
+                  seleccionado={!todoEnRevision && estaServicioSeleccionado(servicio.id)}
                   onToggle={checked => setServiciosSeleccionados(prev => ({ ...prev, [servicio.id]: checked }))}
                   meses={mesesS}
                   onMesesChange={val => setMesesPorServicio(prev => ({ ...prev, [servicio.id]: val }))}
                   subtotal={subtotalS}
                   periodoDetalle={detalleServicio}
+                  deshabilitado={todoEnRevision}
                 />
               );
             })}

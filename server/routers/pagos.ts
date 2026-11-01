@@ -614,22 +614,61 @@ export const pagosRouter = router({
       if (!perfil) throw new TRPCError({ code: 'NOT_FOUND', message: 'Perfil no encontrado' });
       if (!perfil.fraccionamientoId) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes fraccionamiento asignado' });
 
-      // Verificar si ya tiene un comprobante pendiente
-      const [existente] = await db
-        .select({ id: comprobantesTransferencia.id })
+      // Verificar si alguno de los meses o servicios solicitados ya está en un comprobante pendiente
+      const pendientes = await db
+        .select({
+          id: comprobantesTransferencia.id,
+          metadatos: comprobantesTransferencia.metadatos,
+        })
         .from(comprobantesTransferencia)
         .where(and(
           eq(comprobantesTransferencia.perfilId, perfil.id),
           eq(comprobantesTransferencia.fraccionamientoId, perfil.fraccionamientoId),
           eq(comprobantesTransferencia.estado, 'pendiente_validacion'),
-        ))
-        .limit(1);
+        ));
 
-      if (existente) {
-        throw new TRPCError({
-          code: 'CONFLICT',
-          message: 'Ya tienes un comprobante en revisión. Espera la confirmación de tu tesorera antes de enviar otro.',
-        });
+      if (pendientes.length > 0) {
+        const mesesEnRevision = new Set<string>();
+        const cargosEnRevision = new Set<string>();
+
+        for (const p of pendientes) {
+          const meta = p.metadatos as {
+            meses?: Array<{ mes: number; anio: number }>;
+            cargosServicioIds?: string[];
+          } | null;
+          if (meta?.meses && Array.isArray(meta.meses)) {
+            for (const m of meta.meses) {
+              mesesEnRevision.add(`${m.anio}-${m.mes}`);
+            }
+          }
+          if (meta?.cargosServicioIds && Array.isArray(meta.cargosServicioIds)) {
+            for (const cId of meta.cargosServicioIds) {
+              cargosEnRevision.add(cId);
+            }
+          }
+        }
+
+        if (input.metadatos?.meses && Array.isArray(input.metadatos.meses)) {
+          for (const m of input.metadatos.meses) {
+            if (mesesEnRevision.has(`${m.anio}-${m.mes}`)) {
+              throw new TRPCError({
+                code: 'CONFLICT',
+                message: `El periodo ${m.mes}/${m.anio} de agua ya tiene un comprobante en revisión por tu tesorera.`,
+              });
+            }
+          }
+        }
+
+        if (input.metadatos?.cargosServicioIds && Array.isArray(input.metadatos.cargosServicioIds)) {
+          for (const cId of input.metadatos.cargosServicioIds) {
+            if (cargosEnRevision.has(cId)) {
+              throw new TRPCError({
+                code: 'CONFLICT',
+                message: 'Uno o más servicios seleccionados ya tienen un comprobante en revisión por tu tesorera.',
+              });
+            }
+          }
+        }
       }
 
       const [creado] = await db.insert(comprobantesTransferencia).values({
@@ -666,6 +705,7 @@ export const pagosRouter = router({
           concepto:       comprobantesTransferencia.concepto,
           fechaEmision:   comprobantesTransferencia.fechaEmision,
           motivoRechazo:  comprobantesTransferencia.motivoRechazo,
+          metadatos:      comprobantesTransferencia.metadatos,
         })
         .from(comprobantesTransferencia)
         .where(and(
@@ -676,6 +716,31 @@ export const pagosRouter = router({
         .limit(1);
 
       return comprobante ?? null;
+    }),
+
+  // ── Residente: consultar todos sus comprobantes en revisión ─────────────────
+  misComprobantesPendientes: protectedProcedure
+    .query(async ({ ctx }) => {
+      const perfil = await residenteRepo.findByUserId(ctx.user.id);
+      if (!perfil?.fraccionamientoId) return [];
+
+      return db
+        .select({
+          id:             comprobantesTransferencia.id,
+          estado:         comprobantesTransferencia.estado,
+          monto:          comprobantesTransferencia.monto,
+          concepto:       comprobantesTransferencia.concepto,
+          fechaEmision:   comprobantesTransferencia.fechaEmision,
+          motivoRechazo:  comprobantesTransferencia.motivoRechazo,
+          metadatos:      comprobantesTransferencia.metadatos,
+        })
+        .from(comprobantesTransferencia)
+        .where(and(
+          eq(comprobantesTransferencia.perfilId, perfil.id),
+          eq(comprobantesTransferencia.fraccionamientoId, perfil.fraccionamientoId),
+          eq(comprobantesTransferencia.estado, 'pendiente_validacion'),
+        ))
+        .orderBy(desc(comprobantesTransferencia.creadoEn));
     }),
 
   // ── Tesorería: listar comprobantes pendientes ─────────────────────────────
