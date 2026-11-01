@@ -601,7 +601,7 @@ export const pagosRouter = router({
     .input(z.object({
       monto:         z.number().positive(),
       concepto:      z.string().trim().min(1).max(500),
-      comprobanteUrl: z.string().trim().min(1).max(2000),
+      comprobanteUrl: z.string().trim().min(1).max(5_000_000), // Soporta proxy URLs cortas y Data URLs base64 de respaldo (≤ 4 MB)
       metadatos: z.object({
         meses: z.array(z.object({ mes: z.number().int().min(1).max(12), anio: z.number().int().min(2020).max(2100) })).optional(),
         cargosServicioIds: z.array(z.string().uuid()).optional(),
