@@ -430,6 +430,31 @@ export function ResidenteDashboard() {
     return () => document.removeEventListener('mousedown', onDown);
   }, []);
 
+  const ahora = new Date();
+  const mesActual = ahora.getMonth() + 1;
+  const anioActual = ahora.getFullYear();
+  const pagos = Array.isArray(historial?.pagos) ? historial.pagos : [];
+  const pagados = pagos;
+
+  const pagadosKeys = useMemo(
+    () => new Set(pagados.filter(p => p && p.estado === 'pagado' && typeof p.mes === 'number' && typeof p.anio === 'number').map(pagoKey)),
+    [pagados],
+  );
+
+  // Proyecta los siguientes 1 a 12 meses futuros disponibles (no pagados y no en revisión)
+  const periodosDisponiblesAgua = useMemo(() => {
+    const disponibles: Array<{ mes: number; anio: number }> = [];
+    for (let offset = 0; disponibles.length < 12; offset += 1) {
+      const periodo = addMonths(mesActual, anioActual, offset);
+      if (periodo.anio > 2100) break;
+      const key = pagoKey(periodo);
+      if (!pagadosKeys.has(key) && !mesesEnRevision.has(key)) {
+        disponibles.push(periodo);
+      }
+    }
+    return disponibles;
+  }, [mesActual, anioActual, pagadosKeys, mesesEnRevision]);
+
   const cargando = historialLoading || sessionPending;
   if (cargando) return <ResidenteDashboardSkeleton />;
 
@@ -452,11 +477,8 @@ export function ResidenteDashboard() {
     );
   }
 
-  const { perfil, pagos, esMoroso, diasVencido, desgloseVigente, corteActivo } = historial;
+  const { perfil, esMoroso, diasVencido, desgloseVigente, corteActivo } = historial;
 
-  const ahora       = new Date();
-  const mesActual   = ahora.getMonth() + 1;
-  const anioActual  = ahora.getFullYear();
   const yaPagoEsteMes   = pagos.some(p => p.mes === mesActual && p.anio === anioActual && p.estado === 'pagado');
   const montoMensualAgua = Number(perfil.fraccionamiento?.montoMensual ?? 50);
   const montoReconexion  = Number(perfil.fraccionamiento?.montoReconexion ?? 300);
@@ -497,25 +519,6 @@ export function ResidenteDashboard() {
 
   const initials = userName.trim().split(/\s+/).map(n => n[0]).slice(0, 2).join('').toUpperCase();
   const periodoActual = `${MESES[Math.max(0, mesActual - 1)] ?? ''} ${anioActual}`;
-  const pagados = Array.isArray(pagos) ? pagos : [];
-  const pagadosKeys = useMemo(
-    () => new Set(pagados.filter(p => p && p.estado === 'pagado' && typeof p.mes === 'number' && typeof p.anio === 'number').map(pagoKey)),
-    [pagados],
-  );
-
-  // Proyecta los siguientes 1 a 12 meses futuros disponibles (no pagados y no en revisión)
-  const periodosDisponiblesAgua = useMemo(() => {
-    const disponibles: Array<{ mes: number; anio: number }> = [];
-    for (let offset = 0; disponibles.length < 12; offset += 1) {
-      const periodo = addMonths(mesActual, anioActual, offset);
-      if (periodo.anio > 2100) break;
-      const key = pagoKey(periodo);
-      if (!pagadosKeys.has(key) && !mesesEnRevision.has(key)) {
-        disponibles.push(periodo);
-      }
-    }
-    return disponibles;
-  }, [mesActual, anioActual, pagadosKeys, mesesEnRevision]);
 
   const primerPeriodoAgua = (periodosDisponiblesAgua && periodosDisponiblesAgua.length > 0)
     ? periodosDisponiblesAgua[0]
