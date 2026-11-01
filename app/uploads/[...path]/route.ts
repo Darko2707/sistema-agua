@@ -39,11 +39,11 @@ export async function GET(
   };
   const contentType = mimeMap[extension] || 'application/octet-stream';
 
-  // 1. Si existe storage en Vercel Blob
+  // 1. Si existe storage en Vercel Blob (blob privado — requiere token del servidor)
   if (process.env.BLOB_READ_WRITE_TOKEN) {
     try {
       const blobResult = await get(`uploads/${normalized}`, {
-        access: 'public',
+        access: 'private',
         useCache: false,
         abortSignal: AbortSignal.timeout(8000),
       });

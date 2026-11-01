@@ -126,14 +126,19 @@ export async function POST(req: Request) {
 
     if (process.env.BLOB_READ_WRITE_TOKEN) {
       const blobResult = await put(safeFilename, buffer, {
-        access: 'public',
+        access: 'private',
         contentType: mimeType,
         addRandomSuffix: false,
         allowOverwrite: false,
         abortSignal: AbortSignal.timeout(10_000),
       });
+      // Guardamos el pathname (ej. "uploads/<userId>/<uuid>.jpg") como referencia
+      // estable en la BD. La URL firmada de Vercel expira; el proxy GET /api/upload
+      // la regenera en cada petición autenticada.
       storedReference = blobResult.pathname;
-      fileUrl = blobResult.url;
+      // El cliente recibe la URL del proxy para que todas las visualizaciones
+      // pasen por la verificación de sesión.
+      fileUrl = `/api/upload?ref=${encodeURIComponent(blobResult.pathname)}`;
     } else {
       // En entornos serverless/efímeros sin bucket de storage externo,
       // formatear como Data URL base64 para persistir el archivo de manera garantizada
@@ -255,11 +260,11 @@ export async function GET(req: Request) {
   };
   const contentType = mimeMap[extension] || 'application/octet-stream';
 
-  // 1. Si existe storage en Vercel Blob, descargar directamente
+  // 1. Si existe storage en Vercel Blob, descargar directamente (blob privado)
   if (process.env.BLOB_READ_WRITE_TOKEN) {
     try {
       const blobResult = await get(normalized, {
-        access: 'public',
+        access: 'private',
         useCache: false,
         abortSignal: AbortSignal.timeout(8000),
       });
