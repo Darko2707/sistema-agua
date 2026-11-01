@@ -125,6 +125,7 @@ function MenuItem({
     >
       {iconSvg}
       <span style={{ fontSize: 14, fontWeight: 700, color: danger ? C.pendingText : C.textMain, fontFamily: FM }}>{label}</span>
+
     </div>
   );
 }
@@ -296,6 +297,7 @@ export function ResidenteDashboard() {
   const [subiendoComprobante, setSubiendoComprobante] = useState(false);
   const [errorTransferencia, setErrorTransferencia] = useState<string | null>(null);
   const [mensajeTransferencia, setMensajeTransferencia] = useState<string | null>(null);
+  const [visorHistorialUrl, setVisorHistorialUrl] = useState<string | null>(null);
 
   const registrarComprobanteMutation = trpcReact.pagos.registrarComprobanteTransferencia.useMutation();
   const { data: comprobantePendiente } = trpcReact.pagos.miComprobantePendiente.useQuery();
@@ -1010,30 +1012,56 @@ export function ResidenteDashboard() {
               </div>
             ) : (
               <div role="list" aria-label="Historial de pagos">
-                {historyItems.map((p, i) => (
-                  <div
-                    key={p.id}
-                    role="listitem"
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 0', borderBottom: i < historyItems.length - 1 ? `1px solid ${C.border2}` : 'none' }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <CheckCircle2 size={32} color={C.green2} style={{ flexShrink: 0 }} aria-hidden="true" />
-                      <div>
-                        <div style={{ fontSize: 14, fontWeight: 700, color: C.textMain }}>{MESES[p.mes - 1]} {p.anio}</div>
-                        <div style={{ fontSize: 12, color: C.textWarm2, marginTop: 2 }}>
-                          {p.esReconexion ? 'Cuota + reconexión' : 'Cuota mensual'}
-                          {p.folio && ` · ${p.folio}`}
+                {historyItems.map((p, i) => {
+                  const pAny = p as any;
+                  const montoFinal = pAny.montoTotalEfectivo ?? p.montoBase ?? p.monto;
+                  const desglose = pAny.desgloseConceptos;
+                  const comprobanteUrl = pAny.comprobanteUrl;
+                  return (
+                    <div
+                      key={p.id}
+                      role="listitem"
+                      style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 0', borderBottom: i < historyItems.length - 1 ? `1px solid ${C.border2}` : 'none' }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
+                        <CheckCircle2 size={32} color={C.green2} style={{ flexShrink: 0 }} aria-hidden="true" />
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: C.textMain }}>{MESES[p.mes - 1]} {p.anio}</div>
+                          <div style={{ fontSize: 12, color: C.textWarm2, marginTop: 2 }}>
+                            {p.esReconexion ? 'Cuota + reconexión' : 'Cuota mensual'}
+                            {p.folio && ` · ${p.folio}`}
+                          </div>
+                          {desglose && (
+                            <div style={{ fontSize: 11.5, color: '#2E7D32', marginTop: 3, fontWeight: 600, maxWidth: 280, lineHeight: 1.35 }}>
+                              {desglose}
+                            </div>
+                          )}
+                          {p.fechaPago && (
+                            <div style={{ fontSize: 11, color: C.textWarm3, marginTop: 1 }}>{formatFecha(p.fechaPago)}</div>
+                          )}
+                          {comprobanteUrl && (
+                            <button
+                              type="button"
+                              onClick={() => setVisorHistorialUrl(comprobanteUrl)}
+                              style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 4,
+                                background: '#E8F5E9', border: '1px solid #C8E6C9',
+                                color: '#2E7D32', borderRadius: 8, padding: '3px 8px',
+                                fontSize: 11, fontWeight: 700, cursor: 'pointer', marginTop: 4,
+                              }}
+                            >
+                              <span>{comprobanteUrl.toLowerCase().includes('.pdf') ? '📄' : '🖼️'}</span>
+                              <span>Ver comprobante</span>
+                            </button>
+                          )}
                         </div>
-                        {p.fechaPago && (
-                          <div style={{ fontSize: 11, color: C.textWarm3 }}>{formatFecha(p.fechaPago)}</div>
-                        )}
                       </div>
+                      <span aria-label={`Monto al fraccionamiento: ${montoFinal} MXN`} style={{ fontFamily: FB, fontSize: 15, fontWeight: 700, color: C.green, flexShrink: 0, marginLeft: 8 }}>
+                        ${Number(montoFinal).toFixed(2)}
+                      </span>
                     </div>
-                    <span aria-label={`Monto al fraccionamiento: $${p.montoBase ?? p.monto} MXN`} style={{ fontFamily: FB, fontSize: 15, fontWeight: 700, color: C.textMain }}>
-                      ${p.montoBase ?? p.monto}
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1191,6 +1219,46 @@ export function ResidenteDashboard() {
           </div>
         </div>
       )}
+
+{/* Modal visor de comprobante del historial */}
+      {visorHistorialUrl && (() => {
+        const urlImagen = visorHistorialUrl.startsWith('http') || visorHistorialUrl.startsWith('/')
+          ? visorHistorialUrl
+          : `/${visorHistorialUrl}`;
+        const esPdf = urlImagen.toLowerCase().includes('.pdf');
+        return (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Comprobante de transferencia"
+            style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(0,0,0,.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18 }}
+            onClick={e => { if (e.target === e.currentTarget) setVisorHistorialUrl(null); }}
+          >
+            <div style={{ width: '100%', maxWidth: 720, maxHeight: '90vh', background: '#fff', borderRadius: 18, overflow: 'hidden', boxShadow: '0 22px 70px rgba(0,0,0,.35)', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ padding: '12px 18px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontFamily: FB, fontWeight: 700, fontSize: 15, color: C.textMain }}>Comprobante de transferencia</span>
+                <button type="button" aria-label="Cerrar visor" onClick={() => setVisorHistorialUrl(null)} style={{ border: 'none', background: C.greenBg, color: C.green, borderRadius: 10, width: 34, height: 34, cursor: 'pointer', fontWeight: 800 }}>×</button>
+              </div>
+              <div style={{ flex: 1, overflow: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, background: '#F8F8F6' }}>
+                {esPdf ? (
+                  <iframe
+                    src={urlImagen}
+                    title="Comprobante PDF"
+                    style={{ width: '100%', height: '70vh', border: 'none', borderRadius: 8 }}
+                  />
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={urlImagen}
+                    alt="Comprobante de transferencia"
+                    style={{ maxWidth: '100%', maxHeight: '70vh', objectFit: 'contain', borderRadius: 8 }}
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

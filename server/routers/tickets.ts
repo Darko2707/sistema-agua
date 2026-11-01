@@ -2,6 +2,8 @@ import { router, publicProcedure, protectedProcedure } from '../trpc';
 import { z } from 'zod';
 // eslint-disable-next-line no-restricted-imports -- relational ticket queries not yet in a repo
 import { db } from '@/db';
+import { comprobantesTransferencia } from '@/db/schema';
+import { and, eq, inArray } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 
 export const ticketsRouter = router({
@@ -128,18 +130,45 @@ export const ticketsRouter = router({
       },
       orderBy: (t, { desc }) => [desc(t.emitidoEn)],
     });
-    return rows.map(ticket => ({
-      ...ticket,
-      tipo: ticket.tipo,
-      cargoServicio: ticket.cargoServicio ? {
-        ...ticket.cargoServicio,
-        montoTotalCobrado: ticket.cargoServicio.monto,
-      } : null,
-      pago: ticket.pago ? {
-        ...ticket.pago,
-        montoServicio: ticket.pago.montoBase ?? ticket.pago.monto,
-        montoTotalCobrado: ticket.pago.monto,
-      } : null,
-    }));
+
+    // Enrich tickets whose pago was paid by transferencia with comprobante info
+    const pagoIds = rows.map(t => t.pago?.id).filter(Boolean) as string[];
+    const comprobantesList = pagoIds.length > 0
+      ? await db
+          .select({
+            id:             comprobantesTransferencia.id,
+            pagoId:         comprobantesTransferencia.pagoId,
+            monto:          comprobantesTransferencia.monto,
+            concepto:       comprobantesTransferencia.concepto,
+            comprobanteUrl: comprobantesTransferencia.comprobanteUrl,
+          })
+          .from(comprobantesTransferencia)
+          .where(and(
+            inArray(comprobantesTransferencia.pagoId, pagoIds),
+            eq(comprobantesTransferencia.estado, 'aprobado'),
+          ))
+      : [];
+    const comprobanteByPago = new Map(comprobantesList.map(c => [c.pagoId, c]));
+
+    return rows.map(ticket => {
+      const comp = ticket.pago?.id ? comprobanteByPago.get(ticket.pago.id) : undefined;
+      return {
+        ...ticket,
+        tipo: ticket.tipo,
+        cargoServicio: ticket.cargoServicio ? {
+          ...ticket.cargoServicio,
+          montoTotalCobrado: ticket.cargoServicio.monto,
+        } : null,
+        pago: ticket.pago ? {
+          ...ticket.pago,
+          montoServicio: ticket.pago.montoBase ?? ticket.pago.monto,
+          montoTotalCobrado: ticket.pago.monto,
+          montoTotalEfectivo: comp ? comp.monto : null,
+          desgloseConceptos:  comp ? comp.concepto : null,
+          comprobanteUrl:     comp ? comp.comprobanteUrl : null,
+          comprobanteId:      comp ? comp.id : null,
+        } : null,
+      };
+    });
   }),
 });

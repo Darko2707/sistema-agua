@@ -116,6 +116,7 @@ export default function FoliosPage() {
   const [cargando, setCargando]   = useState(true);
   const [error, setError]         = useState('');
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [visorComprobante, setVisorComprobante] = useState<string | null>(null);
 
   useEffect(() => {
     trpc.tickets.misTickets

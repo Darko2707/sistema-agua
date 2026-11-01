@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { EstadoAguaBadge } from '@/components/domain/EstadoAguaBadge';
 import { ROLES_ASIGNABLES, type ResidenteCompleto } from '@/hooks/useAdmin';
 import { Input } from '@/components/ui/input';
+import { trpcReact } from '@/lib/trpc-react';
 
 const MESES_NOMBRE = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const MESES_CORTO  = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
@@ -74,6 +75,19 @@ export function ResidentesTab({
   const [registrando,    setRegistrando]    = useState(false);
   const [resultado,      setResultado]      = useState<{ registrados: number; omitidos: string[] } | null>(null);
   const [errorModal,     setErrorModal]     = useState<string | null>(null);
+  const [expedienteResidente, setExpedienteResidente] = useState<ResidenteCompleto | null>(null);
+  const [visorComprobante,    setVisorComprobante]    = useState<string | null>(null);
+
+  const todosComprobantesQuery = trpcReact.pagos.obtenerTodosComprobantes.useQuery(
+    { estado: 'todos' },
+    { enabled: !!expedienteResidente || !!modalResidente },
+  );
+
+  const comprobantesDelResidente = useMemo(() => {
+    const targetId = expedienteResidente?.id ?? modalResidente?.id;
+    if (!targetId || !todosComprobantesQuery.data) return [];
+    return todosComprobantesQuery.data.filter(c => c.perfilId === targetId);
+  }, [expedienteResidente?.id, modalResidente?.id, todosComprobantesQuery.data]);
 
   function abrirModal(r: ResidenteCompleto, metodo: 'efectivo' | 'transferencia') {
     setModalResidente(r);
@@ -383,6 +397,53 @@ export function ResidentesTab({
                   <option value="transferencia">Transferencia</option>
                 </select>
               </div>
+
+              {/* Comprobantes de transferencia asociados */}
+              {comprobantesDelResidente.length > 0 && (
+                <div className="rounded-lg border bg-slate-50 p-3 space-y-2">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Comprobantes de transferencia ({comprobantesDelResidente.length})
+                  </p>
+                  <div className="max-h-40 overflow-y-auto space-y-2 divide-y">
+                    {comprobantesDelResidente.map(comp => {
+                      const esAprob = comp.estado === 'aprobado';
+                      const esRech = comp.estado === 'rechazado';
+                      return (
+                        <div key={comp.id} className="pt-2 flex items-center justify-between text-xs">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className={`px-1.5 py-0.5 rounded font-bold ${
+                                esAprob ? 'bg-green-100 text-green-700' : esRech ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'
+                              }`}>
+                                {esAprob ? 'Aprobado ✓' : esRech ? 'Rechazado ✕' : 'Pendiente'}
+                              </span>
+                              <span className="font-semibold text-slate-800">${Number(comp.monto).toFixed(2)} MXN</span>
+                              <span className="text-slate-400 text-[11px]">
+                                {new Date(comp.fechaEmision).toLocaleDateString('es-MX')}
+                              </span>
+                            </div>
+                            <p className="text-slate-600 mt-0.5 line-clamp-1">{comp.concepto}</p>
+                            {esRech && comp.motivoRechazo && (
+                              <p className="text-red-600 text-[11px] font-medium mt-0.5">Motivo: {comp.motivoRechazo}</p>
+                            )}
+                          </div>
+                          {comp.comprobanteUrl && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-7 text-xs ml-2 flex-shrink-0"
+                              onClick={() => setVisorComprobante(comp.comprobanteUrl)}
+                            >
+                              Ver voucher
+                            </Button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {errorModal && (
                 <div role="alert" aria-live="polite" className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">

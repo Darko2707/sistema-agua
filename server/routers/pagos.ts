@@ -118,19 +118,83 @@ const mesesTesoreraSchema = z.array(z.object({
 
 export const pagosRouter = router({
   miHistorial: protectedProcedure.query(async ({ ctx }) => {
-    return historialPagosHandler.execute({ perfilId: ctx.user.id });
+    const base = await historialPagosHandler.execute({ perfilId: ctx.user.id });
+    if (!base.pagos.length) return base;
+
+    // Enrich: attach comprobante data (monto total, concepto, url) to payments made by transfer
+    const pagoIds = base.pagos.map(p => p.id);
+    const comprobantes = await db
+      .select({
+        id:             comprobantesTransferencia.id,
+        pagoId:         comprobantesTransferencia.pagoId,
+        monto:          comprobantesTransferencia.monto,
+        concepto:       comprobantesTransferencia.concepto,
+        comprobanteUrl: comprobantesTransferencia.comprobanteUrl,
+        estado:         comprobantesTransferencia.estado,
+      })
+      .from(comprobantesTransferencia)
+      .where(and(
+        inArray(comprobantesTransferencia.pagoId, pagoIds),
+        eq(comprobantesTransferencia.estado, 'aprobado'),
+      ));
+
+    const comprobanteMap = new Map(comprobantes.map(c => [c.pagoId, c]));
+    return {
+      ...base,
+      pagos: base.pagos.map(p => {
+        const comp = comprobanteMap.get(p.id);
+        if (!comp) return p;
+        return {
+          ...p,
+          montoTotalEfectivo: comp.monto,
+          desgloseConceptos: comp.concepto,
+          comprobanteUrl: comp.comprobanteUrl,
+          comprobanteId: comp.id,
+        };
+      }),
+    };
   }),
 
-  historialDe: roleProcedure('admin', 'representante')
+  historialDe: roleProcedure('admin', 'representante', 'tesorera')
     .input(z.object({ perfilId: z.uuid() }))
     .query(async ({ ctx, input }) => {
-      if (ctx.user.role === 'representante') {
+      if (ctx.user.role === 'representante' || ctx.user.role === 'tesorera') {
         if (!ctx.user.fraccionamientoId) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes fraccionamiento asignado' });
         const perfil = await residenteRepo.findById(input.perfilId);
         if (!perfil || perfil.fraccionamientoId !== ctx.user.fraccionamientoId)
           throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes acceso a este residente' });
       }
-      return historialPagosHandler.executeByPerfilId(input.perfilId);
+      const pagosHistorial = await historialPagosHandler.executeByPerfilId(input.perfilId);
+      if (!Array.isArray(pagosHistorial) || pagosHistorial.length === 0) return pagosHistorial;
+
+      const pagoIds = pagosHistorial.map(p => p.id);
+      const comprobantes = await db
+        .select({
+          id:             comprobantesTransferencia.id,
+          pagoId:         comprobantesTransferencia.pagoId,
+          monto:          comprobantesTransferencia.monto,
+          concepto:       comprobantesTransferencia.concepto,
+          comprobanteUrl: comprobantesTransferencia.comprobanteUrl,
+          estado:         comprobantesTransferencia.estado,
+        })
+        .from(comprobantesTransferencia)
+        .where(and(
+          inArray(comprobantesTransferencia.pagoId, pagoIds),
+          eq(comprobantesTransferencia.estado, 'aprobado'),
+        ));
+
+      const comprobanteMap = new Map(comprobantes.map(c => [c.pagoId, c]));
+      return pagosHistorial.map(p => {
+        const comp = comprobanteMap.get(p.id);
+        if (!comp) return p;
+        return {
+          ...p,
+          montoTotalEfectivo: comp.monto,
+          desgloseConceptos: comp.concepto,
+          comprobanteUrl: comp.comprobanteUrl,
+          comprobanteId: comp.id,
+        };
+      });
     }),
 
   registrarManual: operationalRoleProcedure('representante')
@@ -647,6 +711,50 @@ export const pagosRouter = router({
       return comprobantes;
     }),
 
+  // ── Tesorería: listar todos los comprobantes (con filtro de estado) ─────────
+  obtenerTodosComprobantes: operationalRoleProcedure('tesorera', 'admin')
+    .input(z.object({
+      estado: z.enum(['todos', 'pendiente_validacion', 'aprobado', 'rechazado']).default('todos'),
+    }))
+    .query(async ({ ctx, input }) => {
+      if (!ctx.user.fraccionamientoId) return [];
+
+      const whereEstado = input.estado === 'todos'
+        ? undefined
+        : eq(comprobantesTransferencia.estado, input.estado);
+
+      const comprobantes = await db
+        .select({
+          id:              comprobantesTransferencia.id,
+          estado:          comprobantesTransferencia.estado,
+          monto:           comprobantesTransferencia.monto,
+          concepto:        comprobantesTransferencia.concepto,
+          comprobanteUrl:  comprobantesTransferencia.comprobanteUrl,
+          fechaEmision:    comprobantesTransferencia.fechaEmision,
+          fechaRevision:   comprobantesTransferencia.fechaRevision,
+          motivoRechazo:   comprobantesTransferencia.motivoRechazo,
+          metadatos:       comprobantesTransferencia.metadatos,
+          perfilId:        comprobantesTransferencia.perfilId,
+          pagoId:          comprobantesTransferencia.pagoId,
+          residenteNombre: user.name,
+          residenteEmail:  user.email,
+          edificio:        perfilesResidente.edificio,
+          departamento:    perfilesResidente.departamento,
+        })
+        .from(comprobantesTransferencia)
+        .innerJoin(perfilesResidente, eq(perfilesResidente.id, comprobantesTransferencia.perfilId))
+        .innerJoin(user, eq(user.id, perfilesResidente.userId))
+        .where(whereEstado
+          ? and(
+              eq(comprobantesTransferencia.fraccionamientoId, ctx.user.fraccionamientoId),
+              whereEstado,
+            )
+          : eq(comprobantesTransferencia.fraccionamientoId, ctx.user.fraccionamientoId))
+        .orderBy(desc(comprobantesTransferencia.creadoEn));
+
+      return comprobantes;
+    }),
+
   // ── Tesorería: aprobar comprobante ────────────────────────────────────────
   aprobarComprobante: operationalRoleProcedure('tesorera', 'admin')
     .input(z.object({
@@ -790,6 +898,26 @@ export const pagosRouter = router({
           pagoId,
           actualizadoEn: new Date(),
         }).where(eq(comprobantesTransferencia.id, input.comprobanteId));
+
+        // 4. Marcar cargos de servicios adicionales como pagados (si existen en metadatos)
+        const cargosIds = metadatos.cargosServicioIds ?? [];
+        if (cargosIds.length > 0) {
+          try {
+            await registrarCargosObligatoriosManuales({
+              perfilId: perfil.id,
+              fraccionamientoId: perfil.fraccionamientoId!,
+              cargoIds: cargosIds,
+              metodo: 'transferencia',
+              actorId: ctx.user.id,
+            });
+          } catch (cargoErr) {
+            // Log but do not fail the approval; cargos may already be paid
+            logger.warn('comprobante_transferencia.cargos_ya_pagados', {
+              comprobanteId: input.comprobanteId,
+              error: cargoErr instanceof Error ? cargoErr.message : String(cargoErr),
+            });
+          }
+        }
 
         await db.insert(auditoria).values({
           actorId:   ctx.user.id,

@@ -96,6 +96,8 @@ export function PagosTesorera() {
   const [rechazandoId, setRechazandoId] = useState<string | null>(null);
   const [motivoRechazo, setMotivoRechazo] = useState('');
   const [procesandoComprobante, setProcesandoComprobante] = useState<string | null>(null);
+  const [subTabTransferencia, setSubTabTransferencia] = useState<'pendientes' | 'historial'>('pendientes');
+  const [filtroHistorial, setFiltroHistorial] = useState<'todos' | 'aprobado' | 'rechazado'>('todos');
 
   const utils    = trpcReact.useUtils();
   const query    = trpcReact.pagos.listarResidentesParaPago.useQuery();
@@ -110,6 +112,10 @@ export function PagosTesorera() {
 
   // ── Transferencias ──
   const comprobantesQuery = trpcReact.pagos.obtenerComprobantesPendientes.useQuery();
+  const todosComprobantesQuery = trpcReact.pagos.obtenerTodosComprobantes.useQuery(
+    { estado: filtroHistorial },
+    { enabled: tabActiva === 'transferencias' },
+  );
   const aprobarMutation   = trpcReact.pagos.aprobarComprobante.useMutation({
     onSuccess: () => {
       mostrar('Comprobante aprobado y pago registrado', 'ok');
@@ -117,6 +123,7 @@ export function PagosTesorera() {
     },
     onSettled: () => {
       void comprobantesQuery.refetch();
+      void todosComprobantesQuery.refetch();
       void utils.pagos.listarResidentesParaPago.invalidate();
     },
     onError: (e) => mostrar(userFacingError(e, 'SISCO-210'), 'error'),
@@ -125,6 +132,7 @@ export function PagosTesorera() {
     onSuccess: () => mostrar('Comprobante rechazado', 'ok'),
     onSettled: () => {
       void comprobantesQuery.refetch();
+      void todosComprobantesQuery.refetch();
       void utils.pagos.listarResidentesParaPago.invalidate();
     },
     onError: (e) => mostrar(userFacingError(e, 'SISCO-211'), 'error'),
@@ -649,86 +657,239 @@ export function PagosTesorera() {
       {/* ── TAB: Verificar transferencias ── */}
       {tabActiva === 'transferencias' && (
         <div style={{ background: C.card, borderRadius: 20, border: `1px solid ${C.border}`, overflow: 'hidden', boxShadow: '0 4px 16px rgba(20,40,30,.06)' }}>
-          <div style={{ padding: '14px 20px', borderBottom: `1px solid ${C.border}`, fontFamily: FS, fontSize: 14, fontWeight: 700, color: C.textMain, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span>Comprobantes de transferencia pendientes</span>
-            {comprobantesQuery.isLoading && <span style={{ fontSize: 12, color: C.textMuted }}>Cargando…</span>}
-          </div>
-
-          {comprobantes.length === 0 ? (
-            <div style={{ padding: '48px 20px', textAlign: 'center' }}>
-              <span style={{ width: 52, height: 52, borderRadius: '50%', background: C.greenLight, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }} aria-hidden="true">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={C.greenText} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M5 12l4 4 10-11"/>
-                </svg>
-              </span>
-              <p style={{ fontSize: 14, color: C.textMuted, fontWeight: 600 }}>No hay comprobantes pendientes de revisión</p>
+          {/* Sub-navegación: Pendientes vs Historial */}
+          <div style={{ padding: '14px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button
+                type="button"
+                onClick={() => setSubTabTransferencia('pendientes')}
+                style={{
+                  background: subTabTransferencia === 'pendientes' ? C.green : '#fff',
+                  color: subTabTransferencia === 'pendientes' ? '#fff' : C.textMuted,
+                  border: subTabTransferencia === 'pendientes' ? 'none' : `1px solid ${C.border}`,
+                  borderRadius: 20, padding: '7px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: 6,
+                }}
+              >
+                Pendientes de validación
+                {comprobantesCount > 0 && (
+                  <span style={{
+                    background: subTabTransferencia === 'pendientes' ? '#fff' : C.danger,
+                    color: subTabTransferencia === 'pendientes' ? C.green : '#fff',
+                    borderRadius: 12, padding: '1px 7px', fontSize: 11, fontWeight: 800,
+                  }}>
+                    {comprobantesCount}
+                  </span>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSubTabTransferencia('historial')}
+                style={{
+                  background: subTabTransferencia === 'historial' ? C.green : '#fff',
+                  color: subTabTransferencia === 'historial' ? '#fff' : C.textMuted,
+                  border: subTabTransferencia === 'historial' ? 'none' : `1px solid ${C.border}`,
+                  borderRadius: 20, padding: '7px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer',
+                }}
+              >
+                Historial / Aprobados
+              </button>
             </div>
-          ) : (
-            <div>
-              {comprobantes.map((comp, i) => {
-                const esPdf = comp.comprobanteUrl?.toLowerCase().endsWith('.pdf') ?? false;
-                const enProceso = procesandoComprobante === comp.id;
-                return (
-                  <div
-                    key={comp.id}
+
+            {subTabTransferencia === 'historial' && (
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <span style={{ fontSize: 12, color: C.textMuted, fontWeight: 600 }}>Filtrar:</span>
+                {(['todos', 'aprobado', 'rechazado'] as const).map((est) => (
+                  <button
+                    key={est}
+                    type="button"
+                    onClick={() => setFiltroHistorial(est)}
                     style={{
-                      padding: '16px 20px',
-                      borderBottom: i < comprobantes.length - 1 ? `1px solid ${C.border}` : 'none',
-                      display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', justifyContent: 'space-between',
+                      background: filtroHistorial === est ? C.greenLight : '#fff',
+                      color: filtroHistorial === est ? C.greenText : C.textMuted,
+                      border: filtroHistorial === est ? `1px solid ${C.green}` : `1px solid ${C.border}`,
+                      borderRadius: 14, padding: '4px 10px', fontSize: 11.5, fontWeight: 700, cursor: 'pointer',
                     }}
                   >
-                    {/* Info residente */}
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div style={{ fontWeight: 700, fontSize: 14, color: C.textMain }}>
-                        {comp.residenteNombre ?? 'Sin nombre'}
-                      </div>
-                      <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2 }}>
-                        {comp.concepto}
-                      </div>
-                      <div style={{ fontSize: 11.5, color: C.textMuted, marginTop: 2 }}>
-                        {new Date(comp.fechaEmision).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' })}
-                      </div>
-                    </div>
+                    {est === 'todos' ? 'Todos' : est === 'aprobado' ? 'Aprobadas' : 'Rechazadas'}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
 
-                    {/* Monto */}
-                    <div style={{ textAlign: 'right', minWidth: 80 }}>
-                      <div style={{ fontFamily: FS, fontSize: 18, fontWeight: 800, color: C.green }}>
-                        ${Number(comp.monto).toFixed(2)}
-                      </div>
-                      <div style={{ fontSize: 11, color: C.textMuted }}>MXN</div>
-                    </div>
+          {/* VISTA 1: Pendientes de validación */}
+          {subTabTransferencia === 'pendientes' && (
+            <>
+              {comprobantes.length === 0 ? (
+                <div style={{ padding: '48px 20px', textAlign: 'center' }}>
+                  <span style={{ width: 52, height: 52, borderRadius: '50%', background: C.greenLight, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 12px' }} aria-hidden="true">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={C.greenText} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M5 12l4 4 10-11"/>
+                    </svg>
+                  </span>
+                  <p style={{ fontSize: 14, color: C.textMuted, fontWeight: 600 }}>No hay comprobantes pendientes de revisión</p>
+                </div>
+              ) : (
+                <div>
+                  {comprobantes.map((comp, i) => {
+                    const esPdf = comp.comprobanteUrl?.toLowerCase().endsWith('.pdf') ?? false;
+                    const enProceso = procesandoComprobante === comp.id;
+                    return (
+                      <div
+                        key={comp.id}
+                        style={{
+                          padding: '16px 20px',
+                          borderBottom: i < comprobantes.length - 1 ? `1px solid ${C.border}` : 'none',
+                          display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', justifyContent: 'space-between',
+                        }}
+                      >
+                        {/* Info residente */}
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontWeight: 700, fontSize: 14, color: C.textMain }}>
+                            {comp.residenteNombre ?? 'Sin nombre'}
+                            <span style={{ fontSize: 12, color: C.textMuted, fontWeight: 500, marginLeft: 8 }}>
+                              Edif. {comp.edificio} · Depto {comp.departamento}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 12.5, color: '#2E7D32', marginTop: 2, fontWeight: 600 }}>
+                            {comp.concepto}
+                          </div>
+                          <div style={{ fontSize: 11.5, color: C.textMuted, marginTop: 2 }}>
+                            {new Date(comp.fechaEmision).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' })}
+                          </div>
+                        </div>
 
-                    {/* Acciones */}
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                      {comp.comprobanteUrl && (
-                        <button
-                          type="button"
-                          onClick={() => setVisorComprobante(comp.comprobanteUrl ?? null)}
-                          style={{ border: `1.5px solid ${C.border}`, background: '#fff', color: C.textMain, borderRadius: 10, padding: '7px 12px', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}
-                        >
-                          {esPdf ? '📄 Ver PDF' : '🖼 Ver imagen'}
-                        </button>
-                      )}
-                      <ActionBtn
-                        label={enProceso ? 'Procesando…' : 'Aprobar'}
-                        loading={enProceso}
-                        disabled={enProceso || rechazandoId === comp.id}
-                        danger={false}
-                        onClick={() => void handleAprobar(comp.id)}
-                      />
-                      <ActionBtn
-                        label="Rechazar"
-                        loading={false}
-                        disabled={enProceso || rechazandoId === comp.id}
-                        danger
-                        outline
-                        onClick={() => { setRechazandoId(comp.id); setMotivoRechazo(''); }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                        {/* Monto */}
+                        <div style={{ textAlign: 'right', minWidth: 80 }}>
+                          <div style={{ fontFamily: FS, fontSize: 18, fontWeight: 800, color: C.green }}>
+                            ${Number(comp.monto).toFixed(2)}
+                          </div>
+                          <div style={{ fontSize: 11, color: C.textMuted }}>MXN</div>
+                        </div>
+
+                        {/* Acciones */}
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                          {comp.comprobanteUrl && (
+                            <button
+                              type="button"
+                              onClick={() => setVisorComprobante(comp.comprobanteUrl ?? null)}
+                              style={{ border: `1.5px solid ${C.border}`, background: '#fff', color: C.textMain, borderRadius: 10, padding: '7px 12px', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}
+                            >
+                              {esPdf ? '📄 Ver PDF' : '🖼 Ver imagen'}
+                            </button>
+                          )}
+                          <ActionBtn
+                            label={enProceso ? 'Procesando…' : 'Aprobar'}
+                            loading={enProceso}
+                            disabled={enProceso || rechazandoId === comp.id}
+                            danger={false}
+                            onClick={() => void handleAprobar(comp.id)}
+                          />
+                          <ActionBtn
+                            label="Rechazar"
+                            loading={false}
+                            disabled={enProceso || rechazandoId === comp.id}
+                            danger
+                            outline
+                            onClick={() => { setRechazandoId(comp.id); setMotivoRechazo(''); }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* VISTA 2: Historial / Aprobadas / Rechazadas */}
+          {subTabTransferencia === 'historial' && (
+            <>
+              {todosComprobantesQuery.isLoading ? (
+                <div style={{ padding: '48px 20px', textAlign: 'center', color: C.textMuted, fontSize: 14 }}>
+                  Cargando transferencias…
+                </div>
+              ) : (todosComprobantesQuery.data ?? []).length === 0 ? (
+                <div style={{ padding: '48px 20px', textAlign: 'center' }}>
+                  <p style={{ fontSize: 14, color: C.textMuted, fontWeight: 600 }}>
+                    No hay transferencias {filtroHistorial === 'todos' ? 'registradas' : filtroHistorial === 'aprobado' ? 'aprobadas' : 'rechazadas'}
+                  </p>
+                </div>
+              ) : (
+                <div>
+                  {(todosComprobantesQuery.data ?? []).map((comp, i, arr) => {
+                    const esPdf = comp.comprobanteUrl?.toLowerCase().endsWith('.pdf') ?? false;
+                    const esAprobado = comp.estado === 'aprobado';
+                    const esRechazado = comp.estado === 'rechazado';
+                    return (
+                      <div
+                        key={comp.id}
+                        style={{
+                          padding: '16px 20px',
+                          borderBottom: i < arr.length - 1 ? `1px solid ${C.border}` : 'none',
+                          display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center', justifyContent: 'space-between',
+                        }}
+                      >
+                        {/* Info residente */}
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: 700, fontSize: 14, color: C.textMain }}>
+                              {comp.residenteNombre ?? 'Sin nombre'}
+                            </span>
+                            <span style={{ fontSize: 12, color: C.textMuted }}>
+                              Edif. {comp.edificio} · Depto {comp.departamento}
+                            </span>
+                            <span style={{
+                              fontSize: 11, fontWeight: 800, padding: '2px 8px', borderRadius: 12,
+                              background: esAprobado ? C.greenLight : esRechazado ? C.dangerBg : C.goldBg,
+                              color: esAprobado ? C.greenText : esRechazado ? C.danger : '#7A5800',
+                            }}>
+                              {esAprobado ? 'Aprobada ✓' : esRechazado ? 'Rechazada ✕' : 'Pendiente'}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 12.5, color: '#2E7D32', marginTop: 3, fontWeight: 600 }}>
+                            {comp.concepto}
+                          </div>
+                          {esRechazado && comp.motivoRechazo && (
+                            <div style={{ fontSize: 12, color: C.danger, marginTop: 3, fontWeight: 600 }}>
+                              Motivo de rechazo: {comp.motivoRechazo}
+                            </div>
+                          )}
+                          <div style={{ fontSize: 11, color: C.textMuted, marginTop: 3 }}>
+                            Enviado: {new Date(comp.fechaEmision).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' })}
+                            {comp.fechaRevision && (
+                              <span> · Revisado: {new Date(comp.fechaRevision).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Monto */}
+                        <div style={{ textAlign: 'right', minWidth: 80 }}>
+                          <div style={{ fontFamily: FS, fontSize: 18, fontWeight: 800, color: esAprobado ? C.green : esRechazado ? C.textMuted : '#D97706' }}>
+                            ${Number(comp.monto).toFixed(2)}
+                          </div>
+                          <div style={{ fontSize: 11, color: C.textMuted }}>MXN</div>
+                        </div>
+
+                        {/* Botón Ver Comprobante */}
+                        {comp.comprobanteUrl && (
+                          <div style={{ display: 'flex', alignItems: 'center' }}>
+                            <button
+                              type="button"
+                              onClick={() => setVisorComprobante(comp.comprobanteUrl ?? null)}
+                              style={{ border: `1.5px solid ${C.border}`, background: '#fff', color: C.textMain, borderRadius: 10, padding: '7px 12px', fontWeight: 700, fontSize: 12.5, cursor: 'pointer' }}
+                            >
+                              {esPdf ? '📄 Ver comprobante' : '🖼 Ver comprobante'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
