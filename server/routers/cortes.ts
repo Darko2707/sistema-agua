@@ -111,7 +111,7 @@ export const cortesRouter = router({
     }),
 
   confirmarCorte: operationalRoleProcedure('cuadrilla_cortes', 'admin')
-    .input(z.object({ perfilId: z.string().uuid(), ordenId: z.string().uuid().optional() }))
+    .input(z.object({ perfilId: z.string().uuid(), ordenId: z.string().uuid().optional(), evidenciaUrl: z.string().optional() }))
     .mutation(async ({ ctx, input }) => {
       if (ctx.user.role !== 'admin') {
         await assertPerfilDeCuadrilla(ctx.user.id, input.perfilId, ctx.user.fraccionamientoId);
@@ -120,6 +120,7 @@ export const cortesRouter = router({
         perfilId: input.perfilId,
         trabajadorId: ctx.user.id,
         ordenId: input.ordenId,
+        evidenciaUrl: input.evidenciaUrl,
       });
 
       // El servicio sólo retorna después del COMMIT que también persistió el outbox.

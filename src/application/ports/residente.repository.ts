@@ -26,6 +26,11 @@ export type FraccionamientoCobroRef = {
   representanteId: string | null;
   tesoreraId: string | null;
   activo: boolean;
+  banco?: string | null;
+  clabe?: string | null;
+  titularCuenta?: string | null;
+  numeroCuenta?: string | null;
+  instruccionesTransferencia?: string | null;
 };
 
 export type ServicioCobroRef = {

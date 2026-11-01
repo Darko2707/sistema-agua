@@ -53,7 +53,16 @@ export const fraccionamientosRouter = router({
   miFraccionamiento: roleProcedure('representante', 'tesorera')
     .query(async ({ ctx }) => {
       if (!ctx.user.fraccionamientoId) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes un fraccionamiento asignado' });
-      const [fraccionamiento] = await db.select({ id: fraccionamientos.id, nombre: fraccionamientos.nombre, activo: fraccionamientos.activo })
+      const [fraccionamiento] = await db.select({
+        id: fraccionamientos.id,
+        nombre: fraccionamientos.nombre,
+        activo: fraccionamientos.activo,
+        banco: fraccionamientos.banco,
+        clabe: fraccionamientos.clabe,
+        titularCuenta: fraccionamientos.titularCuenta,
+        numeroCuenta: fraccionamientos.numeroCuenta,
+        instruccionesTransferencia: fraccionamientos.instruccionesTransferencia,
+      })
         .from(fraccionamientos).where(eq(fraccionamientos.id, ctx.user.fraccionamientoId)).limit(1);
       if (!fraccionamiento?.activo) throw new TRPCError({ code: 'FORBIDDEN', message: 'El fraccionamiento no está activo' });
       return fraccionamiento;
@@ -76,6 +85,11 @@ export const fraccionamientosRouter = router({
       montoMensual: fraccionamientos.montoMensual,
       montoReconexion: fraccionamientos.montoReconexion,
       diaCorte: fraccionamientos.diaCorte,
+      banco: fraccionamientos.banco,
+      clabe: fraccionamientos.clabe,
+      titularCuenta: fraccionamientos.titularCuenta,
+      numeroCuenta: fraccionamientos.numeroCuenta,
+      instruccionesTransferencia: fraccionamientos.instruccionesTransferencia,
       mercadoPagoConfigurado: sql<boolean>`coalesce(${fraccionamientoMetodosPago.accessTokenCifrado} <> '' AND ${fraccionamientoMetodosPago.collectorId} IS NOT NULL, false)`,
     })
     .from(fraccionamientos)
@@ -319,6 +333,42 @@ export const fraccionamientosRouter = router({
           detalle: { proveedor: 'mercado_pago', tokenActualizado: Boolean(encryptedAccessToken) },
         });
       });
+      return { ok: true };
+    }),
+
+  actualizarDatosBancarios: roleProcedure('admin')
+    .input(z.object({
+      fraccionamientoId: z.string().uuid(),
+      banco: z.string().trim().max(100).optional().nullable(),
+      clabe: z.string().trim().max(18).optional().nullable(),
+      titularCuenta: z.string().trim().max(150).optional().nullable(),
+      numeroCuenta: z.string().trim().max(30).optional().nullable(),
+      instruccionesTransferencia: z.string().trim().max(1000).optional().nullable(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const [updated] = await db.update(fraccionamientos).set({
+        banco: input.banco || null,
+        clabe: input.clabe || null,
+        titularCuenta: input.titularCuenta || null,
+        numeroCuenta: input.numeroCuenta || null,
+        instruccionesTransferencia: input.instruccionesTransferencia || null,
+        updatedAt: new Date(),
+      }).where(eq(fraccionamientos.id, input.fraccionamientoId)).returning({ id: fraccionamientos.id });
+
+      if (!updated) throw new TRPCError({ code: 'NOT_FOUND', message: 'Fraccionamiento no encontrado' });
+
+      await db.insert(auditoria).values({
+        actorId: ctx.user.id,
+        accion: 'fraccionamiento.datos_bancarios_actualizados',
+        entidad: 'fraccionamientos',
+        entidadId: updated.id,
+        detalle: {
+          banco: input.banco,
+          clabe: input.clabe ? '***' + input.clabe.slice(-4) : null,
+          titularCuenta: input.titularCuenta,
+        },
+      });
+
       return { ok: true };
     }),
 });

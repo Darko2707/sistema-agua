@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Building2, CheckCircle2, KeyRound, Loader2, Plus, Power, Save, Trash2, TriangleAlert, X } from 'lucide-react';
+import { ArrowLeft, Building2, CheckCircle2, KeyRound, Landmark, Loader2, Plus, Power, Save, Trash2, TriangleAlert, X } from 'lucide-react';
 
 import { trpcReact } from '@/lib/trpc-react';
 import { Button } from '@/components/ui/button';
@@ -19,13 +19,20 @@ export default function FraccionamientosAdminPage() {
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
   const [configurando, setConfigurando] = useState<{ id: string; nombre: string } | null>(null);
+  const [metodoModalTab, setMetodoModalTab] = useState<'mercadopago' | 'transferencia'>('mercadopago');
   const [accessToken, setAccessToken] = useState('');
   const [collectorId, setCollectorId] = useState('');
+  const [banco, setBanco] = useState('');
+  const [clabe, setClabe] = useState('');
+  const [titularCuenta, setTitularCuenta] = useState('');
+  const [numeroCuenta, setNumeroCuenta] = useState('');
+  const [instruccionesTransferencia, setInstruccionesTransferencia] = useState('');
   const [errorConfiguracion, setErrorConfiguracion] = useState<string | null>(null);
 
   const fraccionamientosQuery = trpcReact.fraccionamientos.listar.useQuery();
   const crearMutation = trpcReact.fraccionamientos.crear.useMutation();
   const mercadoPagoMutation = trpcReact.fraccionamientos.actualizarMercadoPago.useMutation();
+  const datosBancariosMutation = trpcReact.fraccionamientos.actualizarDatosBancarios.useMutation();
   const cambiarEstadoMutation = trpcReact.fraccionamientos.cambiarEstado.useMutation();
   const eliminarMutation = trpcReact.fraccionamientos.eliminar.useMutation();
 
@@ -72,6 +79,27 @@ export default function FraccionamientosAdminPage() {
       await fraccionamientosQuery.refetch();
     } catch (cause: unknown) {
       setErrorConfiguracion(cause instanceof Error ? cause.message : 'No se pudo guardar Mercado Pago');
+    }
+  }
+
+  async function guardarDatosBancarios(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!configurando) return;
+    setErrorConfiguracion(null);
+    try {
+      await datosBancariosMutation.mutateAsync({
+        fraccionamientoId: configurando.id,
+        banco: banco.trim() || null,
+        clabe: clabe.trim() || null,
+        titularCuenta: titularCuenta.trim() || null,
+        numeroCuenta: numeroCuenta.trim() || null,
+        instruccionesTransferencia: instruccionesTransferencia.trim() || null,
+      });
+      setMensaje('Datos bancarios de transferencia actualizados correctamente');
+      setConfigurando(null);
+      await fraccionamientosQuery.refetch();
+    } catch (cause: unknown) {
+      setErrorConfiguracion(cause instanceof Error ? cause.message : 'No se pudieron guardar los datos bancarios');
     }
   }
 
@@ -211,6 +239,13 @@ export default function FraccionamientosAdminPage() {
                       }`}>
                         Mercado Pago: {fraccionamiento.mercadoPagoConfigurado ? 'configurado' : 'pendiente'}
                       </span>
+                      <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${
+                        fraccionamiento.clabe || fraccionamiento.numeroCuenta
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        Transferencia: {fraccionamiento.clabe || fraccionamiento.numeroCuenta ? 'configurada' : 'pendiente'}
+                      </span>
                       <Button
                         type="button"
                         variant="outline"
@@ -220,6 +255,12 @@ export default function FraccionamientosAdminPage() {
                           setConfigurando({ id: fraccionamiento.id, nombre: fraccionamiento.nombre });
                           setAccessToken('');
                           setCollectorId('');
+                          setBanco(fraccionamiento.banco ?? '');
+                          setClabe(fraccionamiento.clabe ?? '');
+                          setTitularCuenta(fraccionamiento.titularCuenta ?? '');
+                          setNumeroCuenta(fraccionamiento.numeroCuenta ?? '');
+                          setInstruccionesTransferencia(fraccionamiento.instruccionesTransferencia ?? '');
+                          setMetodoModalTab('mercadopago');
                           setErrorConfiguracion(null);
                         }}
                       >
@@ -254,45 +295,158 @@ export default function FraccionamientosAdminPage() {
 
       {configurando && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <form
-            className="w-full max-w-md rounded-xl bg-background p-6 shadow-xl"
+          <div
+            className="w-full max-w-lg rounded-xl bg-background p-6 shadow-xl max-h-[90vh] overflow-y-auto"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="mercado-pago-title"
-            onSubmit={guardarMercadoPago}
+            aria-labelledby="metodo-pago-title"
           >
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h2 id="mercado-pago-title" className="text-lg font-semibold">Mercado Pago</h2>
+                <h2 id="metodo-pago-title" className="text-lg font-semibold">Configuración de Pagos</h2>
                 <p className="mt-1 text-sm text-muted-foreground">{configurando.nombre}</p>
               </div>
               <Button type="button" size="icon" variant="ghost" aria-label="Cerrar" onClick={() => setConfigurando(null)}>
                 <X className="h-4 w-4" />
               </Button>
             </div>
-            <p className="mt-4 text-sm text-muted-foreground">
-              La configuración pertenece al fraccionamiento. El token se cifra y no volverá a mostrarse.
-            </p>
-            <div className="mt-4 space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="mp-access-token">Access Token</Label>
-                <Input id="mp-access-token" type="password" value={accessToken} onChange={(event) => setAccessToken(event.target.value)} placeholder="APP_USR-..." autoComplete="new-password" />
-                <p className="text-xs text-muted-foreground">Déjalo vacío para conservar el token ya configurado.</p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="mp-collector-id">Collector ID</Label>
-                <Input id="mp-collector-id" inputMode="numeric" pattern="[0-9]+" value={collectorId} onChange={(event) => setCollectorId(event.target.value)} placeholder="123456789" required />
-              </div>
-              {errorConfiguracion && <p role="alert" className="text-sm text-red-700">{errorConfiguracion}</p>}
+
+            <div className="mt-4 flex border-b border-border">
+              <button
+                type="button"
+                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                  metodoModalTab === 'mercadopago'
+                    ? 'border-primary text-primary font-semibold'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}
+                onClick={() => { setMetodoModalTab('mercadopago'); setErrorConfiguracion(null); }}
+              >
+                <KeyRound className="h-4 w-4" />
+                Mercado Pago
+              </button>
+              <button
+                type="button"
+                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                  metodoModalTab === 'transferencia'
+                    ? 'border-primary text-primary font-semibold'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}
+                onClick={() => { setMetodoModalTab('transferencia'); setErrorConfiguracion(null); }}
+              >
+                <Landmark className="h-4 w-4" />
+                Transferencia Bancaria
+              </button>
             </div>
-            <div className="mt-6 flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setConfigurando(null)}>Cancelar</Button>
-              <Button type="submit" disabled={mercadoPagoMutation.isPending}>
-                {mercadoPagoMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
-                Guardar
-              </Button>
-            </div>
-          </form>
+
+            {metodoModalTab === 'mercadopago' ? (
+              <form onSubmit={guardarMercadoPago} className="mt-4 space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  La configuración de Mercado Pago pertenece al fraccionamiento. El token se cifra y no volverá a mostrarse.
+                </p>
+                <div className="space-y-2">
+                  <Label htmlFor="mp-access-token">Access Token</Label>
+                  <Input
+                    id="mp-access-token"
+                    type="password"
+                    value={accessToken}
+                    onChange={(event) => setAccessToken(event.target.value)}
+                    placeholder="APP_USR-..."
+                    autoComplete="new-password"
+                  />
+                  <p className="text-xs text-muted-foreground">Déjalo vacío para conservar el token ya configurado.</p>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="mp-collector-id">Collector ID</Label>
+                  <Input
+                    id="mp-collector-id"
+                    inputMode="numeric"
+                    pattern="[0-9]+"
+                    value={collectorId}
+                    onChange={(event) => setCollectorId(event.target.value)}
+                    placeholder="123456789"
+                    required
+                  />
+                </div>
+                {errorConfiguracion && <p role="alert" className="text-sm text-red-700">{errorConfiguracion}</p>}
+                <div className="mt-6 flex justify-end gap-2">
+                  <Button type="button" variant="outline" onClick={() => setConfigurando(null)}>Cancelar</Button>
+                  <Button type="submit" disabled={mercadoPagoMutation.isPending}>
+                    {mercadoPagoMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                    Guardar Mercado Pago
+                  </Button>
+                </div>
+              </form>
+            ) : (
+              <form onSubmit={guardarDatosBancarios} className="mt-4 space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Datos de la cuenta bancaria de tesorería para que los residentes realicen transferencias directas (SPEI).
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="banco">Banco</Label>
+                    <Input
+                      id="banco"
+                      value={banco}
+                      onChange={(event) => setBanco(event.target.value)}
+                      placeholder="BBVA, Santander, Banorte..."
+                      maxLength={100}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="titular-cuenta">Titular de la cuenta</Label>
+                    <Input
+                      id="titular-cuenta"
+                      value={titularCuenta}
+                      onChange={(event) => setTitularCuenta(event.target.value)}
+                      placeholder="Nombre del tesorero o razón social"
+                      maxLength={150}
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="clabe">CLABE Interbancaria (18 dígitos)</Label>
+                    <Input
+                      id="clabe"
+                      value={clabe}
+                      onChange={(event) => setClabe(event.target.value)}
+                      placeholder="012180001234567890"
+                      maxLength={18}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="numero-cuenta">Número de cuenta</Label>
+                    <Input
+                      id="numero-cuenta"
+                      value={numeroCuenta}
+                      onChange={(event) => setNumeroCuenta(event.target.value)}
+                      placeholder="Número de cuenta bancaria"
+                      maxLength={30}
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="instrucciones-transferencia">Instrucciones / Concepto sugerido</Label>
+                  <Input
+                    id="instrucciones-transferencia"
+                    value={instruccionesTransferencia}
+                    onChange={(event) => setInstruccionesTransferencia(event.target.value)}
+                    placeholder="Ej. Colocar en concepto: Edif [letra] Depto [num]"
+                    maxLength={1000}
+                  />
+                  <p className="text-xs text-muted-foreground">Estas instrucciones se mostrarán a los residentes al pagar por transferencia.</p>
+                </div>
+                {errorConfiguracion && <p role="alert" className="text-sm text-red-700">{errorConfiguracion}</p>}
+                <div className="mt-6 flex justify-end gap-2">
+                  <Button type="button" variant="outline" onClick={() => setConfigurando(null)}>Cancelar</Button>
+                  <Button type="submit" disabled={datosBancariosMutation.isPending}>
+                    {datosBancariosMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                    Guardar Datos Bancarios
+                  </Button>
+                </div>
+              </form>
+            )}
+          </div>
         </div>
       )}
     </div>

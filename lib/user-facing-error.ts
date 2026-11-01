@@ -40,6 +40,20 @@ const KNOWN_ERRORS: Array<{
     accion: 'Verifica los datos de la vivienda o inicia sesión con la cuenta ya registrada.',
   },
   {
+    test: /comprobante.*(no encontrado|ya procesado|error al aprobar)|SISCO-210/i,
+    code: 'SISCO-210',
+    titulo: 'Error al verificar el comprobante',
+    causa: 'El comprobante ya fue procesado o no se pudo registrar el pago.',
+    accion: 'Actualiza la lista para revisar si el pago ya fue registrado.',
+  },
+  {
+    test: /comprobante.*rechazad|error al rechazar|SISCO-211/i,
+    code: 'SISCO-211',
+    titulo: 'Error al rechazar el comprobante',
+    causa: 'El comprobante ya fue procesado o el motivo no es válido.',
+    accion: 'Actualiza la lista para verificar el estado del comprobante.',
+  },
+  {
     test: /no hay suficientes periodos|cargos ya no estan disponibles|programar todos los periodos/i,
     code: 'SISCO-202',
     titulo: 'Los cargos seleccionados cambiaron',
