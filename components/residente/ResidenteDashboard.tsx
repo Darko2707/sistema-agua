@@ -627,7 +627,7 @@ export function ResidenteDashboard() {
         : `Pago transferencia – ${periodoTarjetaLabel}`;
 
       const selectedCargoIds = (cargos ?? [])
-        .filter(c => estaServicioSeleccionado(c.fraccionamientoServicioId) && c.estado === 'pendiente')
+        .filter(c => c && c.id && estaServicioSeleccionado(c.fraccionamientoServicioId) && c.estado === 'pendiente' && !cargosEnRevision.has(c.id))
         .map(c => c.id);
 
       await registrarComprobanteMutation.mutateAsync({
@@ -862,15 +862,22 @@ export function ResidenteDashboard() {
           )}
 
           {/* ── Banner: comprobante pendiente ── */}
-          {comprobantePendiente && comprobantePendiente.estado === 'pendiente_validacion' && (
+          {comprobantesPendientesList.length > 0 && (
             <div role="status" style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 20, padding: '15px 16px', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
               <span style={{ flexShrink: 0, width: 36, height: 36, borderRadius: '50%', background: '#93C5FD', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Clock size={17} color="#fff" aria-hidden="true" />
               </span>
               <div>
-                <div style={{ fontFamily: FB, fontWeight: 700, fontSize: 15, color: '#1E40AF' }}>Comprobante de transferencia en revisión</div>
+                <div style={{ fontFamily: FB, fontWeight: 700, fontSize: 15, color: '#1E40AF' }}>
+                  {comprobantesPendientesList.length === 1 ? 'Comprobante de transferencia en revisión' : `${comprobantesPendientesList.length} comprobantes en revisión`}
+                </div>
                 <div style={{ fontSize: 13, color: '#3B82F6', marginTop: 3, lineHeight: 1.5 }}>
-                  Enviaste un comprobante de ${(Number(comprobantePendiente.monto) || 0).toFixed(2)} MXN el {formatFecha(comprobantePendiente.fechaEmision)}. Tu tesorera lo verificará pronto.
+                  {comprobantesPendientesList.length === 1 ? (
+                    <>Enviaste un comprobante de ${(Number(comprobantesPendientesList[0]?.monto) || 0).toFixed(2)} MXN el {formatFecha(comprobantesPendientesList[0]?.fechaEmision)}. Tu tesorera lo verificará pronto.</>
+                  ) : (
+                    <>Tienes comprobantes en proceso de validación por tu tesorera.</>
+                  )}{' '}
+                  Puedes realizar nuevos pagos por transferencia para conceptos o meses que no estén en revisión.
                 </div>
               </div>
             </div>
@@ -895,28 +902,26 @@ export function ResidenteDashboard() {
           )}
 
           {/* ── Banner: pagar por transferencia ── */}
-          {!comprobantePendiente || comprobantePendiente.estado === 'rechazado' ? (
-            perfil.fraccionamiento?.clabe || perfil.fraccionamiento?.numeroCuenta ? (
-              <div style={{ background: 'linear-gradient(135deg, #E8F5E9 0%, #F1F8E9 100%)', border: '1px solid #C8E6C9', borderRadius: 20, padding: '16px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                  <span style={{ width: 38, height: 38, borderRadius: '50%', background: '#A5D6A7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2E7D32" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="13" rx="2"/><path d="M16 8V6a4 4 0 00-8 0v2"/><path d="M12 13v4"/></svg>
-                  </span>
-                  <div>
-                    <div style={{ fontFamily: FB, fontWeight: 700, fontSize: 14.5, color: '#2E7D32' }}>¿Quieres pagar con transferencia?</div>
-                    <div style={{ fontSize: 12, color: '#388E3C', marginTop: 2 }}>Sin comisiones de Mercado Pago</div>
-                  </div>
+          {(perfil.fraccionamiento?.clabe || perfil.fraccionamiento?.numeroCuenta) && (
+            <div style={{ background: 'linear-gradient(135deg, #E8F5E9 0%, #F1F8E9 100%)', border: '1px solid #C8E6C9', borderRadius: 20, padding: '16px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <span style={{ width: 38, height: 38, borderRadius: '50%', background: '#A5D6A7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2E7D32" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="13" rx="2"/><path d="M16 8V6a4 4 0 00-8 0v2"/><path d="M12 13v4"/></svg>
+                </span>
+                <div>
+                  <div style={{ fontFamily: FB, fontWeight: 700, fontSize: 14.5, color: '#2E7D32' }}>Pagar por transferencia bancaria</div>
+                  <div style={{ fontSize: 12, color: '#388E3C', marginTop: 2 }}>Sin comisiones · Disponible para nuevos conceptos o meses futuros</div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => { setModalTransferencia(true); setErrorTransferencia(null); setMensajeTransferencia(null); }}
-                  style={{ background: '#2E7D32', color: '#fff', border: 'none', borderRadius: 14, padding: '9px 16px', cursor: 'pointer', fontFamily: FB, fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}
-                >
-                  Ver datos
-                </button>
               </div>
-            ) : null
-          ) : null}
+              <button
+                type="button"
+                onClick={() => { setModalTransferencia(true); setErrorTransferencia(null); setMensajeTransferencia(null); }}
+                style={{ background: '#2E7D32', color: '#fff', border: 'none', borderRadius: 14, padding: '9px 16px', cursor: 'pointer', fontFamily: FB, fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' }}
+              >
+                Pagar por transferencia
+              </button>
+            </div>
+          )}
 
           {/* ── Services section (Uniform symmetrical cards) ── */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -987,7 +992,9 @@ export function ResidenteDashboard() {
 
               const detalleServicio =
                 todoEnRevision
-                  ? 'Comprobante de transferencia en proceso de validación por tu tesorera'
+                  ? (mesesS === 1
+                      ? 'Cargo actual en revisión por tesorería · Adelanto de 1 periodo'
+                      : `Cargo actual en revisión por tesorería · Adelanto de ${mesesS} periodos`)
                   : cargosDisponiblesServicio.length > 0
                     ? `Cubre ${mesesS === 1 ? `periodo pendiente (${periodoCargoLabel})` : `${mesesS} periodos a partir de ${periodoCargoLabel}`}`
                     : `Adelanto de ${mesesS} ${mesesS === 1 ? 'periodo' : 'periodos consecutivos'}`;
@@ -1000,13 +1007,13 @@ export function ResidenteDashboard() {
                   estadoBadge={badgeServicioText}
                   badgeBg={badgeServicioBg}
                   badgeColor={badgeServicioColor}
-                  seleccionado={!todoEnRevision && estaServicioSeleccionado(servicio.id)}
+                  seleccionado={estaServicioSeleccionado(servicio.id)}
                   onToggle={checked => setServiciosSeleccionados(prev => ({ ...(prev ?? {}), [servicio.id]: checked }))}
                   meses={mesesS}
                   onMesesChange={val => setMesesPorServicio(prev => ({ ...(prev ?? {}), [servicio.id]: val }))}
                   subtotal={subtotalS}
                   periodoDetalle={detalleServicio}
-                  deshabilitado={todoEnRevision}
+                  deshabilitado={false}
                 />
               );
             })}
@@ -1111,6 +1118,28 @@ export function ResidenteDashboard() {
                 </svg>
                 {pagando ? 'Redirigiendo a Mercado Pago...' : `Pagar $${totalCheckout.toFixed(2)} con Mercado Pago`}
               </button>
+
+              {(perfil.fraccionamiento?.clabe || perfil.fraccionamiento?.numeroCuenta) && (
+                <button
+                  type="button"
+                  onClick={() => { setModalTransferencia(true); setErrorTransferencia(null); setMensajeTransferencia(null); }}
+                  style={{
+                    width: '100%', marginTop: 10,
+                    background: '#E8F5E9',
+                    color: '#2E7D32',
+                    border: '1.5px solid #A5D6A7',
+                    borderRadius: 18,
+                    padding: 14,
+                    cursor: 'pointer',
+                    fontFamily: FB, fontSize: 14.5, fontWeight: 700,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    transition: 'all .15s',
+                  }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2E7D32" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="13" rx="2"/><path d="M16 8V6a4 4 0 00-8 0v2"/><path d="M12 13v4"/></svg>
+                  Pagar ${totalBaseCheckout.toFixed(2)} por transferencia
+                </button>
+              )}
 
               {error && (
                 <div role="alert" aria-live="assertive" style={{ marginTop: 10, background: C.pendingBg, borderRadius: 12, padding: '10px 14px', fontSize: 13, color: C.pendingText, fontWeight: 600 }}>
@@ -1300,7 +1329,7 @@ export function ResidenteDashboard() {
             {/* Subir comprobante */}
             <div style={{ marginBottom: 16 }}>
               <label style={{ display: 'block', fontFamily: FB, fontWeight: 700, fontSize: 14, color: C.textMain, marginBottom: 8 }}>
-                Adjunta tu comprobante de pago
+                Adjuntar comprobante de pago
               </label>
               <input
                 type="file"
@@ -1329,6 +1358,12 @@ export function ResidenteDashboard() {
               )}
             </div>
 
+            {totalBaseCheckout <= 0 && (
+              <div role="alert" style={{ background: '#FFF9C4', borderRadius: 12, padding: '10px 14px', fontSize: 13, color: '#6D4C00', fontWeight: 600, marginBottom: 12 }}>
+                Selecciona al menos un periodo de agua o servicio en el panel antes de enviar tu comprobante.
+              </div>
+            )}
+
             {errorTransferencia && (
               <div role="alert" style={{ background: '#FBEAE9', borderRadius: 12, padding: '10px 14px', fontSize: 13, color: C.pendingText, fontWeight: 600, marginBottom: 12 }}>
                 {errorTransferencia}
@@ -1338,14 +1373,14 @@ export function ResidenteDashboard() {
             <button
               type="button"
               onClick={handleSubirComprobante}
-              disabled={subiendoComprobante || !archivoComprobante}
+              disabled={subiendoComprobante || !archivoComprobante || totalBaseCheckout <= 0}
               style={{
-                width: '100%', padding: '15px', background: subiendoComprobante || !archivoComprobante ? '#A5D6A7' : '#2E7D32',
-                color: '#fff', border: 'none', borderRadius: 16, cursor: subiendoComprobante || !archivoComprobante ? 'not-allowed' : 'pointer',
+                width: '100%', padding: '15px', background: subiendoComprobante || !archivoComprobante || totalBaseCheckout <= 0 ? '#A5D6A7' : '#2E7D32',
+                color: '#fff', border: 'none', borderRadius: 16, cursor: subiendoComprobante || !archivoComprobante || totalBaseCheckout <= 0 ? 'not-allowed' : 'pointer',
                 fontFamily: FB, fontSize: 15, fontWeight: 700, transition: 'background .15s',
               }}
             >
-              {subiendoComprobante ? 'Enviando...' : 'Enviar comprobante'}
+              {subiendoComprobante ? 'Enviando...' : 'Registrar transferencia'}
             </button>
             <div style={{ textAlign: 'center', fontSize: 11.5, color: C.textWarm3, marginTop: 10 }}>
               Tu tesorera revisará y confirmará el pago manualmente.
