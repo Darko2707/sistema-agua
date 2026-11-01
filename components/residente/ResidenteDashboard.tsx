@@ -70,8 +70,13 @@ const PAYMENT_RESULT = {
 
 function formatFecha(date: Date | string | null | undefined): string {
   if (!date) return '';
-  const d = date instanceof Date ? date : new Date(date);
-  return d.toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' });
+  try {
+    const d = date instanceof Date ? date : new Date(date);
+    if (!d || isNaN(d.getTime())) return '';
+    return d.toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' });
+  } catch {
+    return '';
+  }
 }
 
 function addMonths(mes: number, anio: number, offset: number) {
@@ -82,7 +87,8 @@ function addMonths(mes: number, anio: number, offset: number) {
   };
 }
 
-function pagoKey(pago: { mes: number; anio: number }) {
+function pagoKey(pago: { mes?: number | null; anio?: number | null } | null | undefined) {
+  if (!pago || typeof pago.mes !== 'number' || typeof pago.anio !== 'number') return '';
   return `${pago.anio}-${pago.mes}`;
 }
 
@@ -354,19 +360,26 @@ export function ResidenteDashboard() {
   }, [historialLoading, sessionPending, historial?.perfil, roleWithoutResidentProfile, router, workerHome]);
 
   const comprobantesPendientesList = useMemo(() => {
-    if (comprobantesPendientes && comprobantesPendientes.length > 0) return comprobantesPendientes;
+    const list = Array.isArray(comprobantesPendientes) ? comprobantesPendientes : [];
+    if (list.length > 0) return list;
     if (comprobantePendiente && comprobantePendiente.estado === 'pendiente_validacion') return [comprobantePendiente];
     return [];
   }, [comprobantesPendientes, comprobantePendiente]);
 
   const mesesEnRevision = useMemo(() => {
     const set = new Set<string>();
-    for (const c of comprobantesPendientesList) {
+    for (const c of (comprobantesPendientesList ?? [])) {
+      if (!c) continue;
       if (c.estado === 'pendiente_validacion' && c.metadatos) {
-        const meta = typeof c.metadatos === 'string' ? JSON.parse(c.metadatos) : c.metadatos;
-        if (meta?.meses && Array.isArray(meta.meses)) {
+        let meta = c.metadatos as any;
+        if (typeof meta === 'string') {
+          try { meta = JSON.parse(meta); } catch { meta = null; }
+        }
+        if (meta && typeof meta === 'object' && Array.isArray(meta.meses)) {
           for (const m of meta.meses) {
-            set.add(`${m.anio}-${m.mes}`);
+            if (m && typeof m.mes === 'number' && typeof m.anio === 'number') {
+              set.add(`${m.anio}-${m.mes}`);
+            }
           }
         }
       }
@@ -376,12 +389,16 @@ export function ResidenteDashboard() {
 
   const cargosEnRevision = useMemo(() => {
     const set = new Set<string>();
-    for (const c of comprobantesPendientesList) {
+    for (const c of (comprobantesPendientesList ?? [])) {
+      if (!c) continue;
       if (c.estado === 'pendiente_validacion' && c.metadatos) {
-        const meta = typeof c.metadatos === 'string' ? JSON.parse(c.metadatos) : c.metadatos;
-        if (meta?.cargosServicioIds && Array.isArray(meta.cargosServicioIds)) {
+        let meta = c.metadatos as any;
+        if (typeof meta === 'string') {
+          try { meta = JSON.parse(meta); } catch { meta = null; }
+        }
+        if (meta && typeof meta === 'object' && Array.isArray(meta.cargosServicioIds)) {
           for (const id of meta.cargosServicioIds) {
-            set.add(id);
+            if (id) set.add(String(id));
           }
         }
       }
@@ -390,12 +407,16 @@ export function ResidenteDashboard() {
   }, [comprobantesPendientesList]);
 
   function estaServicioSeleccionado(servicioId: string) {
-    if (servicioId in serviciosSeleccionados) {
+    if (!servicioId) return false;
+    if (serviciosSeleccionados && servicioId in serviciosSeleccionados) {
       return Boolean(serviciosSeleccionados[servicioId]);
     }
-    return (cargos ?? []).some(c =>
+    const cargosLista = Array.isArray(cargos) ? cargos : [];
+    return cargosLista.some(c =>
+      c &&
       c.fraccionamientoServicioId === servicioId &&
       c.estado === 'pendiente' &&
+      c.id &&
       !cargosEnRevision.has(c.id)
     );
   }
@@ -444,14 +465,18 @@ export function ResidenteDashboard() {
   const serviciosActivos = (servicios ?? []).filter(servicio => servicio.clave !== 'agua');
 
   function calcularSubtotalServicio(s: { id: string; montoMensual: string | number }, count: number) {
-    const pendingCargos = (cargos ?? [])
-      .filter(c => c.fraccionamientoServicioId === s.id && c.estado === 'pendiente' && !cargosEnRevision.has(c.id))
-      .sort((a, b) => (a.anio !== b.anio ? a.anio - b.anio : a.mes - b.mes));
+    if (!s || !s.id) return 0;
+    const cargosList = Array.isArray(cargos) ? cargos : [];
+    const pendingCargos = cargosList
+      .filter(c => c && c.fraccionamientoServicioId === s.id && c.estado === 'pendiente' && c.id && !cargosEnRevision.has(c.id))
+      .sort((a, b) => ((a.anio ?? 0) !== (b.anio ?? 0) ? (a.anio ?? 0) - (b.anio ?? 0) : (a.mes ?? 0) - (b.mes ?? 0)));
     const countFromPending = Math.min(pendingCargos.length, count);
-    const sumPending = pendingCargos.slice(0, countFromPending).reduce((acc, c) => acc + Number(c.monto), 0);
+    const sumPending = pendingCargos.slice(0, countFromPending).reduce((acc, c) => acc + (Number(c?.monto) || 0), 0);
     const remainingCount = Math.max(0, count - countFromPending);
-    const sumRemaining = remainingCount * Number(s.montoMensual);
-    return sumPending + sumRemaining;
+    const montoMensualNum = Number(s.montoMensual) || 0;
+    const sumRemaining = remainingCount * montoMensualNum;
+    const total = sumPending + sumRemaining;
+    return isNaN(total) ? 0 : total;
   }
 
   const montoBaseAgua = montoMensualAgua * mesesAgua + (esReconexion ? montoReconexion : 0);
@@ -471,10 +496,11 @@ export function ResidenteDashboard() {
   const miRol    = (sessionData?.user?.role as string) ?? 'residente';
 
   const initials = userName.trim().split(/\s+/).map(n => n[0]).slice(0, 2).join('').toUpperCase();
-  const periodoActual = `${MESES[mesActual - 1]} ${anioActual}`;
+  const periodoActual = `${MESES[Math.max(0, mesActual - 1)] ?? ''} ${anioActual}`;
+  const pagados = Array.isArray(pagos) ? pagos : [];
   const pagadosKeys = useMemo(
-    () => new Set(pagos.filter(p => p.estado === 'pagado').map(pagoKey)),
-    [pagos],
+    () => new Set(pagados.filter(p => p && p.estado === 'pagado' && typeof p.mes === 'number' && typeof p.anio === 'number').map(pagoKey)),
+    [pagados],
   );
 
   // Proyecta los siguientes 1 a 12 meses futuros disponibles (no pagados y no en revisión)
@@ -491,13 +517,20 @@ export function ResidenteDashboard() {
     return disponibles;
   }, [mesActual, anioActual, pagadosKeys, mesesEnRevision]);
 
-  const primerPeriodoAgua = periodosDisponiblesAgua[0] ?? { mes: mesActual, anio: anioActual };
-  const idxUltimoPeriodo = Math.min(mesesAgua, Math.max(1, periodosDisponiblesAgua.length)) - 1;
-  const ultimoPeriodoAgua = periodosDisponiblesAgua[idxUltimoPeriodo] ?? primerPeriodoAgua;
-  const periodoAguaInicioLabel = `${MESES[primerPeriodoAgua.mes - 1]} ${primerPeriodoAgua.anio}`;
-  const periodoAguaFinLabel = `${MESES[ultimoPeriodoAgua.mes - 1]} ${ultimoPeriodoAgua.anio}`;
-  const tieneMesesAguaDisponibles = periodosDisponiblesAgua.length > 0;
-  const periodosPendientesTarjeta = periodosDisponiblesAgua;
+  const primerPeriodoAgua = (periodosDisponiblesAgua && periodosDisponiblesAgua.length > 0)
+    ? periodosDisponiblesAgua[0]
+    : { mes: mesActual, anio: anioActual };
+  const idxUltimoPeriodo = Math.max(0, Math.min(mesesAgua, (periodosDisponiblesAgua?.length ?? 1)) - 1);
+  const ultimoPeriodoAgua = (periodosDisponiblesAgua && periodosDisponiblesAgua[idxUltimoPeriodo])
+    ? periodosDisponiblesAgua[idxUltimoPeriodo]
+    : primerPeriodoAgua;
+
+  const mesInicioIdx = Math.max(0, Math.min(11, (primerPeriodoAgua?.mes ?? mesActual) - 1));
+  const mesFinIdx = Math.max(0, Math.min(11, (ultimoPeriodoAgua?.mes ?? mesActual) - 1));
+  const periodoAguaInicioLabel = `${MESES[mesInicioIdx] ?? ''} ${primerPeriodoAgua?.anio ?? anioActual}`;
+  const periodoAguaFinLabel = `${MESES[mesFinIdx] ?? ''} ${ultimoPeriodoAgua?.anio ?? anioActual}`;
+  const tieneMesesAguaDisponibles = (periodosDisponiblesAgua?.length ?? 0) > 0;
+  const periodosPendientesTarjeta = periodosDisponiblesAgua ?? [];
   const primerPeriodoTarjeta = primerPeriodoAgua;
   const periodoTarjetaLabel = periodoAguaInicioLabel;
 
@@ -516,9 +549,9 @@ export function ResidenteDashboard() {
     miRol === 'admin'           ? { label: 'Mi panel (Admin)', path: '/admin' } :
     null;
 
-  const historyItems = pagos
-    .filter(p => p.estado === 'pagado')
-    .sort((a, b) => b.anio !== a.anio ? b.anio - a.anio : b.mes - a.mes)
+  const historyItems = (pagados ?? [])
+    .filter(p => p && p.estado === 'pagado')
+    .sort((a, b) => ((b.anio ?? 0) !== (a.anio ?? 0) ? (b.anio ?? 0) - (a.anio ?? 0) : (b.mes ?? 0) - (a.mes ?? 0)))
     .slice(0, 6);
 
   const breakdown = desgloseCheckout ? [
@@ -834,7 +867,7 @@ export function ResidenteDashboard() {
               <div>
                 <div style={{ fontFamily: FB, fontWeight: 700, fontSize: 15, color: '#1E40AF' }}>Comprobante de transferencia en revisión</div>
                 <div style={{ fontSize: 13, color: '#3B82F6', marginTop: 3, lineHeight: 1.5 }}>
-                  Enviaste un comprobante de ${Number(comprobantePendiente.monto).toFixed(2)} MXN el {formatFecha(comprobantePendiente.fechaEmision)}. Tu tesorera lo verificará pronto.
+                  Enviaste un comprobante de ${(Number(comprobantePendiente.monto) || 0).toFixed(2)} MXN el {formatFecha(comprobantePendiente.fechaEmision)}. Tu tesorera lo verificará pronto.
                 </div>
               </div>
             </div>
@@ -913,13 +946,15 @@ export function ResidenteDashboard() {
 
             {/* Other Catalog Services Cards */}
             {serviciosActivos.map(servicio => {
-              const cargosServicio = (cargos ?? []).filter(c => c.fraccionamientoServicioId === servicio.id);
+              if (!servicio || !servicio.id) return null;
+              const cargosLista = Array.isArray(cargos) ? cargos : [];
+              const cargosServicio = cargosLista.filter(c => c && c.fraccionamientoServicioId === servicio.id);
               const pendientesServicio = cargosServicio
-                .filter(c => c.estado === 'pendiente')
-                .sort((a, b) => a.anio !== b.anio ? a.anio - b.anio : a.mes - b.mes);
-              const cargosDisponiblesServicio = pendientesServicio.filter(c => !cargosEnRevision.has(c.id));
-              const pagadosServicio = cargosServicio.filter(c => c.estado === 'pagado');
-              const pagadoEsteMesServicio = pagadosServicio.some(c => c.mes === mesActual && c.anio === anioActual);
+                .filter(c => c && c.estado === 'pendiente')
+                .sort((a, b) => ((a.anio ?? 0) !== (b.anio ?? 0) ? (a.anio ?? 0) - (b.anio ?? 0) : (a.mes ?? 0) - (b.mes ?? 0)));
+              const cargosDisponiblesServicio = pendientesServicio.filter(c => c && c.id && !cargosEnRevision.has(c.id));
+              const pagadosServicio = cargosServicio.filter(c => c && c.estado === 'pagado');
+              const pagadoEsteMesServicio = pagadosServicio.some(c => c && c.mes === mesActual && c.anio === anioActual);
               const todoEnRevision = pendientesServicio.length > 0 && cargosDisponiblesServicio.length === 0;
 
               const badgeServicioText =
@@ -935,28 +970,37 @@ export function ResidenteDashboard() {
                 todoEnRevision ? '#1E40AF' :
                 cargosDisponiblesServicio.length > 0 ? C.pendingText : C.green2;
 
-              const mesesS = mesesPorServicio[servicio.id] || 1;
+              const mesesS = (mesesPorServicio && typeof mesesPorServicio[servicio.id] === 'number')
+                ? mesesPorServicio[servicio.id]
+                : 1;
               const subtotalS = calcularSubtotalServicio(servicio, mesesS);
+
+              const primerCargoPend = cargosDisponiblesServicio[0];
+              const mesPendIdx = (primerCargoPend && typeof primerCargoPend.mes === 'number')
+                ? Math.max(0, Math.min(11, primerCargoPend.mes - 1))
+                : Math.max(0, mesActual - 1);
+              const anioPend = primerCargoPend?.anio ?? anioActual;
+              const periodoCargoLabel = `${MESES[mesPendIdx] ?? ''} ${anioPend}`;
 
               const detalleServicio =
                 todoEnRevision
                   ? 'Comprobante de transferencia en proceso de validación por tu tesorera'
                   : cargosDisponiblesServicio.length > 0
-                    ? `Cubre ${mesesS === 1 ? `periodo pendiente (${MESES[cargosDisponiblesServicio[0].mes - 1]} ${cargosDisponiblesServicio[0].anio})` : `${mesesS} periodos a partir de ${MESES[cargosDisponiblesServicio[0].mes - 1]} ${cargosDisponiblesServicio[0].anio}`}`
+                    ? `Cubre ${mesesS === 1 ? `periodo pendiente (${periodoCargoLabel})` : `${mesesS} periodos a partir de ${periodoCargoLabel}`}`
                     : `Adelanto de ${mesesS} ${mesesS === 1 ? 'periodo' : 'periodos consecutivos'}`;
 
               return (
                 <ServiceCard
                   key={servicio.id}
-                  nombre={servicio.nombre}
-                  montoMensual={Number(servicio.montoMensual)}
+                  nombre={servicio.nombre ?? 'Servicio'}
+                  montoMensual={Number(servicio.montoMensual) || 0}
                   estadoBadge={badgeServicioText}
                   badgeBg={badgeServicioBg}
                   badgeColor={badgeServicioColor}
                   seleccionado={!todoEnRevision && estaServicioSeleccionado(servicio.id)}
-                  onToggle={checked => setServiciosSeleccionados(prev => ({ ...prev, [servicio.id]: checked }))}
+                  onToggle={checked => setServiciosSeleccionados(prev => ({ ...(prev ?? {}), [servicio.id]: checked }))}
                   meses={mesesS}
-                  onMesesChange={val => setMesesPorServicio(prev => ({ ...prev, [servicio.id]: val }))}
+                  onMesesChange={val => setMesesPorServicio(prev => ({ ...(prev ?? {}), [servicio.id]: val }))}
                   subtotal={subtotalS}
                   periodoDetalle={detalleServicio}
                   deshabilitado={todoEnRevision}
@@ -1094,20 +1138,26 @@ export function ResidenteDashboard() {
             ) : (
               <div role="list" aria-label="Historial de pagos">
                 {historyItems.map((p, i) => {
+                  if (!p) return null;
                   const pAny = p as any;
-                  const montoFinal = pAny.montoTotalEfectivo ?? p.montoBase ?? p.monto;
-                  const desglose = pAny.desgloseConceptos;
-                  const comprobanteUrl = pAny.comprobanteUrl;
+                  const montoFinal = pAny?.montoTotalEfectivo ?? p?.montoBase ?? p?.monto ?? 0;
+                  const montoNum = Number(montoFinal);
+                  const montoTexto = isNaN(montoNum) ? '0.00' : montoNum.toFixed(2);
+                  const desglose = typeof pAny?.desgloseConceptos === 'string' && pAny.desgloseConceptos.trim() ? pAny.desgloseConceptos : null;
+                  const comprobanteUrl = typeof pAny?.comprobanteUrl === 'string' && pAny.comprobanteUrl.trim() ? pAny.comprobanteUrl : null;
+                  const mesIdx = typeof p.mes === 'number' ? Math.max(0, Math.min(11, p.mes - 1)) : Math.max(0, mesActual - 1);
+                  const mesTexto = MESES[mesIdx] ?? '';
+                  const anioTexto = p.anio ? String(p.anio) : String(anioActual);
                   return (
                     <div
-                      key={p.id}
+                      key={p.id ?? `historial-${i}`}
                       role="listitem"
                       style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 0', borderBottom: i < historyItems.length - 1 ? `1px solid ${C.border2}` : 'none' }}
                     >
                       <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0, flex: 1 }}>
                         <CheckCircle2 size={32} color={C.green2} style={{ flexShrink: 0 }} aria-hidden="true" />
                         <div style={{ minWidth: 0 }}>
-                          <div style={{ fontSize: 14, fontWeight: 700, color: C.textMain }}>{MESES[p.mes - 1]} {p.anio}</div>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: C.textMain }}>{mesTexto} {anioTexto}</div>
                           <div style={{ fontSize: 12, color: C.textWarm2, marginTop: 2 }}>
                             {p.esReconexion ? 'Cuota + reconexión' : 'Cuota mensual'}
                             {p.folio && ` · ${p.folio}`}
@@ -1137,8 +1187,8 @@ export function ResidenteDashboard() {
                           )}
                         </div>
                       </div>
-                      <span aria-label={`Monto al fraccionamiento: ${montoFinal} MXN`} style={{ fontFamily: FB, fontSize: 15, fontWeight: 700, color: C.green, flexShrink: 0, marginLeft: 8 }}>
-                        ${Number(montoFinal).toFixed(2)}
+                      <span aria-label={`Monto al fraccionamiento: ${montoTexto} MXN`} style={{ fontFamily: FB, fontSize: 15, fontWeight: 700, color: C.green, flexShrink: 0, marginLeft: 8 }}>
+                        ${montoTexto}
                       </span>
                     </div>
                   );
