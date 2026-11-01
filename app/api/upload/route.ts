@@ -188,17 +188,17 @@ export async function POST(req: Request) {
       name: typeof file.name === 'string' ? path.basename(file.name) : `${fileId}${extension}`,
     });
   } catch (error) {
-    const errMsg = error instanceof Error ? error.message : String(error);
-    logger.error('file.upload_error', { userId: session.user.id, safeFilename, message: errMsg });
+    const errorMsg = error instanceof Error ? error.message : JSON.stringify(error);
+    logger.error({ event: 'file.upload_error', error: errorMsg, userId: session.user.id, safeFilename });
 
     // Devolver un mensaje amigable según el tipo de error detectado
-    if (errMsg.includes('413') || errMsg.includes('too large') || errMsg.includes('size')) {
+    if (errorMsg.includes('413') || errorMsg.includes('too large') || errorMsg.includes('size')) {
       return Response.json(
         { error: `El archivo excede el límite y tamaño máximo permitido de ${MAX_FILE_SIZE_BYTES / (1024 * 1024)} MB` },
         { status: 413 },
       );
     }
-    if (errMsg.includes('timeout') || errMsg.includes('aborted')) {
+    if (errorMsg.includes('timeout') || errorMsg.includes('aborted')) {
       return Response.json(
         { error: 'El servidor tardó demasiado en procesar el archivo. Intenta con una imagen más pequeña.' },
         { status: 504 },

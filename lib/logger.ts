@@ -30,7 +30,15 @@ function emit(level: LogLevel, event: string, data: Record<string, unknown>): vo
   else console.log(prefix, rest ?? '');
 }
 
-export const logger = {
+export interface Logger {
+  debug(event: string, data?: Record<string, unknown>): void;
+  info(event: string, data?: Record<string, unknown>): void;
+  warn(event: string, data?: Record<string, unknown>): void;
+  error(payload: { event: string; error?: unknown } & Record<string, unknown>): void;
+  error(event: string, error?: unknown, data?: Record<string, unknown>): void;
+}
+
+export const logger: Logger = {
   debug(event: string, data?: Record<string, unknown>): void {
     emit('debug', event, data ?? {});
   },
@@ -43,14 +51,33 @@ export const logger = {
     emit('warn', event, data ?? {});
   },
 
-  error(event: string, error?: unknown, data?: Record<string, unknown>): void {
-    const errFields: Record<string, unknown> = { ...(data ?? {}) };
+  error(
+    eventOrPayload: string | ({ event: string; error?: unknown } & Record<string, unknown>),
+    error?: unknown,
+    data?: Record<string, unknown>
+  ): void {
+    let event: string;
+    let err: unknown;
+    let errFields: Record<string, unknown>;
 
-    if (error instanceof Error) {
-      errFields.errorMessage = error.message;
-      if (!IS_PROD) errFields.stack = error.stack;
-    } else if (error !== undefined) {
-      errFields.error = String(error);
+    if (typeof eventOrPayload === 'object' && eventOrPayload !== null) {
+      const { event: ev, error: e, ...rest } = eventOrPayload;
+      event = ev;
+      err = e;
+      errFields = { ...rest };
+    } else {
+      event = eventOrPayload;
+      err = error;
+      errFields = { ...(data ?? {}) };
+    }
+
+    if (err instanceof Error) {
+      errFields.errorMessage = err.message;
+      if (!IS_PROD) errFields.stack = err.stack;
+    } else if (typeof err === 'object' && err !== null) {
+      errFields.error = JSON.stringify(err);
+    } else if (err !== undefined) {
+      errFields.error = String(err);
     }
 
     emit('error', event, errFields);

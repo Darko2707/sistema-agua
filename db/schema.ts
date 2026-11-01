@@ -1,5 +1,5 @@
 // db/schema.ts
-import { pgTable, uuid, text, integer, decimal, timestamp, boolean, pgEnum, uniqueIndex, index, jsonb, check, foreignKey } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, text, integer, decimal, timestamp, boolean, pgEnum, uniqueIndex, unique, index, jsonb, check, foreignKey } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 
 export const rolEnum = pgEnum('rol', [
@@ -306,6 +306,7 @@ export const perfilesServicios = pgTable('perfiles_servicios', {
   creadoEn:             timestamp('creado_en').notNull().defaultNow(),
   actualizadoEn:       timestamp('actualizado_en').notNull().defaultNow(),
 }, (t) => [
+  unique('perfiles_servicios_perfil_servicio_unique').on(t.perfilId, t.fraccionamientoServicioId),
   uniqueIndex('uq_perfiles_servicios_perfil_servicio').on(t.perfilId, t.fraccionamientoServicioId),
   index('idx_perfiles_servicios_tenant_estado').on(t.fraccionamientoId, t.estadoAgua),
   index('idx_perfiles_servicios_activo_tenant').on(t.fraccionamientoId, t.activo, t.fraccionamientoServicioId),
