@@ -835,7 +835,12 @@ export function ResidenteDashboard() {
                     <MenuItem
                       label={roleNav.label}
                       icon="role"
-                      onClick={() => { setMenuOpen(false); router.push(roleNav.path); }}
+                      onClick={() => {
+                        setMenuOpen(false);
+                        void utils.pagos.miHistorial.invalidate();
+                        void utils.usuarios.miPerfil.invalidate();
+                        window.location.href = roleNav.path;
+                      }}
                     />
                   )}
                   <MenuItem

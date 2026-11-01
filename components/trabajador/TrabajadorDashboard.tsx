@@ -125,6 +125,7 @@ function JobCard({ job, tipo, procesando, onAction }: JobCardProps) {
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 export function TrabajadorDashboard() {
   const router  = useRouter();
+  const utils   = trpcReact.useUtils();
   const { data: session, isPending: sessionPending } = useSession();
   const [filter, setFilter]       = useState<FilterType>('todos');
   const [procesando, setProcesando] = useState<string | null>(null);
@@ -162,6 +163,13 @@ export function TrabajadorDashboard() {
   });
   const tienePerfilResidente = Boolean(miPerfilQ.data);
   const { confirmarCorte, confirmarReconexion } = useActualizarEstadoAgua();
+
+  const irAResidente = () => {
+    setMenuOpen(false);
+    void utils.pagos.miHistorial.invalidate();
+    void utils.usuarios.miPerfil.invalidate();
+    window.location.href = '/residente';
+  };
 
   const queryError = cortesQ.error?.message ?? reconexionesQ.error?.message ?? asignacionQ.error?.message ?? null;
 
@@ -304,7 +312,7 @@ export function TrabajadorDashboard() {
                     Mi panel
                   </button>
                   {tienePerfilResidente && (
-                    <button role="menuitem" onClick={() => { setMenuOpen(false); router.push('/residente'); }}
+                    <button role="menuitem" onClick={irAResidente}
                       style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: 'none', border: 'none', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#1F2A22', fontFamily: FM, textAlign: 'left' }}>
                       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
                       Mi residencia
