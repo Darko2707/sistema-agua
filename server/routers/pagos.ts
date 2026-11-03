@@ -19,6 +19,7 @@ import {
   fraccionamientos,
   perfilesResidente,
   servicios,
+  tickets,
   user,
 } from '@/db/schema';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
@@ -107,6 +108,13 @@ async function registrarCargosObligatoriosManuales(input: {
         entidad: 'cargos_servicios',
         entidadId: cargo.id,
         detalle: { perfilId: input.perfilId, fraccionamientoId: input.fraccionamientoId, metodo: input.metodo, folio, servicio: cargo.servicio },
+      });
+      await tx.insert(tickets).values({
+        pagoId: null,
+        cargoServicioId: cargo.id,
+        tipo: 'servicio',
+        folio,
+        pdfUrl: null,
       });
     }
     return { cargos, monto };
@@ -895,6 +903,13 @@ export const pagosRouter = router({
 
         // Determinar meses a registrar (del input o de los metadatos)
         const mesesInput = input.meses ?? metadatos.meses;
+        const cargosIds = metadatos.cargosServicioIds ?? [];
+        if ((!mesesInput || mesesInput.length === 0) && cargosIds.length === 0) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'El comprobante no contiene periodos ni cargos por acreditar. Solicita al residente que lo envíe de nuevo.',
+          });
+        }
 
         let pagoId: string | null = null;
         let comprobanteAprobadoEnTransaccion = false;
@@ -1000,7 +1015,6 @@ export const pagosRouter = router({
         }
 
         // 4. Marcar cargos de servicios adicionales como pagados (si existen en metadatos)
-        const cargosIds = metadatos.cargosServicioIds ?? [];
         if (cargosIds.length > 0) {
           try {
             await registrarCargosObligatoriosManuales({

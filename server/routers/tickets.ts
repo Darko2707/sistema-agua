@@ -73,6 +73,7 @@ export const ticketsRouter = router({
       where: (p, { eq, and }) => and(
         eq(p.perfilId, perfil.id),
         eq(p.fraccionamientoId, ctx.user.fraccionamientoId!),
+        eq(p.estado, 'pagado'),
       ),
     });
     const ids = misPagos.map((p) => p.id);
@@ -80,6 +81,7 @@ export const ticketsRouter = router({
       where: (c, { eq, and }) => and(
         eq(c.perfilId, perfil.id),
         eq(c.fraccionamientoId, ctx.user.fraccionamientoId!),
+        eq(c.estado, 'pagado'),
       ),
     });
     const cargoIds = misCargos.map((c) => c.id);
@@ -100,6 +102,12 @@ export const ticketsRouter = router({
             estado: true,
             metodo: true,
             folio: true,
+          },
+          with: {
+            fraccionamientoServicio: {
+              columns: {},
+              with: { servicio: { columns: { nombre: true } } },
+            },
           },
         },
         pago: {

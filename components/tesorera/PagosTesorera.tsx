@@ -118,8 +118,8 @@ export function PagosTesorera() {
     { enabled: tabActiva === 'transferencias' },
   );
   const aprobarMutation   = trpcReact.pagos.aprobarComprobante.useMutation({
-    onSuccess: () => {
-      mostrar('Comprobante aprobado y pago registrado', 'ok');
+    onSuccess: (result) => {
+      mostrar(result.pagoId ? 'Comprobante aprobado y pago registrado' : 'Comprobante aprobado y cargos acreditados', 'ok');
       void utils.reportes.reporteFinanciero.invalidate();
     },
     onSettled: () => {
@@ -293,8 +293,8 @@ export function PagosTesorera() {
   }
 
   async function handleRechazar(id: string) {
-    if (!motivoRechazo.trim()) {
-      mostrar('Escribe el motivo del rechazo', 'error');
+    if (motivoRechazo.trim().length < 5) {
+      mostrar('Escribe un motivo de al menos 5 caracteres', 'error');
       return;
     }
     setProcesandoComprobante(id);
@@ -958,6 +958,7 @@ export function PagosTesorera() {
               value={motivoRechazo}
               onChange={e => setMotivoRechazo(e.target.value)}
               rows={4}
+              maxLength={500}
               placeholder="Ej: El comprobante no corresponde al monto indicado..."
               style={{ width: '100%', borderRadius: 12, border: `1.5px solid ${C.border}`, padding: '10px 12px', fontFamily: FM, fontSize: 13, color: C.textMain, resize: 'vertical', boxSizing: 'border-box' }}
             />
@@ -966,8 +967,8 @@ export function PagosTesorera() {
               <button
                 type="button"
                 onClick={() => void handleRechazar(rechazandoId)}
-                disabled={!!procesandoComprobante || !motivoRechazo.trim()}
-                style={{ border: 'none', background: C.danger, color: '#fff', borderRadius: 10, padding: '9px 14px', fontWeight: 800, cursor: procesandoComprobante || !motivoRechazo.trim() ? 'not-allowed' : 'pointer', opacity: procesandoComprobante || !motivoRechazo.trim() ? .65 : 1 }}
+                disabled={!!procesandoComprobante || motivoRechazo.trim().length < 5}
+                style={{ border: 'none', background: C.danger, color: '#fff', borderRadius: 10, padding: '9px 14px', fontWeight: 800, cursor: procesandoComprobante || motivoRechazo.trim().length < 5 ? 'not-allowed' : 'pointer', opacity: procesandoComprobante || motivoRechazo.trim().length < 5 ? .65 : 1 }}
               >
                 {procesandoComprobante ? 'Rechazando…' : 'Confirmar rechazo'}
               </button>

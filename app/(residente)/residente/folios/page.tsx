@@ -39,6 +39,7 @@ type Ticket = {
     anio: number;
     monto: string;
     montoTotalCobrado?: string;
+    fraccionamientoServicio?: { servicio?: { nombre: string } | null } | null;
   } | null;
   pago?: {
     mes: number;
@@ -250,7 +251,7 @@ export default function FoliosPage() {
                 {ticketsFiltrados.map((ticket, i) => {
                   const p = ticket.pago;
                   const c = ticket.cargoServicio;
-                  const periodo = p ? `${MESES[p.mes - 1]} ${p.anio}` : c ? `Servicio · ${MESES[c.mes - 1]} ${c.anio}` : 'Sin periodo';
+                  const periodo = p ? `${MESES[p.mes - 1]} ${p.anio}` : c ? `${c.fraccionamientoServicio?.servicio?.nombre ?? 'Servicio'} · ${MESES[c.mes - 1]} ${c.anio}` : 'Sin periodo';
                   const fecha = formatFechaCort(ticket.emitidoEn);
                   return (
                     <div

@@ -412,6 +412,9 @@ describe('Comprobantes de transferencia para Tesorería', () => {
     const savedPayment = savedReceipt?.pagoId
       ? await db.query.pagos.findFirst({ where: (row, { eq }) => eq(row.id, savedReceipt.pagoId!) })
       : null;
+    const savedTicket = savedPayment
+      ? await db.query.tickets.findFirst({ where: (row, { eq }) => eq(row.pagoId, savedPayment.id) })
+      : null;
     const auditRow = await db.query.auditoria.findFirst({
       where: (row, { and, eq }) => and(
         eq(row.entidad, 'comprobantes_transferencia'),
@@ -426,6 +429,7 @@ describe('Comprobantes de transferencia para Tesorería', () => {
     expect(savedReceipt?.revisadoPor).toBe(FX.adminId);
     expect(savedPayment?.estado).toBe('pagado');
     expect(savedPayment?.metodo).toBe('transferencia');
+    expect(savedTicket?.folio).toBe(savedPayment?.folio);
     expect(auditRow).toBeDefined();
   });
 

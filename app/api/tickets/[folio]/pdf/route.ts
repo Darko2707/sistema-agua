@@ -57,6 +57,7 @@ export async function GET(
     with: {
       pago: {
         columns: {
+          estado: true,
           mes: true,
           anio: true,
           monto: true,
@@ -106,6 +107,9 @@ export async function GET(
   const role = usuario?.role ?? 'residente';
   let pdfInput: Parameters<typeof generarTicketPDF>[0];
   if (ticket.pago?.perfil) {
+    if (ticket.pago.estado !== 'pagado') {
+      return Response.json({ error: 'El pago aún no está confirmado' }, { status: 409 });
+    }
     const esDuenio = ticket.pago.perfil.userId === session.user.id;
     const esAdmin = role === 'admin';
     const esRepresentante = role === 'representante' && ticket.pago.fraccionamiento?.representanteId === session.user.id;
