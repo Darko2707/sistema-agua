@@ -51,6 +51,8 @@ export function inlineComprobanteHeaders(contentType: string, extension?: string
     'Content-Type': contentType,
     'Content-Disposition': `inline; filename="comprobante${safeExtension}"`,
     'X-Content-Type-Options': 'nosniff',
+    'Content-Security-Policy': "default-src 'none'; frame-ancestors 'self'",
+    'X-Frame-Options': 'SAMEORIGIN',
     'Cache-Control': 'private, max-age=300',
   };
 }

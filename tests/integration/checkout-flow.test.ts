@@ -391,6 +391,8 @@ describe('Comprobantes de transferencia para Tesorería', () => {
     expect(getComprobanteMimeType('data:image/webp;base64,UklGRg==')).toBe('image/webp');
     expect(new Headers(inlineComprobanteHeaders('application/pdf', '.pdf')).get('content-disposition'))
       .toBe('inline; filename="comprobante.pdf"');
+    expect(new Headers(inlineComprobanteHeaders('application/pdf', '.pdf')).get('content-security-policy'))
+      .toContain("frame-ancestors 'self'");
 
     const current = new Date();
     const receipt = await seedComprobante('preview', current.getMonth() + 1, current.getFullYear());
