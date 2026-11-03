@@ -5,7 +5,7 @@ import { trpcReact } from '@/lib/trpc-react';
 import { MESES_CORTO as MESES } from '@/lib/meses';
 import { MAX_MESES_POR_PAGO_TESORERA } from '@/src/domain/pagos/periodos-tesoreria';
 import { userFacingError } from '@/lib/user-facing-error';
-import { isPdfComprobante } from '@/lib/comprobante-file';
+import { isPdfComprobante, normalizeComprobanteViewUrl } from '@/lib/comprobante-file';
 
 const C = {
   green:      '#15493A',
@@ -901,9 +901,7 @@ export function PagosTesorera() {
 
       {/* Modal visor de comprobante */}
       {visorComprobante && (() => {
-        const urlImagen = visorComprobante.startsWith('http') || visorComprobante.startsWith('/')
-          ? visorComprobante
-          : `/${visorComprobante}`;
+        const urlImagen = normalizeComprobanteViewUrl(visorComprobante);
         const esPdf = isPdfComprobante(urlImagen);
         return (
           <div

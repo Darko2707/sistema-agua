@@ -11,6 +11,13 @@ export function buildComprobanteViewUrl(reference: string): string {
   return `/api/upload?ref=${encodeURIComponent(reference)}`;
 }
 
+/** Normaliza referencias históricas y actuales para su uso en un visor. */
+export function normalizeComprobanteViewUrl(reference: string): string {
+  const value = reference.trim();
+  if (/^data:/i.test(value) || /^https?:\/\//i.test(value) || value.startsWith('/')) return value;
+  return buildComprobanteViewUrl(value);
+}
+
 export function getComprobanteMimeType(reference: string | null | undefined): string | null {
   if (!reference) return null;
 

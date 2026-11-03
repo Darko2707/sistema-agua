@@ -20,7 +20,7 @@ import { residenteRepo, pagoRepo } from '@/src/infrastructure/db/repositories';
 import { parseExternalReference } from '@/src/infrastructure/mercadopago/parser';
 import { calcularDesglosePago } from '@/src/domain/pagos/calculator';
 import { pagosRouter } from '@/server/routers/pagos';
-import { buildComprobanteViewUrl, getComprobanteMimeType, inlineComprobanteHeaders } from '@/lib/comprobante-file';
+import { buildComprobanteViewUrl, getComprobanteMimeType, inlineComprobanteHeaders, normalizeComprobanteViewUrl } from '@/lib/comprobante-file';
 
 // ── Fixtures ───────────────────────────────────────────────────────────────────
 const suffix = nanoid(8);
@@ -382,6 +382,8 @@ describe('Comprobantes de transferencia para Tesorería', () => {
   it('genera y lista una URL privada de vista previa con MIME inline para PDF', async () => {
     const viewUrl = buildComprobanteViewUrl(`uploads/${FX.resId}/prueba.pdf`);
     expect(viewUrl).toBe(`/api/upload?ref=${encodeURIComponent(`uploads/${FX.resId}/prueba.pdf`)}`);
+    expect(normalizeComprobanteViewUrl(`uploads/${FX.resId}/prueba.pdf`)).toBe(viewUrl);
+    expect(normalizeComprobanteViewUrl('data:image/jpeg;base64,/9j/')).toBe('data:image/jpeg;base64,/9j/');
     expect(getComprobanteMimeType(viewUrl)).toBe('application/pdf');
     expect(getComprobanteMimeType('data:application/pdf;base64,JVBERi0x')).toBe('application/pdf');
     expect(getComprobanteMimeType('/api/upload?ref=uploads%2Fu%2Freceipt.jpg')).toBe('image/jpeg');

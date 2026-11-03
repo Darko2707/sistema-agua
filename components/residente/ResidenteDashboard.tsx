@@ -12,6 +12,7 @@ import { MESES_FULL as MESES } from '@/lib/meses';
 import { CheckCircle2, Clock, XCircle } from 'lucide-react';
 import { calcularDesglosePago } from '@/src/domain/pagos/calculator';
 import { homePathForRole } from '@/lib/role-home';
+import { isPdfComprobante, normalizeComprobanteViewUrl } from '@/lib/comprobante-file';
 
 // ── Design tokens ──────────────────────────────────────────────────────────────
 const C = {
@@ -1500,10 +1501,8 @@ export function ResidenteDashboard() {
 
 {/* Modal visor de comprobante del historial */}
       {visorHistorialUrl && (() => {
-        const urlImagen = visorHistorialUrl.startsWith('http') || visorHistorialUrl.startsWith('/')
-          ? visorHistorialUrl
-          : `/${visorHistorialUrl}`;
-        const esPdf = urlImagen.toLowerCase().includes('.pdf');
+        const urlImagen = normalizeComprobanteViewUrl(visorHistorialUrl);
+        const esPdf = isPdfComprobante(urlImagen);
         return (
           <div
             role="dialog"

@@ -146,21 +146,8 @@ export async function POST(req: Request) {
       // en la base de datos sin depender de /var/task/.uploads.
       // Límite defensivo: el Data URL base64 aumenta ~33% el tamaño; si supera 4 MB
       // codificado se rechaza para evitar columnas TEXT demasiado grandes en la BD.
-      const base64 = buffer.toString('base64');
-      const dataUrl = `data:${mimeType};base64,${base64}`;
-      const DATA_URL_LIMIT = 4 * 1024 * 1024; // 4 MB codificado
-      if (dataUrl.length > DATA_URL_LIMIT) {
-        return Response.json(
-          {
-            error:
-              'El archivo es demasiado grande para almacenarlo. ' +
-              'Comprime la imagen a menos de 2 MB o configura un bucket de almacenamiento (BLOB_READ_WRITE_TOKEN).',
-          },
-          { status: 413 },
-        );
-      }
       storedReference = safeFilename;
-      fileUrl = dataUrl;
+      fileUrl = buildComprobanteViewUrl(safeFilename);
 
       // En desarrollo local intentamos escribir en disco como cache/backup
       try {
