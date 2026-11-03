@@ -1,11 +1,15 @@
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
+import { getValidatedTestDatabaseUrl } from './tests/integration/database-env';
 
 const projectRoot = fileURLToPath(new URL('.', import.meta.url));
 
+// Load and validate the test-only URL in the runner before it creates worker
+// processes. The setup file repeats the guard inside each worker before db import.
+getValidatedTestDatabaseUrl();
+
 export default defineConfig({
-  // Integration tests must never inherit .env.local (or any other Vite env file).
-  // TEST_DATABASE_URL has to be supplied explicitly by the shell or CI.
+  // Integration tests load only .env.test through database-env.ts.
   envDir: false,
   test: {
     environment: 'node',
@@ -18,6 +22,9 @@ export default defineConfig({
     fileParallelism: false,
   },
   resolve: {
-    alias: { '@': projectRoot },
+    alias: {
+      '@': projectRoot,
+      'server-only': fileURLToPath(new URL('./tests/integration/server-only.ts', import.meta.url)),
+    },
   },
 });

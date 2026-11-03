@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "db:migrate": "dotenv -e .env.local -- drizzle-kit migrate",
+    "db:migrate:test": "drizzle-kit migrate --config=drizzle.test.config.ts",
     "db:prepare-checkout-mixto": "dotenv -e .env.local -- tsx db/scripts/prepare-checkout-mixto.ts",
     "db:migrate:staging": "dotenv -e .env.staging -- drizzle-kit migrate",
     "db:generate": "dotenv -e .env.local -- drizzle-kit generate",
@@ -18,7 +19,7 @@
     "worker": "tsx workers/push.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:integration": "vitest run --config vitest.integration.config.mts",
+    "test:integration": "npm run db:migrate:test && vitest run --config vitest.integration.config.mts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui"
   },

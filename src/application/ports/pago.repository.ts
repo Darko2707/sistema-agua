@@ -80,6 +80,12 @@ export type CrearPagosManualBatchInput = {
     accion: 'pago.manual.tesorera' | 'pago.retroactivo.admin' | 'pago.transferencia.aprobado';
     metodo: 'efectivo' | 'transferencia';
   };
+  aprobarComprobante?: {
+    comprobanteId: string;
+    fraccionamientoId: string;
+    revisadoPor: string;
+    meses: Array<{ mes: number; anio: number }>;
+  };
 };
 
 export type CrearPagosManualBatchResult = {

@@ -42,6 +42,20 @@ const historialPagosHandler = new HistorialPagosHandler({ pagoRepo, residenteRep
 const resumenMesHandler = new ResumenMesHandler({ pagoRepo, residenteRepo });
 const metricasAdminHandler = new MetricasAdminHandler({ pagoRepo });
 
+function scheduleTransferPushDispatch(event: 'approved' | 'rejected', comprobanteId: string) {
+  try {
+    schedulePushDispatch();
+  } catch (error) {
+    // Payment/review state is already committed; dispatch failure must not
+    // report a false mutation failure or invite a duplicate approval attempt.
+    logger.warn('comprobante_transferencia.push_dispatch_skipped', {
+      event,
+      comprobanteId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
 const MESES_CORTO = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 
 async function registrarCargosObligatoriosManuales(input: {
@@ -883,6 +897,7 @@ export const pagosRouter = router({
         const mesesInput = input.meses ?? metadatos.meses;
 
         let pagoId: string | null = null;
+        let comprobanteAprobadoEnTransaccion = false;
         if (mesesInput && mesesInput.length > 0) {
           const servicioAgua = residenteRepo.findWaterServiceConfig
             ? await residenteRepo.findWaterServiceConfig(perfil.id)
@@ -939,9 +954,18 @@ export const pagosRouter = router({
                 metodo: 'transferencia',
               },
               politica: { tipo: 'tesorera_escalonada' },
+              aprobarComprobante: {
+                comprobanteId: input.comprobanteId,
+                fraccionamientoId: ctx.user.fraccionamientoId,
+                revisadoPor: ctx.user.id,
+                meses: mesesInput,
+              },
             });
             pagoId = batchResult.pagos[0]?.id ?? null;
-            if (batchResult.pagos.length > 0) schedulePushDispatch();
+            comprobanteAprobadoEnTransaccion = true;
+            if (batchResult.pagos.length > 0) {
+              scheduleTransferPushDispatch('approved', input.comprobanteId);
+            }
           } catch (batchErr) {
             logger.warn('comprobante_transferencia.batch_aviso', {
               comprobanteId: input.comprobanteId,
@@ -955,14 +979,25 @@ export const pagosRouter = router({
           }
         }
 
-        // 3. Marcar comprobante como aprobado en la BD
-        await db.update(comprobantesTransferencia).set({
-          estado:        'aprobado',
-          fechaRevision: new Date(),
-          revisadoPor:   ctx.user.id,
-          pagoId,
-          actualizadoEn: new Date(),
-        }).where(eq(comprobantesTransferencia.id, input.comprobanteId));
+        // Lotes de agua marcan el comprobante dentro de la misma transacción
+        // que crea pagos/tickets; los comprobantes sin periodos de agua usan esta ruta.
+        if (!comprobanteAprobadoEnTransaccion) {
+          const revisadoEn = new Date();
+          const [actualizado] = await db.update(comprobantesTransferencia).set({
+            estado: 'aprobado',
+            fechaRevision: revisadoEn,
+            revisadoPor: ctx.user.id,
+            pagoId,
+            actualizadoEn: revisadoEn,
+          }).where(and(
+            eq(comprobantesTransferencia.id, input.comprobanteId),
+            eq(comprobantesTransferencia.fraccionamientoId, ctx.user.fraccionamientoId),
+            eq(comprobantesTransferencia.estado, 'pendiente_validacion'),
+          )).returning({ id: comprobantesTransferencia.id });
+          if (!actualizado) {
+            throw new TRPCError({ code: 'CONFLICT', message: 'El comprobante ya fue revisado por otra solicitud' });
+          }
+        }
 
         // 4. Marcar cargos de servicios adicionales como pagados (si existen en metadatos)
         const cargosIds = metadatos.cargosServicioIds ?? [];
@@ -984,13 +1019,15 @@ export const pagosRouter = router({
           }
         }
 
-        await db.insert(auditoria).values({
-          actorId:   ctx.user.id,
-          accion:    'comprobante_transferencia.aprobado',
-          entidad:   'comprobantes_transferencia',
-          entidadId: input.comprobanteId,
-          detalle:   { perfilId: perfil.id, pagoId, meses: mesesInput },
-        });
+        if (!comprobanteAprobadoEnTransaccion) {
+          await db.insert(auditoria).values({
+            actorId: ctx.user.id,
+            accion: 'comprobante_transferencia.aprobado',
+            entidad: 'comprobantes_transferencia',
+            entidadId: input.comprobanteId,
+            detalle: { perfilId: perfil.id, pagoId, meses: mesesInput },
+          });
+        }
 
         logger.info('comprobante_transferencia.aprobado', { id: input.comprobanteId, pagoId, tesoreraId: ctx.user.id });
         return { ok: true, pagoId };
@@ -1035,25 +1072,35 @@ export const pagosRouter = router({
 
         const perfil = await residenteRepo.findById(comprobante.perfilId);
 
-        await db.update(comprobantesTransferencia).set({
-          estado:        'rechazado',
-          motivoRechazo: input.motivoRechazo,
-          fechaRevision: new Date(),
-          revisadoPor:   ctx.user.id,
-          actualizadoEn: new Date(),
-        }).where(eq(comprobantesTransferencia.id, input.comprobanteId));
+        const revisadoEn = new Date();
+        await db.transaction(async (tx) => {
+          const [actualizado] = await tx.update(comprobantesTransferencia).set({
+            estado: 'rechazado',
+            motivoRechazo: input.motivoRechazo,
+            fechaRevision: revisadoEn,
+            revisadoPor: ctx.user.id,
+            actualizadoEn: revisadoEn,
+          }).where(and(
+            eq(comprobantesTransferencia.id, input.comprobanteId),
+            eq(comprobantesTransferencia.fraccionamientoId, ctx.user.fraccionamientoId!),
+            eq(comprobantesTransferencia.estado, 'pendiente_validacion'),
+          )).returning({ id: comprobantesTransferencia.id });
+          if (!actualizado) {
+            throw new TRPCError({ code: 'CONFLICT', message: 'El comprobante ya fue revisado por otra solicitud' });
+          }
+
+          await tx.insert(auditoria).values({
+            actorId: ctx.user.id,
+            accion: 'comprobante_transferencia.rechazado',
+            entidad: 'comprobantes_transferencia',
+            entidadId: input.comprobanteId,
+            detalle: { perfilId: comprobante.perfilId, motivo: input.motivoRechazo },
+          });
+        });
 
         if (perfil) {
-          schedulePushDispatch();
+          scheduleTransferPushDispatch('rejected', input.comprobanteId);
         }
-
-        await db.insert(auditoria).values({
-          actorId:   ctx.user.id,
-          accion:    'comprobante_transferencia.rechazado',
-          entidad:   'comprobantes_transferencia',
-          entidadId: input.comprobanteId,
-          detalle:   { perfilId: comprobante.perfilId, motivo: input.motivoRechazo },
-        });
 
         logger.info('comprobante_transferencia.rechazado', { id: input.comprobanteId, tesoreraId: ctx.user.id });
         return { ok: true };

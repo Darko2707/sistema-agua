@@ -5,6 +5,7 @@ import { trpcReact } from '@/lib/trpc-react';
 import { MESES_CORTO as MESES } from '@/lib/meses';
 import { MAX_MESES_POR_PAGO_TESORERA } from '@/src/domain/pagos/periodos-tesoreria';
 import { userFacingError } from '@/lib/user-facing-error';
+import { isPdfComprobante } from '@/lib/comprobante-file';
 
 const C = {
   green:      '#15493A',
@@ -284,6 +285,8 @@ export function PagosTesorera() {
     setProcesandoComprobante(id);
     try {
       await aprobarMutation.mutateAsync({ comprobanteId: id });
+    } catch {
+      // The mutation's onError handler displays the message; consume the click-handler rejection.
     } finally {
       setProcesandoComprobante(null);
     }
@@ -299,6 +302,8 @@ export function PagosTesorera() {
       await rechazarMutation.mutateAsync({ comprobanteId: id, motivoRechazo: motivoRechazo.trim() });
       setRechazandoId(null);
       setMotivoRechazo('');
+    } catch {
+      // The mutation's onError handler displays the message; keep the reason available for retry.
     } finally {
       setProcesandoComprobante(null);
     }
@@ -733,7 +738,7 @@ export function PagosTesorera() {
               ) : (
                 <div>
                   {comprobantes.map((comp, i) => {
-                    const esPdf = comp.comprobanteUrl?.toLowerCase().endsWith('.pdf') ?? false;
+                    const esPdf = isPdfComprobante(comp.comprobanteUrl);
                     const enProceso = procesandoComprobante === comp.id;
                     return (
                       <div
@@ -819,7 +824,7 @@ export function PagosTesorera() {
               ) : (
                 <div>
                   {(todosComprobantesQuery.data ?? []).map((comp, i, arr) => {
-                    const esPdf = comp.comprobanteUrl?.toLowerCase().endsWith('.pdf') ?? false;
+                    const esPdf = isPdfComprobante(comp.comprobanteUrl);
                     const esAprobado = comp.estado === 'aprobado';
                     const esRechazado = comp.estado === 'rechazado';
                     return (
@@ -899,7 +904,7 @@ export function PagosTesorera() {
         const urlImagen = visorComprobante.startsWith('http') || visorComprobante.startsWith('/')
           ? visorComprobante
           : `/${visorComprobante}`;
-        const esPdf = urlImagen.toLowerCase().includes('.pdf');
+        const esPdf = isPdfComprobante(urlImagen);
         return (
           <div
             role="dialog"

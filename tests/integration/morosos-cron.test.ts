@@ -21,7 +21,15 @@ import { nanoid } from 'nanoid';
 import { eq, and, inArray, notInArray } from 'drizzle-orm';
 
 import { db } from '@/db';
-import { user, fraccionamientos, perfilesResidente, pagos } from '@/db/schema';
+import {
+  user,
+  fraccionamientos,
+  perfilesResidente,
+  perfilesServicios,
+  pagos,
+  servicios,
+  fraccionamientoServicios,
+} from '@/db/schema';
 import { residenteRepo, pagoRepo } from '@/src/infrastructure/db/repositories';
 
 // ── Fixture IDs ────────────────────────────────────────────────────────────────
@@ -31,6 +39,10 @@ const FX = {
   repId:    `test-rep-${suffix}`,
   repEmail: `rep.${suffix}@integration-test.local`,
   fraccionamientoId: '' as string,
+  fraccionamientoServicioId: '' as string,
+  servicioId: '' as string,
+  servicioExistia: false,
+  servicioAnterior: null as { activo: boolean; conCorteFisico: boolean } | null,
 
   // Each resident covers a distinct edge case:
   resA_id: `test-resA-${suffix}`,  // activo, sin pago              → debe marcarse
@@ -66,6 +78,38 @@ beforeAll(async () => {
   }).returning({ id: fraccionamientos.id });
   FX.fraccionamientoId = fraccionamiento.id;
 
+  const servicioExistente = await db.query.servicios.findFirst({
+    where: (servicio, { eq }) => eq(servicio.clave, 'agua'),
+  });
+  if (servicioExistente) {
+    FX.servicioId = servicioExistente.id;
+    FX.servicioExistia = true;
+    FX.servicioAnterior = {
+      activo: servicioExistente.activo,
+      conCorteFisico: servicioExistente.conCorteFisico,
+    };
+    await db.update(servicios)
+      .set({ activo: true, conCorteFisico: true })
+      .where(eq(servicios.id, FX.servicioId));
+  } else {
+    const [servicio] = await db.insert(servicios).values({
+      clave: 'agua',
+      nombre: 'Agua',
+      activo: true,
+      conCorteFisico: true,
+    }).returning({ id: servicios.id });
+    FX.servicioId = servicio.id;
+  }
+
+  const [activacion] = await db.insert(fraccionamientoServicios).values({
+    fraccionamientoId: FX.fraccionamientoId,
+    servicioId: FX.servicioId,
+    estado: 'activo',
+    montoMensual: '100.00',
+    montoReconexion: '300.00',
+  }).returning({ id: fraccionamientoServicios.id });
+  FX.fraccionamientoServicioId = activacion.id;
+
   async function seedRes(
     id: string,
     email: string,
@@ -79,6 +123,13 @@ beforeAll(async () => {
       userId: id, fraccionamientoId: FX.fraccionamientoId, telefono: '5500000000', sexo: 'otro', tenencia: 'propietario',
       edificio: '999991', departamento: String(Number(depto)), estadoAgua: estado,
     }).returning({ id: perfilesResidente.id });
+    await db.insert(perfilesServicios).values({
+      perfilId: p.id,
+      fraccionamientoId: FX.fraccionamientoId,
+      fraccionamientoServicioId: FX.fraccionamientoServicioId,
+      estadoAgua: estado,
+      activo: true,
+    });
     return p.id;
   }
 
@@ -104,6 +155,7 @@ beforeAll(async () => {
     estado: 'pagado' | 'pendiente',
   ) {
     await db.insert(pagos).values({
+      fraccionamientoId: FX.fraccionamientoId,
       perfilId, representanteId: FX.repId,
       mes, anio,
       monto: '100.00', montoBase: '100.00', iva: '0.00',
@@ -122,6 +174,10 @@ beforeAll(async () => {
 
 // ── Teardown ───────────────────────────────────────────────────────────────────
 afterAll(async () => {
+  // beforeAll can fail before the tenant UUID is assigned; never issue cleanup
+  // queries with the empty-string sentinel in that case.
+  if (!FX.fraccionamientoId) return;
+
   const perfIds = FIXTURE_PERF_IDS.filter(Boolean);
   const resIds  = [
     FX.resA_id, FX.resB_id, FX.resC_id, FX.resD_id, FX.resE_id,
@@ -132,6 +188,13 @@ afterAll(async () => {
     await db.delete(user).where(inArray(user.id, resIds));
     await db.delete(user).where(eq(user.id, FX.repId));
     await db.delete(fraccionamientos).where(eq(fraccionamientos.id, FX.fraccionamientoId));
+    if (FX.servicioExistia && FX.servicioAnterior) {
+      await db.update(servicios)
+        .set(FX.servicioAnterior)
+        .where(eq(servicios.id, FX.servicioId));
+    } else if (FX.servicioId) {
+      await db.delete(servicios).where(eq(servicios.id, FX.servicioId));
+    }
   } catch (e) {
     console.error('Teardown failed:', e);
   }
@@ -261,6 +324,7 @@ describe('marcarMorososDelMes — integración con BD real', () => {
     it('un pago tardío del mes 7 no protege en la evaluación del mes 8', async () => {
       // Insertar pago tardío de mes 7 para perfI (paga después de la fecha de corte)
       await db.insert(pagos).values({
+        fraccionamientoId: FX.fraccionamientoId,
         perfilId: FX.perfI, representanteId: FX.repId,
         mes: MES + 1, anio: ANIO,
         monto: '100.00', montoBase: '100.00', iva: '0.00',
@@ -296,6 +360,7 @@ describe('marcarMorososDelMes — integración con BD real', () => {
       // Simula: residente paga mes 6 después del corte y paga mes 7 antes del corte.
       // Estado: debe quedar activo en evaluación de mes 7.
       await db.insert(pagos).values({
+        fraccionamientoId: FX.fraccionamientoId,
         perfilId: FX.perfA, representanteId: FX.repId,
         mes: MES + 1, anio: ANIO,
         monto: '100.00', montoBase: '100.00', iva: '0.00',

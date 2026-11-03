@@ -9,6 +9,7 @@ import {
   fraccionamientos,
   notificaciones,
   mercadoPagoPaymentIntents,
+  comprobantesTransferencia,
 } from '@/db/schema';
 import type {
   PagoRepository,
@@ -553,6 +554,37 @@ export class DrizzlePagoRepository implements PagoRepository {
             periodos: input.pagos.map(({ mes, anio }) => ({ mes, anio })),
           },
         });
+
+        if (input.aprobarComprobante) {
+          const revisadoEn = new Date();
+          const [comprobanteActualizado] = await tx.update(comprobantesTransferencia).set({
+            estado: 'aprobado',
+            fechaRevision: revisadoEn,
+            revisadoPor: input.aprobarComprobante.revisadoPor,
+            pagoId: insertados[0]?.id ?? null,
+            actualizadoEn: revisadoEn,
+          }).where(and(
+            eq(comprobantesTransferencia.id, input.aprobarComprobante.comprobanteId),
+            eq(comprobantesTransferencia.fraccionamientoId, input.aprobarComprobante.fraccionamientoId),
+            eq(comprobantesTransferencia.estado, 'pendiente_validacion'),
+          )).returning({ id: comprobantesTransferencia.id });
+
+          if (!comprobanteActualizado) {
+            throw new TRPCError({ code: 'CONFLICT', message: 'El comprobante ya fue revisado por otra solicitud' });
+          }
+
+          await tx.insert(auditoria).values({
+            actorId: input.aprobarComprobante.revisadoPor,
+            accion: 'comprobante_transferencia.aprobado',
+            entidad: 'comprobantes_transferencia',
+            entidadId: input.aprobarComprobante.comprobanteId,
+            detalle: {
+              perfilId: input.perfilId,
+              pagoId: insertados[0]?.id ?? null,
+              meses: input.aprobarComprobante.meses,
+            },
+          });
+        }
 
         return { pagos: insertados as PagoData[], omitidos };
       });

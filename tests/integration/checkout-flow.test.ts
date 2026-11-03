@@ -14,11 +14,13 @@ import { nanoid } from 'nanoid';
 import { eq, and, inArray } from 'drizzle-orm';
 
 import { db } from '@/db';
-import { user, fraccionamientos, perfilesResidente, pagos, tickets } from '@/db/schema';
+import { user, fraccionamientos, perfilesResidente, pagos, tickets, comprobantesTransferencia, auditoria } from '@/db/schema';
 import { ProcesarPagoMpHandler } from '@/src/application/pagos/commands/procesar-pago-mp.handler';
 import { residenteRepo, pagoRepo } from '@/src/infrastructure/db/repositories';
 import { parseExternalReference } from '@/src/infrastructure/mercadopago/parser';
 import { calcularDesglosePago } from '@/src/domain/pagos/calculator';
+import { pagosRouter } from '@/server/routers/pagos';
+import { buildComprobanteViewUrl, getComprobanteMimeType, inlineComprobanteHeaders } from '@/lib/comprobante-file';
 
 // ── Fixtures ───────────────────────────────────────────────────────────────────
 const suffix = nanoid(8);
@@ -28,6 +30,8 @@ const FX = {
   resId:     `test-res-${suffix}`,
   repEmail:  `test.rep.${suffix}@integration-test.local`,
   resEmail:  `test.res.${suffix}@integration-test.local`,
+  adminId:   `test-admin-${suffix}`,
+  adminEmail:`test.admin.${suffix}@integration-test.local`,
   fraccionamientoId: '' as string,
   perfilId:  '' as string,
 };
@@ -52,6 +56,14 @@ beforeAll(async () => {
     activo:                  true,
   }).returning({ id: fraccionamientos.id });
   FX.fraccionamientoId = fraccionamiento.id;
+
+  await db.insert(user).values({
+    id: FX.adminId,
+    name: 'Admin de integración',
+    email: FX.adminEmail,
+    role: 'admin',
+    fraccionamientoId: FX.fraccionamientoId,
+  });
 
   await db.insert(user).values({
     id: FX.resId, name: 'Test Residente', email: FX.resEmail,
@@ -89,6 +101,7 @@ afterAll(async () => {
     // 2. Residente user → cascades to perfilesResidente
     await db.delete(user).where(eq(user.id, FX.resId));
 
+    await db.delete(user).where(eq(user.id, FX.adminId));
     await db.delete(user).where(eq(user.id, FX.repId));
     await db.delete(fraccionamientos).where(eq(fraccionamientos.id, FX.fraccionamientoId));
   } catch (e) {
@@ -335,5 +348,120 @@ describe('Checkout flow — integración con BD real', () => {
       expect(pago).toBeDefined();
       expect(parseFloat(pago!.montoBase!)).toBeLessThanOrEqual(parseFloat(pago!.monto));
     });
+  });
+});
+
+describe('Comprobantes de transferencia para Tesorería', () => {
+  const caller = () => pagosRouter.createCaller({
+    headers: new Headers(),
+    user: {
+      id: FX.adminId,
+      name: 'Admin integración',
+      email: FX.adminEmail,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      role: 'admin',
+      fraccionamientoId: FX.fraccionamientoId,
+    },
+  });
+
+  async function seedComprobante(concepto: string, mes: number, anio: number) {
+    const fileReference = `uploads/${FX.resId}/comprobante-${suffix}-${concepto}.pdf`;
+    const viewUrl = buildComprobanteViewUrl(fileReference);
+    const [row] = await db.insert(comprobantesTransferencia).values({
+      perfilId: FX.perfilId,
+      fraccionamientoId: FX.fraccionamientoId,
+      monto: '100.00',
+      concepto,
+      comprobanteUrl: viewUrl,
+      metadatos: { meses: [{ mes, anio }] },
+    }).returning({ id: comprobantesTransferencia.id, comprobanteUrl: comprobantesTransferencia.comprobanteUrl });
+    return row;
+  }
+
+  it('genera y lista una URL privada de vista previa con MIME inline para PDF', async () => {
+    const viewUrl = buildComprobanteViewUrl(`uploads/${FX.resId}/prueba.pdf`);
+    expect(viewUrl).toBe(`/api/upload?ref=${encodeURIComponent(`uploads/${FX.resId}/prueba.pdf`)}`);
+    expect(getComprobanteMimeType(viewUrl)).toBe('application/pdf');
+    expect(getComprobanteMimeType('data:application/pdf;base64,JVBERi0x')).toBe('application/pdf');
+    expect(getComprobanteMimeType('/api/upload?ref=uploads%2Fu%2Freceipt.jpg')).toBe('image/jpeg');
+    expect(getComprobanteMimeType('data:image/png;base64,iVBORw0KGgo=')).toBe('image/png');
+    expect(getComprobanteMimeType('data:image/webp;base64,UklGRg==')).toBe('image/webp');
+    expect(new Headers(inlineComprobanteHeaders('application/pdf', '.pdf')).get('content-disposition'))
+      .toBe('inline; filename="comprobante.pdf"');
+
+    const current = new Date();
+    const receipt = await seedComprobante('preview', current.getMonth() + 1, current.getFullYear());
+    const listed = await caller().obtenerComprobantesPendientes();
+    expect(receipt.comprobanteUrl).toBe(buildComprobanteViewUrl(`uploads/${FX.resId}/comprobante-${suffix}-preview.pdf`));
+    expect(listed.find(item => item.id === receipt.id)?.comprobanteUrl).toBe(receipt.comprobanteUrl);
+  });
+
+  it('aprueba con pago, revisor, fecha y auditoría en el mismo flujo transaccional', async () => {
+    const current = new Date();
+    const mes = current.getMonth() + 1;
+    const anio = current.getFullYear();
+    const receipt = await seedComprobante('approval', mes, anio);
+
+    const result = await caller().aprobarComprobante({ comprobanteId: receipt.id });
+    const savedReceipt = await db.query.comprobantesTransferencia.findFirst({
+      where: (row, { eq }) => eq(row.id, receipt.id),
+    });
+    const savedPayment = savedReceipt?.pagoId
+      ? await db.query.pagos.findFirst({ where: (row, { eq }) => eq(row.id, savedReceipt.pagoId!) })
+      : null;
+    const auditRow = await db.query.auditoria.findFirst({
+      where: (row, { and, eq }) => and(
+        eq(row.entidad, 'comprobantes_transferencia'),
+        eq(row.entidadId, receipt.id),
+        eq(row.accion, 'comprobante_transferencia.aprobado'),
+      ),
+    });
+
+    expect(result.ok).toBe(true);
+    expect(savedReceipt?.estado).toBe('aprobado');
+    expect(savedReceipt?.fechaRevision).toBeInstanceOf(Date);
+    expect(savedReceipt?.revisadoPor).toBe(FX.adminId);
+    expect(savedPayment?.estado).toBe('pagado');
+    expect(savedPayment?.metodo).toBe('transferencia');
+    expect(auditRow).toBeDefined();
+  });
+
+  it('exige motivo para rechazar y no altera pagos del residente', async () => {
+    const current = new Date();
+    const receipt = await seedComprobante('rejection', current.getMonth() + 1, current.getFullYear());
+    const pagosAntes = await db.select({ id: pagos.id }).from(pagos).where(eq(pagos.perfilId, FX.perfilId));
+
+    await expect(caller().rechazarComprobante({
+      comprobanteId: receipt.id,
+      motivoRechazo: '   ',
+    })).rejects.toThrow();
+    const pendingReceipt = await db.query.comprobantesTransferencia.findFirst({
+      where: (row, { eq }) => eq(row.id, receipt.id),
+    });
+    expect(pendingReceipt?.estado).toBe('pendiente_validacion');
+
+    await caller().rechazarComprobante({
+      comprobanteId: receipt.id,
+      motivoRechazo: 'El archivo no corresponde al pago',
+    });
+    const rejectedReceipt = await db.query.comprobantesTransferencia.findFirst({
+      where: (row, { eq }) => eq(row.id, receipt.id),
+    });
+    const pagosDespues = await db.select({ id: pagos.id }).from(pagos).where(eq(pagos.perfilId, FX.perfilId));
+    const auditRow = await db.query.auditoria.findFirst({
+      where: (row, { and, eq }) => and(
+        eq(row.entidad, 'comprobantes_transferencia'),
+        eq(row.entidadId, receipt.id),
+        eq(row.accion, 'comprobante_transferencia.rechazado'),
+      ),
+    });
+
+    expect(rejectedReceipt?.estado).toBe('rechazado');
+    expect(rejectedReceipt?.motivoRechazo).toBe('El archivo no corresponde al pago');
+    expect(rejectedReceipt?.revisadoPor).toBe(FX.adminId);
+    expect(rejectedReceipt?.fechaRevision).toBeInstanceOf(Date);
+    expect(pagosDespues).toHaveLength(pagosAntes.length);
+    expect(auditRow).toBeDefined();
   });
 });

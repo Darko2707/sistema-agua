@@ -1,20 +1,15 @@
-// Runs before every integration test file.
-// MUST execute before @/db is imported so the Neon Pool can only be
-// constructed with the explicitly supplied, isolated test database.
-const testDatabaseUrl = process.env.TEST_DATABASE_URL?.trim();
-const applicationDatabaseUrl = process.env.DATABASE_URL?.trim();
+// Runs before test modules import @/db. The shared guard loads only .env.test,
+// rejects application database identities, then points the Neon pool at tests.
+import { beforeAll } from 'vitest';
+import { configureTestDatabase } from './database-env';
 
-if (!testDatabaseUrl) {
-  throw new Error(
-    'TEST_DATABASE_URL es obligatoria para las pruebas de integracion. ' +
-    'Configura una rama/base exclusiva de pruebas; .env.local no se carga.',
-  );
-}
+configureTestDatabase();
 
-if (applicationDatabaseUrl && applicationDatabaseUrl === testDatabaseUrl) {
-  throw new Error(
-    'TEST_DATABASE_URL debe ser distinta de DATABASE_URL para impedir escrituras en la base de la aplicacion.',
-  );
-}
-
-process.env.DATABASE_URL = testDatabaseUrl;
+beforeAll(async () => {
+  // Open the app's Neon pool against the validated test URL before fixtures run.
+  const [{ db }, { sql }] = await Promise.all([
+    import('../../db'),
+    import('drizzle-orm'),
+  ]);
+  await db.execute(sql`select 1`);
+}, 15_000);

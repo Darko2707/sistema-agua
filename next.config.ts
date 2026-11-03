@@ -6,6 +6,7 @@ import { withSentryConfig } from '@sentry/nextjs';
 // Los nonces requieren rendering dinámico en todas las páginas, lo que
 // deshabilita caché CDN y no aporta seguridad adicional significativa aquí.
 const isDev = process.env.NODE_ENV === 'development';
+const isPlaywrightE2E = process.env.E2E_PLAYWRIGHT === '1';
 const isPreview = process.env.VERCEL_ENV === 'preview';
 const vercelLiveSources = isDev || isPreview
   ? ' https://vercel.live https://*.vercel.live'
@@ -44,6 +45,8 @@ const serviceWorkerHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // Keep Playwright's dev server independent from a developer's .next/dev cache and lock.
+  ...(isPlaywrightE2E ? { distDir: '.next-e2e' } : {}),
   async headers() {
     return [
       { source: '/(.*)', headers: securityHeaders },

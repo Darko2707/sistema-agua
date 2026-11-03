@@ -5,6 +5,7 @@ import path from 'node:path';
 import { get, put } from '@vercel/blob';
 
 import { auth } from '@/lib/auth';
+import { buildComprobanteViewUrl, inlineComprobanteHeaders } from '@/lib/comprobante-file';
 import { logger } from '@/lib/logger';
 
 // Dar más tiempo a la función en Vercel para procesar uploads grandes
@@ -138,7 +139,7 @@ export async function POST(req: Request) {
       storedReference = blobResult.pathname;
       // El cliente recibe la URL del proxy para que todas las visualizaciones
       // pasen por la verificación de sesión.
-      fileUrl = `/api/upload?ref=${encodeURIComponent(blobResult.pathname)}`;
+      fileUrl = buildComprobanteViewUrl(blobResult.pathname);
     } else {
       // En entornos serverless/efímeros sin bucket de storage externo,
       // formatear como Data URL base64 para persistir el archivo de manera garantizada
@@ -232,14 +233,15 @@ export async function GET(req: Request) {
   if (ref.startsWith('data:')) {
     const match = ref.match(/^data:([^;]+);base64,(.+)$/);
     if (match) {
-      const mime = match[1];
+      const mime = match[1].toLowerCase();
+      const extension = ALLOWED_MIME_TYPES[mime];
+      if (!extension) {
+        return Response.json({ error: 'Tipo de comprobante no permitido' }, { status: 415 });
+      }
       const buffer = Buffer.from(match[2], 'base64');
       return new Response(buffer, {
         status: 200,
-        headers: {
-          'Content-Type': mime,
-          'Cache-Control': 'private, max-age=3600',
-        },
+        headers: inlineComprobanteHeaders(mime, extension),
       });
     }
   }
@@ -272,10 +274,7 @@ export async function GET(req: Request) {
         const buffer = Buffer.from(await new Response(blobResult.stream).arrayBuffer());
         return new Response(buffer, {
           status: 200,
-          headers: {
-            'Content-Type': contentType,
-            'Cache-Control': 'private, max-age=3600',
-          },
+          headers: inlineComprobanteHeaders(contentType, extension),
         });
       }
     } catch (blobErr) {
@@ -291,10 +290,7 @@ export async function GET(req: Request) {
 
     return new Response(fileBuffer, {
       status: 200,
-      headers: {
-        'Content-Type': contentType,
-        'Cache-Control': 'private, max-age=3600',
-      },
+      headers: inlineComprobanteHeaders(contentType, extension),
     });
   } catch (error) {
     logger.warn('file.serve_not_found', { ref: normalized, error });

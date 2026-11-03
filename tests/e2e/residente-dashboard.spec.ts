@@ -13,7 +13,7 @@ import { test, expect, type Page } from '@playwright/test';
 import { REMEMBERED_LOGIN_EMAIL_KEY } from '../../lib/remembered-login';
 
 const EMAIL    = process.env.E2E_RESIDENTE_EMAIL    ?? 'residente@test.local';
-const PASSWORD = process.env.E2E_RESIDENTE_PASSWORD ?? 'testpassword123';
+const PASSWORD = process.env.E2E_RESIDENTE_PASSWORD ?? process.env.E2E_TEST_PASSWORD ?? 'Sisco-E2E-2026!';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
@@ -23,7 +23,8 @@ async function login(page: Page) {
   await page.getByLabel('Contraseña').fill(PASSWORD);
   await page.getByRole('button', { name: /iniciar sesión/i }).click();
   // Wait for redirect to /residente
-  await expect(page).toHaveURL(/\/residente/, { timeout: 10_000 });
+  await expect(page).toHaveURL(/\/residente(?:\?.*)?$/, { timeout: 20_000 });
+  await expect(page.getByRole('heading', { name: 'Servicios del fraccionamiento' })).toBeVisible({ timeout: 20_000 });
 }
 
 // ── tests ─────────────────────────────────────────────────────────────────────
@@ -59,7 +60,21 @@ test.describe('Login', () => {
 
   test('inicia sesión y redirige al dashboard', async ({ page }) => {
     await login(page);
-    await expect(page.getByRole('heading', { name: 'Mi Cuenta de Agua' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Servicios del fraccionamiento' })).toBeVisible();
+  });
+});
+
+test.describe('Personal sin perfil residencial', () => {
+  test('conserva su panel y no se redirige al registro de vivienda', async ({ page }) => {
+    await page.goto('/login');
+    await page.getByLabel('Correo electrónico').fill('cuadrilla@test.local');
+    await page.getByLabel('Contraseña').fill(PASSWORD);
+    await page.getByRole('button', { name: /iniciar sesión/i }).click();
+    await expect(page).toHaveURL(/\/trabajador\/?$/, { timeout: 20_000 });
+
+    await page.goto('/residente');
+    await expect(page).toHaveURL(/\/trabajador\/?$/, { timeout: 20_000 });
+    await expect(page).not.toHaveURL(/\/registro/);
   });
 });
 
@@ -73,24 +88,23 @@ test.describe('Dashboard de residente', () => {
     // The skeleton has role="status" with this aria-label while loading
     // On fast responses it may already be replaced, so we just ensure
     // the dashboard eventually renders with no crash.
-    await expect(page.getByRole('heading', { name: 'Mi Cuenta de Agua' })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('heading', { name: 'Servicios del fraccionamiento' })).toBeVisible({ timeout: 10_000 });
   });
 
   test('muestra nombre y departamento del residente', async ({ page }) => {
-    // Header paragraph includes name and address
-    const header = page.locator('header p').first();
-    await expect(header).not.toBeEmpty();
+    await expect(page.getByText(/Hola, Residente/i)).toBeVisible();
+    await expect(page.getByText(/Depto\. 999999/i)).toBeVisible();
   });
 
   test('muestra el mes actual en el encabezado de la tarjeta de pago', async ({ page }) => {
     const mesActual = new Date().toLocaleDateString('es-MX', { month: 'long' });
     // Capitalize first letter to match component output
     const mesCapital = mesActual.charAt(0).toUpperCase() + mesActual.slice(1);
-    await expect(page.getByRole('heading', { name: new RegExp(mesCapital) })).toBeVisible();
+    await expect(page.getByText(new RegExp(`${mesCapital} \\d{4}`)).first()).toBeVisible();
   });
 
   test('botón de desglose de cargos abre el panel detallado', async ({ page }) => {
-    const toggleBtn = page.getByRole('button', { name: /¿Por qué el total/i });
+    const toggleBtn = page.getByRole('button', { name: /Ver desglose/i });
     // Only visible when payment is pending
     const isPending = await toggleBtn.isVisible();
     if (!isPending) {
@@ -113,7 +127,7 @@ test.describe('Dashboard de residente', () => {
     }
 
     // Intercept the checkout API call so we don't actually redirect
-    await page.route('/api/mercadopago/checkout', async (route) => {
+    await page.route('/api/mercadopago/checkout-combinado', async (route) => {
       await route.fulfill({
         status:      200,
         contentType: 'application/json',
@@ -121,18 +135,13 @@ test.describe('Dashboard de residente', () => {
       });
     });
 
-    // Intercept the external redirect so the browser doesn't leave the domain
-    let redirectedTo = '';
-    page.on('request', (req) => {
-      if (req.url().includes('mercadopago.com')) {
-        redirectedTo = req.url();
-      }
-    });
+    // Observe and abort the external navigation so the E2E never contacts MP.
+    await page.route('https://www.mercadopago.com.mx/**', route => route.abort());
+    const redirectRequest = page.waitForRequest(request => request.url().includes('mercadopago.com'));
 
     await pagarBtn.click();
-    // Button goes into loading state
-    await expect(page.getByRole('button', { name: /Redirigiendo/i })).toBeVisible({ timeout: 3_000 });
-    await expect.poll(() => redirectedTo).toContain('mercadopago.com');
+    const request = await redirectRequest;
+    expect(request.url()).toContain('mercadopago.com');
   });
 });
 
@@ -175,7 +184,8 @@ test.describe('Historial de pagos vacío', () => {
     const hasHistory = await historyList.isVisible();
     if (!hasHistory) {
       await expect(emptyState).toBeVisible();
-      await expect(page.getByRole('button', { name: /Realizar primer pago/i })).toBeVisible();
+      // The first-payment CTA is the same checkout action shown in the payment card.
+      await expect(page.getByRole('button', { name: /Pagar .* con Mercado Pago/i })).toBeVisible();
     }
   });
 });

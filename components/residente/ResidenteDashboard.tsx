@@ -369,20 +369,22 @@ export function ResidenteDashboard() {
   const announcerRef = useRef<HTMLDivElement>(null);
   const haSincronizado = useRef(false);
 
-  const paymentResult = searchParams.get('payment') as keyof typeof PAYMENT_RESULT | null;
+  const paymentResultParam = searchParams.get('payment') as keyof typeof PAYMENT_RESULT | null;
+  const [displayedPaymentResult, setDisplayedPaymentResult] = useState<keyof typeof PAYMENT_RESULT | null>(null);
 
   // Announce MP result and clean URL
   useEffect(() => {
-    if (paymentResult && PAYMENT_RESULT[paymentResult]) {
+    if (paymentResultParam && PAYMENT_RESULT[paymentResultParam]) {
+      setDisplayedPaymentResult(paymentResultParam);
       announcerRef.current?.focus();
       const url = new URL(window.location.href);
       url.searchParams.delete('payment');
       window.history.replaceState({}, '', url.toString());
     }
-  }, [paymentResult]);
+  }, [paymentResultParam]);
 
   useEffect(() => {
-    if (paymentResult !== 'success' && paymentResult !== 'pending') return;
+    if (displayedPaymentResult !== 'success' && displayedPaymentResult !== 'pending') return;
 
     let active = true;
     const timers = [0, 2_000, 5_000, 10_000].map((delay) =>
@@ -395,7 +397,7 @@ export function ResidenteDashboard() {
       active = false;
       timers.forEach(window.clearTimeout);
     };
-  }, [paymentResult, refetchHistorial]);
+  }, [displayedPaymentResult, refetchHistorial]);
 
   useEffect(() => {
     if (haSincronizado.current) return;
@@ -601,7 +603,7 @@ export function ResidenteDashboard() {
     ?? pagos.find(p => p.esReconexion && p.estado === 'pagado');
   const fechaCorteStr = corteActivo?.fechaCorte ? formatFecha(corteActivo.fechaCorte) : null;
 
-  const resultInfo = paymentResult ? PAYMENT_RESULT[paymentResult] : null;
+  const resultInfo = displayedPaymentResult ? PAYMENT_RESULT[displayedPaymentResult] : null;
 
   const roleNav =
     miRol === 'representante'   ? { label: 'Mi panel (Representante)', path: '/representante' } :
