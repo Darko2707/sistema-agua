@@ -1,13 +1,14 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { headers } from 'next/headers';
 
 import { db } from '@/db';
-import { cargosServicios, fraccionamientos, fraccionamientoServicios, perfilesResidente, servicios, tickets, user } from '@/db/schema';
+import { cargosServicios, comprobantesTransferencia, fraccionamientos, fraccionamientoServicios, pagos, perfilesResidente, servicios, tickets, user } from '@/db/schema';
 import { auth } from '@/lib/auth';
 import { logger } from '@/lib/logger';
 import { guardTicketPdf } from '@/lib/ticket-pdf-guard';
-import { generarTicketPDF } from '@/server/services/pdf';
+import { generarReciboTransferenciaPDF, generarTicketPDF } from '@/server/services/pdf';
 import { VercelBlobAdapter } from '@/src/infrastructure/storage/vercel-blob.adapter';
+import { buildTransferReceiptItems, sumTransferReceiptItems } from '@/lib/transfer-receipt';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -47,6 +48,96 @@ export async function GET(
     return Response.json({ error: 'Folio inválido' }, { status: 400 });
   }
   const folio = rawFolio.toUpperCase();
+
+  if (/^TRF[A-F0-9]{32}$/.test(folio)) {
+    const comprobanteId = `${folio.slice(3, 11)}-${folio.slice(11, 15)}-${folio.slice(15, 19)}-${folio.slice(19, 23)}-${folio.slice(23)}`.toLowerCase();
+    const [transfer] = await db.select({
+      id: comprobantesTransferencia.id,
+      monto: comprobantesTransferencia.monto,
+      metadatos: comprobantesTransferencia.metadatos,
+      fechaEmision: comprobantesTransferencia.fechaEmision,
+      fechaRevision: comprobantesTransferencia.fechaRevision,
+      perfilId: comprobantesTransferencia.perfilId,
+      residenteUserId: user.id,
+      residenteNombre: user.name,
+      edificio: perfilesResidente.edificio,
+      departamento: perfilesResidente.departamento,
+      fraccionamientoId: fraccionamientos.id,
+      fraccionamientoNombre: fraccionamientos.nombre,
+      representanteId: fraccionamientos.representanteId,
+    }).from(comprobantesTransferencia)
+      .innerJoin(perfilesResidente, eq(perfilesResidente.id, comprobantesTransferencia.perfilId))
+      .innerJoin(user, eq(user.id, perfilesResidente.userId))
+      .innerJoin(fraccionamientos, eq(fraccionamientos.id, comprobantesTransferencia.fraccionamientoId))
+      .where(and(
+        eq(comprobantesTransferencia.id, comprobanteId),
+        eq(comprobantesTransferencia.estado, 'aprobado'),
+      )).limit(1);
+    if (!transfer) return Response.json({ error: 'Recibo de transferencia no encontrado' }, { status: 404 });
+
+    const usuario = await db.query.user.findFirst({
+      where: (userTable, { eq: equals }) => equals(userTable.id, session.user.id),
+      columns: { role: true },
+    });
+    const role = usuario?.role ?? 'residente';
+    const esDuenio = transfer.residenteUserId === session.user.id;
+    const esAdmin = role === 'admin';
+    const esRepresentante = role === 'representante' && transfer.representanteId === session.user.id;
+    if (!esDuenio && !esAdmin && !esRepresentante) return Response.json({ error: 'No autorizado' }, { status: 403 });
+
+    const meses = transfer.metadatos?.meses ?? [];
+    const cargosSeleccionados = transfer.metadatos?.cargosAcreditadosIds
+      ?? transfer.metadatos?.cargosServicioIds
+      ?? [];
+    const pagosPagados = await db.select({
+      mes: pagos.mes,
+      anio: pagos.anio,
+      monto: pagos.monto,
+      estado: pagos.estado,
+      esReconexion: pagos.esReconexion,
+    }).from(pagos).where(and(
+      eq(pagos.perfilId, transfer.perfilId),
+      eq(pagos.fraccionamientoId, transfer.fraccionamientoId),
+      eq(pagos.estado, 'pagado'),
+    ));
+    const cargosPagados = cargosSeleccionados.length > 0
+      ? await db.select({
+          id: cargosServicios.id,
+          mes: cargosServicios.mes,
+          anio: cargosServicios.anio,
+          monto: cargosServicios.monto,
+          estado: cargosServicios.estado,
+          servicioNombre: servicios.nombre,
+        }).from(cargosServicios)
+          .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, cargosServicios.fraccionamientoServicioId))
+          .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
+          .where(and(
+            eq(cargosServicios.fraccionamientoId, transfer.fraccionamientoId),
+            eq(cargosServicios.perfilId, transfer.perfilId),
+            eq(cargosServicios.estado, 'pagado'),
+            inArray(cargosServicios.id, cargosSeleccionados),
+          ))
+      : [];
+    const conceptos = buildTransferReceiptItems({
+      mesesSeleccionados: meses,
+      pagos: pagosPagados,
+      cargosSeleccionados,
+      cargos: cargosPagados,
+    });
+    if (conceptos.length === 0) return Response.json({ error: 'La transferencia no tiene conceptos pagados para emitir un recibo' }, { status: 409 });
+
+    const pdf = await generarReciboTransferenciaPDF({
+      folio,
+      fraccionamiento: transfer.fraccionamientoNombre,
+      nombre: transfer.residenteNombre ?? 'Residente',
+      edificio: transfer.edificio,
+      departamento: transfer.departamento,
+      emitidoEn: transfer.fechaRevision ?? transfer.fechaEmision,
+      conceptos,
+      montoTotal: sumTransferReceiptItems(conceptos),
+    });
+    return pdfResponse(pdf, folio);
+  }
 
   const ticket = await db.query.tickets.findFirst({
     where: (ticketTable, { eq: equals }) => equals(ticketTable.folio, folio),

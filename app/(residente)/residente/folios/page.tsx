@@ -32,8 +32,14 @@ const FB = "var(--font-bricolage), 'Bricolage Grotesque', sans-serif";
 type Ticket = {
   id: string;
   folio: string;
-  tipo?: 'agua' | 'servicio';
+  tipo?: 'agua' | 'servicio' | 'transferencia';
   emitidoEn: string | Date | null;
+  transferencia?: {
+    id: string;
+    anio: number;
+    monto: string;
+    conceptos: Array<{ descripcion: string; mes: number; anio: number; monto: string; tipo: 'agua' | 'servicio' }>;
+  } | null;
   cargoServicio?: {
     mes: number;
     anio: number;
@@ -126,7 +132,7 @@ export default function FoliosPage() {
         const t = data as Ticket[];
         setTickets(t);
         // Default to latest year in tickets
-        const years = t.map(tk => tk.pago?.anio ?? tk.cargoServicio?.anio).filter(Boolean) as number[];
+        const years = t.map(tk => tk.transferencia?.anio ?? tk.pago?.anio ?? tk.cargoServicio?.anio).filter(Boolean) as number[];
         if (years.length > 0) setSelectedYear(Math.max(...years));
       })
       .catch(() => setError('No se pudieron cargar tus recibos'))
@@ -137,17 +143,17 @@ export default function FoliosPage() {
 
   // Derive available years
   const allYears = [...new Set(
-    tickets.map(t => t.pago?.anio ?? t.cargoServicio?.anio).filter(Boolean) as number[]
+    tickets.map(t => t.transferencia?.anio ?? t.pago?.anio ?? t.cargoServicio?.anio).filter(Boolean) as number[]
   )].sort((a, b) => b - a);
   if (allYears.length === 0) allYears.push(new Date().getFullYear());
 
-  const ticketsFiltrados = tickets.filter(t => (t.pago?.anio ?? t.cargoServicio?.anio) === selectedYear);
+  const ticketsFiltrados = tickets.filter(t => (t.transferencia?.anio ?? t.pago?.anio ?? t.cargoServicio?.anio) === selectedYear);
   const totalPagado = ticketsFiltrados
-    .reduce((sum, t) => sum + Number(t.pago?.montoServicio ?? t.pago?.montoBase ?? t.pago?.monto ?? t.cargoServicio?.monto ?? 0), 0)
+    .reduce((sum, t) => sum + Number(t.transferencia?.monto ?? t.pago?.montoServicio ?? t.pago?.montoBase ?? t.pago?.monto ?? t.cargoServicio?.monto ?? 0), 0)
     .toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
 
   // Account info from first ticket
-  const firstPago = tickets[0]?.pago;
+  const firstPago = tickets.find(ticket => ticket.pago)?.pago;
   const cuenta = firstPago?.perfil
     ? `${firstPago.perfil.edificio}, ${firstPago.perfil.departamento}`
     : '';
@@ -251,7 +257,16 @@ export default function FoliosPage() {
                 {ticketsFiltrados.map((ticket, i) => {
                   const p = ticket.pago;
                   const c = ticket.cargoServicio;
-                  const periodo = p ? `${MESES[p.mes - 1]} ${p.anio}` : c ? `${c.fraccionamientoServicio?.servicio?.nombre ?? 'Servicio'} · ${MESES[c.mes - 1]} ${c.anio}` : 'Sin periodo';
+                  const periodo = ticket.transferencia
+                    ? 'Pago de servicios'
+                    : p
+                      ? `${MESES[p.mes - 1]} ${p.anio}`
+                      : c
+                        ? `${c.fraccionamientoServicio?.servicio?.nombre ?? 'Servicio'} · ${MESES[c.mes - 1]} ${c.anio}`
+                        : 'Sin periodo';
+                  const conceptosTransferidos = ticket.transferencia?.conceptos
+                    .map(concepto => `${concepto.descripcion} · ${MESES[concepto.mes - 1]} ${concepto.anio}`)
+                    .join(' + ');
                   const fecha = formatFechaCort(ticket.emitidoEn);
                   return (
                     <div
@@ -268,13 +283,13 @@ export default function FoliosPage() {
                         <div>
                           <div style={{ fontSize: 14.5, fontWeight: 700, color: C.textMain }}>{periodo}</div>
                           <div style={{ fontSize: 12, color: C.textWarm2, marginTop: 1 }}>
-                            Folio {ticket.folio}{fecha ? ` · ${fecha}` : ''}
+                            {ticket.transferencia ? conceptosTransferidos : `Folio ${ticket.folio}`}{fecha ? ` · ${fecha}` : ''}
                           </div>
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <span aria-label={`Monto: ${p?.montoServicio ?? p?.montoBase ?? p?.monto ?? c?.monto}`} style={{ fontFamily: FB, fontSize: 14.5, fontWeight: 700, color: C.green }}>
-                          ${p?.montoServicio ?? p?.montoBase ?? p?.monto ?? c?.monto ?? '0.00'}
+                        <span aria-label={`Monto: ${ticket.transferencia?.monto ?? p?.montoServicio ?? p?.montoBase ?? p?.monto ?? c?.monto}`} style={{ fontFamily: FB, fontSize: 14.5, fontWeight: 700, color: C.green }}>
+                          ${ticket.transferencia?.monto ?? p?.montoServicio ?? p?.montoBase ?? p?.monto ?? c?.monto ?? '0.00'}
                         </span>
                         <a
                           href={`/api/tickets/${ticket.folio}/pdf`}

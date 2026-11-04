@@ -485,6 +485,7 @@ export const comprobantesTransferencia = pgTable('comprobantes_transferencia', {
   metadatos:         jsonb('metadatos').$type<{
     meses?: Array<{ mes: number; anio: number }>;
     cargosServicioIds?: string[];
+    cargosAcreditadosIds?: string[];
     esReconexion?: boolean;
     notas?: string;
   }>(),

@@ -5,6 +5,7 @@ import { db } from '@/db';
 import { comprobantesTransferencia } from '@/db/schema';
 import { and, eq, inArray } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
+import { buildTransferReceiptItems, sumTransferReceiptItems } from '@/lib/transfer-receipt';
 
 export const ticketsRouter = router({
   // ✅ Verificación pública (sin autenticación)
@@ -83,6 +84,11 @@ export const ticketsRouter = router({
         eq(c.fraccionamientoId, ctx.user.fraccionamientoId!),
         eq(c.estado, 'pagado'),
       ),
+      with: {
+        fraccionamientoServicio: {
+          with: { servicio: { columns: { nombre: true } } },
+        },
+      },
     });
     const cargoIds = misCargos.map((c) => c.id);
     if (ids.length === 0 && cargoIds.length === 0) return [];
@@ -139,6 +145,62 @@ export const ticketsRouter = router({
       orderBy: (t, { desc }) => [desc(t.emitidoEn)],
     });
 
+    const transferenciasAprobadas = await db.select({
+      id: comprobantesTransferencia.id,
+      monto: comprobantesTransferencia.monto,
+      fechaEmision: comprobantesTransferencia.fechaEmision,
+      fechaRevision: comprobantesTransferencia.fechaRevision,
+      metadatos: comprobantesTransferencia.metadatos,
+    }).from(comprobantesTransferencia).where(and(
+      eq(comprobantesTransferencia.perfilId, perfil.id),
+      eq(comprobantesTransferencia.fraccionamientoId, ctx.user.fraccionamientoId!),
+      eq(comprobantesTransferencia.estado, 'aprobado'),
+    ));
+
+    const transferPeriodKeys = new Set<string>();
+    const transferCargoIds = new Set<string>();
+    const transferReceipts = transferenciasAprobadas.flatMap((transfer) => {
+      const meses = transfer.metadatos?.meses ?? [];
+      const cargosSeleccionados = transfer.metadatos?.cargosAcreditadosIds
+        ?? transfer.metadatos?.cargosServicioIds
+        ?? [];
+      const conceptos = buildTransferReceiptItems({
+        mesesSeleccionados: meses,
+        pagos: misPagos.map(({ mes, anio, monto, estado, esReconexion }) => ({ mes, anio, monto, estado, esReconexion })),
+        cargosSeleccionados,
+        cargos: misCargos.map(cargo => ({
+          id: cargo.id,
+          mes: cargo.mes,
+          anio: cargo.anio,
+          monto: cargo.monto,
+          estado: cargo.estado,
+          servicioNombre: cargo.fraccionamientoServicio?.servicio?.nombre ?? 'Servicio',
+        })),
+      });
+      if (conceptos.length === 0) return [];
+
+      for (const item of conceptos) {
+        if (item.tipo === 'agua') transferPeriodKeys.add(`${item.anio}-${item.mes}`);
+      }
+      for (const cargoId of cargosSeleccionados) {
+        if (misCargos.some(cargo => cargo.id === cargoId && cargo.estado === 'pagado')) transferCargoIds.add(cargoId);
+      }
+
+      const emittedAt = transfer.fechaRevision ?? transfer.fechaEmision;
+      return [{
+        id: `transferencia-${transfer.id}`,
+        folio: `TRF${transfer.id.replaceAll('-', '').toUpperCase()}`,
+        tipo: 'transferencia' as const,
+        emitidoEn: emittedAt,
+        transferencia: {
+          id: transfer.id,
+          anio: conceptos[0]!.anio,
+          monto: sumTransferReceiptItems(conceptos),
+          conceptos,
+        },
+      }];
+    });
+
     // Enrich tickets whose pago was paid by transferencia with comprobante info
     const pagoIds = rows.map(t => t.pago?.id).filter(Boolean) as string[];
     const comprobantesList = pagoIds.length > 0
@@ -158,7 +220,13 @@ export const ticketsRouter = router({
       : [];
     const comprobanteByPago = new Map(comprobantesList.map(c => [c.pagoId, c]));
 
-    return rows.map(ticket => {
+    const ticketsIndividuales = rows
+      .filter(ticket => {
+        if (ticket.pago && transferPeriodKeys.has(`${ticket.pago.anio}-${ticket.pago.mes}`)) return false;
+        if (ticket.cargoServicio && transferCargoIds.has(ticket.cargoServicio.id)) return false;
+        return true;
+      })
+      .map(ticket => {
       const comp = ticket.pago?.id ? comprobanteByPago.get(ticket.pago.id) : undefined;
       return {
         ...ticket,
@@ -177,6 +245,9 @@ export const ticketsRouter = router({
           comprobanteId:      comp ? comp.id : null,
         } : null,
       };
-    });
+      });
+    return [...transferReceipts, ...ticketsIndividuales].sort((a, b) =>
+      new Date(b.emitidoEn ?? 0).getTime() - new Date(a.emitidoEn ?? 0).getTime(),
+    );
   }),
 });

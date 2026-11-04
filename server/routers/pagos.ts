@@ -65,6 +65,7 @@ async function registrarCargosObligatoriosManuales(input: {
   cargoIds: string[];
   metodo: 'efectivo' | 'transferencia';
   actorId: string;
+  comprobanteId?: string;
 }) {
   const cargoIds = [...new Set(input.cargoIds)];
   if (cargoIds.length === 0) return { cargos: 0, monto: 0 };
@@ -99,7 +100,7 @@ async function registrarCargosObligatoriosManuales(input: {
         pagadoEn: new Date(),
       }).where(and(eq(cargosServicios.id, cargo.id), eq(cargosServicios.estado, 'pendiente')))
         .returning({ id: cargosServicios.id });
-      if (!updated) continue;
+      if (!updated) throw new TRPCError({ code: 'CONFLICT', message: 'Un cargo cambió de estado durante la aprobación; vuelve a revisar la transferencia' });
       cargos += 1;
       monto += Number(cargo.monto);
       await tx.insert(auditoria).values({
@@ -116,6 +117,17 @@ async function registrarCargosObligatoriosManuales(input: {
         folio,
         pdfUrl: null,
       });
+    }
+    if (input.comprobanteId) {
+      const [comprobante] = await tx.select({ metadatos: comprobantesTransferencia.metadatos })
+        .from(comprobantesTransferencia)
+        .where(eq(comprobantesTransferencia.id, input.comprobanteId))
+        .limit(1);
+      if (!comprobante) throw new TRPCError({ code: 'NOT_FOUND', message: 'No se encontró el comprobante aprobado' });
+      await tx.update(comprobantesTransferencia).set({
+        metadatos: { ...(comprobante.metadatos ?? {}), cargosAcreditadosIds: pendientes.map(cargo => cargo.id) },
+        actualizadoEn: new Date(),
+      }).where(eq(comprobantesTransferencia.id, input.comprobanteId));
     }
     return { cargos, monto };
   });
@@ -1023,6 +1035,7 @@ export const pagosRouter = router({
               cargoIds: cargosIds,
               metodo: 'transferencia',
               actorId: ctx.user.id,
+              comprobanteId: input.comprobanteId,
             });
           } catch (cargoErr) {
             // Log but do not fail the approval; cargos may already be paid

@@ -209,3 +209,84 @@ export async function generarTicketPDF(data: {
 
   return Buffer.from(await doc.save());
 }
+
+export async function generarReciboTransferenciaPDF(data: {
+  folio: string;
+  fraccionamiento: string;
+  nombre: string;
+  edificio?: string;
+  departamento?: string;
+  emitidoEn: Date;
+  conceptos: Array<{ descripcion: string; mes: number; anio: number; monto: string }>;
+  montoTotal: string;
+}) {
+  const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  const W = 595;
+  const H = 842;
+  const brand = rgb(0.08, 0.29, 0.23);
+  const gold = rgb(0.96, 0.70, 0.14);
+  const cream = rgb(0.96, 0.93, 0.88);
+  const warm = rgb(0.60, 0.56, 0.45);
+  const black = rgb(0.23, 0.21, 0.16);
+  const line = rgb(0.94, 0.90, 0.82);
+  const pageSize = 22;
+  const groups: typeof data.conceptos[] = [];
+  for (let i = 0; i < data.conceptos.length; i += pageSize) groups.push(data.conceptos.slice(i, i + pageSize));
+
+  for (let pageIndex = 0; pageIndex < groups.length; pageIndex += 1) {
+    const page = doc.addPage([W, H]);
+    const isFirst = pageIndex === 0;
+    page.drawRectangle({ x: 0, y: 0, width: W, height: H, color: cream });
+    page.drawRectangle({ x: 22, y: 22, width: W - 44, height: H - 44, color: rgb(1, 1, 1) });
+    page.drawRectangle({ x: 22, y: H - 102, width: W - 44, height: 80, color: rgb(0.98, 0.96, 0.92) });
+    page.drawRectangle({ x: 22, y: H - 108, width: W - 44, height: 6, color: gold });
+    page.drawText('Recibo de transferencia', { x: 40, y: H - 57, size: 19, font: bold, color: brand });
+    page.drawText(data.fraccionamiento.slice(0, 70), { x: 40, y: H - 82, size: 11, font, color: warm });
+
+    let y = H - 142;
+    if (isFirst) {
+      page.drawText('Folio de recibo', { x: 40, y, size: 8, font, color: warm });
+      page.drawText('Fecha', { x: 335, y, size: 8, font, color: warm });
+      y -= 18;
+      page.drawText(data.folio, { x: 40, y, size: 13, font: bold, color: black });
+      page.drawText(data.emitidoEn.toLocaleDateString('es-MX'), { x: 335, y, size: 12, font: bold, color: black });
+      y -= 25;
+      page.drawText('Residente', { x: 40, y, size: 8, font, color: warm });
+      page.drawText('Vivienda', { x: 335, y, size: 8, font, color: warm });
+      y -= 18;
+      page.drawText(data.nombre.slice(0, 42), { x: 40, y, size: 12, font: bold, color: black });
+      page.drawText(`Edificio ${data.edificio ?? '-'} / Depto ${data.departamento ?? '-'}`.slice(0, 36), { x: 335, y, size: 11, font: bold, color: black });
+      y -= 30;
+    } else {
+      page.drawText(`Folio ${data.folio} · continuación`, { x: 40, y, size: 11, font: bold, color: black });
+      y -= 30;
+    }
+
+    page.drawText('Conceptos pagados', { x: 40, y, size: 13, font: bold, color: brand });
+    y -= 21;
+    page.drawLine({ start: { x: 40, y }, end: { x: W - 40, y }, thickness: 1, color: gold });
+    y -= 21;
+    for (const concepto of groups[pageIndex]!) {
+      const descripcion = `${concepto.descripcion} · ${['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][concepto.mes - 1]} ${concepto.anio}`;
+      page.drawText(descripcion.slice(0, 56), { x: 40, y, size: 10, font, color: black });
+      page.drawText(`$${Number(concepto.monto).toFixed(2)} MXN`, { x: 420, y, size: 10, font: bold, color: black });
+      y -= 20;
+    }
+
+    if (pageIndex === groups.length - 1) {
+      y -= 8;
+      page.drawLine({ start: { x: 40, y }, end: { x: W - 40, y }, thickness: 0.7, color: line });
+      y -= 26;
+      page.drawText('Total pagado', { x: 40, y, size: 13, font: bold, color: brand });
+      page.drawText(`$${Number(data.montoTotal).toFixed(2)} MXN`, { x: 420, y, size: 14, font: bold, color: brand });
+    }
+
+    page.drawLine({ start: { x: 40, y: 55 }, end: { x: W - 40, y: 55 }, thickness: 0.5, color: line });
+    page.drawText(`SISCO · ${pageIndex + 1}/${groups.length}`, { x: 40, y: 38, size: 8, font, color: warm });
+  }
+
+  return Buffer.from(await doc.save());
+}

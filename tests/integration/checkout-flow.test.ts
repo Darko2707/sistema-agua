@@ -20,6 +20,7 @@ import { residenteRepo, pagoRepo } from '@/src/infrastructure/db/repositories';
 import { parseExternalReference } from '@/src/infrastructure/mercadopago/parser';
 import { calcularDesglosePago } from '@/src/domain/pagos/calculator';
 import { pagosRouter } from '@/server/routers/pagos';
+import { ticketsRouter } from '@/server/routers/tickets';
 import { buildComprobanteViewUrl, getComprobanteMimeType, inlineComprobanteHeaders, normalizeComprobanteViewUrl } from '@/lib/comprobante-file';
 
 // ── Fixtures ───────────────────────────────────────────────────────────────────
@@ -432,6 +433,23 @@ describe('Comprobantes de transferencia para Tesorería', () => {
     expect(savedPayment?.estado).toBe('pagado');
     expect(savedPayment?.metodo).toBe('transferencia');
     expect(savedTicket?.folio).toBe(savedPayment?.folio);
+    const residentTickets = await ticketsRouter.createCaller({
+      headers: new Headers(),
+      user: {
+        id: FX.resId,
+        name: 'Test Residente',
+        email: FX.resEmail,
+        role: 'residente',
+        fraccionamientoId: FX.fraccionamientoId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      },
+    }).misTickets();
+    const transferReceipt = residentTickets.find(ticket => 'transferencia' in ticket && ticket.transferencia.id === receipt.id);
+    expect(transferReceipt && 'transferencia' in transferReceipt ? transferReceipt.transferencia.conceptos : null).toEqual([
+      expect.objectContaining({ descripcion: 'Agua', mes, anio }),
+    ]);
+    expect(transferReceipt && 'transferencia' in transferReceipt ? transferReceipt.transferencia.monto : null).toBe(savedPayment?.monto);
     expect(auditRow).toBeDefined();
   });
 
