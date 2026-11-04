@@ -13,6 +13,7 @@ vi.mock('@/db', () => ({
 }));
 
 vi.mock('@/src/infrastructure/db/repositories', () => ({
+  ticketRepo: { findByFolio: mocks.findTicket },
   residenteRepo: {},
   circuitoRepo: {},
   userRepo: {},
@@ -58,10 +59,7 @@ describe('tickets.verificar', () => {
     expect(result.pago).not.toHaveProperty('id');
     expect(result.pago).not.toHaveProperty('metodo');
 
-    const query = mocks.findTicket.mock.calls[0]?.[0];
-    expect(query.columns).toEqual({ folio: true, tipo: true, emitidoEn: true });
-    expect(query.with.pago.columns).not.toHaveProperty('id');
-    expect(query.with.pago.columns).not.toHaveProperty('metodo');
+    expect(mocks.findTicket).toHaveBeenCalledWith('AGU-PUBLICO01');
   });
 
   it('oculta el UUID y metodo de un cargo de servicio', async () => {
@@ -91,7 +89,6 @@ describe('tickets.verificar', () => {
     });
     expect(result.cargoServicio).not.toHaveProperty('id');
     expect(result.cargoServicio).not.toHaveProperty('metodo');
-    expect(mocks.findTicket.mock.calls[0]?.[0].with.cargoServicio.columns)
-      .toEqual({ mes: true, anio: true, monto: true, estado: true });
+    expect(mocks.findTicket).toHaveBeenCalledWith('SRV-PUBLICO01');
   });
 });

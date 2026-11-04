@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { router, protectedProcedure, roleProcedure, operationalRoleProcedure } from '../trpc';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
-import { and, desc, eq, inArray, ne } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 
 import { residenteRepo, pagoRepo } from '@/src/infrastructure/db/repositories';
 import { RegistrarPagoManualHandler } from '@/src/application/pagos/commands/registrar-pago-manual.handler';
@@ -16,7 +16,6 @@ import {
   cargosServicios,
   comprobantesTransferencia,
   fraccionamientoServicios,
-  fraccionamientos,
   perfilesResidente,
   servicios,
   tickets,
@@ -742,6 +741,28 @@ export const pagosRouter = router({
       }
 
       const creado = await db.transaction(async tx => {
+        // Serializa envíos del mismo perfil y repite la detección bajo el lock.
+        // La consulta previa solo mejora el mensaje; no protege carreras por sí sola.
+        await tx.execute(sql`SELECT id FROM perfiles_residente WHERE id = ${perfil.id} FOR UPDATE`);
+        const pendientesActuales = await tx.select({ metadatos: comprobantesTransferencia.metadatos })
+          .from(comprobantesTransferencia)
+          .where(and(
+            eq(comprobantesTransferencia.perfilId, perfil.id),
+            eq(comprobantesTransferencia.fraccionamientoId, perfil.fraccionamientoId!),
+            eq(comprobantesTransferencia.estado, 'pendiente_validacion'),
+          ));
+        for (const pendiente of pendientesActuales) {
+          const meta = pendiente.metadatos as typeof input.metadatos | null;
+          const existingPeriods = new Set((meta?.meses ?? []).map(periodo => `${periodo.anio}-${periodo.mes}`));
+          const existingCargoIds = new Set(meta?.cargosServicioIds ?? []);
+          const existingServicePeriods = new Set((meta?.servicios ?? []).flatMap(servicio =>
+            servicio.periodos.map(periodo => `${servicio.fraccionamientoServicioId}:${periodo.anio}-${periodo.mes}`)));
+          const conflicts = periodosSolicitados.some(periodo => existingPeriods.has(`${periodo.anio}-${periodo.mes}`))
+            || cargosSolicitados.some(cargoId => existingCargoIds.has(cargoId))
+            || serviciosSolicitados.some(servicio => servicio.periodos.some(periodo =>
+              existingServicePeriods.has(`${servicio.fraccionamientoServicioId}:${periodo.anio}-${periodo.mes}`)));
+          if (conflicts) throw new TRPCError({ code: 'CONFLICT', message: 'Uno o más periodos o cargos ya tienen un comprobante pendiente de revisión.' });
+        }
         const nuevosCargosIds: string[] = [];
         for (const seleccion of serviciosSolicitados) {
           const [servicioTenant] = await tx.select({
@@ -992,6 +1013,9 @@ export const pagosRouter = router({
         if (!perfil) {
           throw new TRPCError({ code: 'NOT_FOUND', message: 'Residente no encontrado' });
         }
+        if (perfil.fraccionamientoId !== ctx.user.fraccionamientoId || comprobante.fraccionamientoId !== perfil.fraccionamientoId) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'El comprobante y el residente no pertenecen a tu fraccionamiento' });
+        }
 
         const fraccionamiento = await db.query.fraccionamientos.findFirst({
           where: (f, { and, eq }) => and(eq(f.id, ctx.user.fraccionamientoId!), eq(f.activo, true)),
@@ -1020,6 +1044,14 @@ export const pagosRouter = router({
         // Determinar meses a registrar (del input o de los metadatos)
         const mesesInput = input.meses ?? metadatos.meses;
         const cargosIds = metadatos.cargosServicioIds ?? [];
+        if (input.meses) {
+          const storedPeriods = new Set((metadatos.meses ?? []).map(periodoKey));
+          const requestedPeriods = new Set(input.meses.map(periodoKey));
+          if (storedPeriods.size !== requestedPeriods.size
+            || [...storedPeriods].some(periodo => !requestedPeriods.has(periodo))) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: 'Los periodos aprobados deben coincidir con los incluidos en el comprobante.' });
+          }
+        }
         if ((!mesesInput || mesesInput.length === 0) && cargosIds.length === 0) {
           throw new TRPCError({
             code: 'BAD_REQUEST',
@@ -1090,6 +1122,7 @@ export const pagosRouter = router({
                 fraccionamientoId: ctx.user.fraccionamientoId,
                 revisadoPor: ctx.user.id,
                 meses: mesesInput,
+                cargoServicioIds: cargosIds,
               },
             });
             pagoId = batchResult.pagos[0]?.id ?? null;
@@ -1110,54 +1143,30 @@ export const pagosRouter = router({
           }
         }
 
-        // Lotes de agua marcan el comprobante dentro de la misma transacción
-        // que crea pagos/tickets; los comprobantes sin periodos de agua usan esta ruta.
+        // Transferencias solo de servicios usan la misma transacción que cargos, tickets y auditoría.
         if (!comprobanteAprobadoEnTransaccion) {
-          const revisadoEn = new Date();
-          const [actualizado] = await db.update(comprobantesTransferencia).set({
-            estado: 'aprobado',
-            fechaRevision: revisadoEn,
-            revisadoPor: ctx.user.id,
-            pagoId,
-            actualizadoEn: revisadoEn,
-          }).where(and(
-            eq(comprobantesTransferencia.id, input.comprobanteId),
-            eq(comprobantesTransferencia.fraccionamientoId, ctx.user.fraccionamientoId),
-            eq(comprobantesTransferencia.estado, 'pendiente_validacion'),
-          )).returning({ id: comprobantesTransferencia.id });
-          if (!actualizado) {
-            throw new TRPCError({ code: 'CONFLICT', message: 'El comprobante ya fue revisado por otra solicitud' });
-          }
-        }
-
-        // 4. Marcar cargos de servicios adicionales como pagados (si existen en metadatos)
-        if (cargosIds.length > 0) {
-          try {
-            await registrarCargosObligatoriosManuales({
-              perfilId: perfil.id,
-              fraccionamientoId: perfil.fraccionamientoId!,
-              cargoIds: cargosIds,
-              metodo: 'transferencia',
-              actorId: ctx.user.id,
+          const batchResult = await pagoRepo.createManualBatchWithLock({
+            perfilId: perfil.id,
+            pagos: [],
+            actualizarEstadoAgua: false,
+            pushNotification: {
+              userId: perfil.userId, perfilId: perfil.id, tipo: 'pago_confirmado',
+              mensaje: 'Tu transferencia fue verificada y tu pago confirmado. Abre la app para ver los detalles.',
+              dedupeKey: `pago_transferencia_confirmado:${perfil.id}:${input.comprobanteId}`,
+            },
+            auditoria: { actorId: ctx.user.id, accion: 'pago.transferencia.aprobado', metodo: 'transferencia' },
+            politica: { tipo: 'admin_retroactivo' },
+            aprobarComprobante: {
               comprobanteId: input.comprobanteId,
-            });
-          } catch (cargoErr) {
-            // Log but do not fail the approval; cargos may already be paid
-            logger.warn('comprobante_transferencia.cargos_ya_pagados', {
-              comprobanteId: input.comprobanteId,
-              error: cargoErr instanceof Error ? cargoErr.message : String(cargoErr),
-            });
-          }
-        }
-
-        if (!comprobanteAprobadoEnTransaccion) {
-          await db.insert(auditoria).values({
-            actorId: ctx.user.id,
-            accion: 'comprobante_transferencia.aprobado',
-            entidad: 'comprobantes_transferencia',
-            entidadId: input.comprobanteId,
-            detalle: { perfilId: perfil.id, pagoId, meses: mesesInput },
+              fraccionamientoId: ctx.user.fraccionamientoId,
+              revisadoPor: ctx.user.id,
+              meses: [],
+              cargoServicioIds: cargosIds,
+            },
           });
+          pagoId = batchResult.pagos[0]?.id ?? null;
+          comprobanteAprobadoEnTransaccion = true;
+          scheduleTransferPushDispatch('approved', input.comprobanteId);
         }
 
         logger.info('comprobante_transferencia.aprobado', { id: input.comprobanteId, pagoId, tesoreraId: ctx.user.id });
@@ -1202,6 +1211,9 @@ export const pagosRouter = router({
         }
 
         const perfil = await residenteRepo.findById(comprobante.perfilId);
+        if (!perfil || perfil.fraccionamientoId !== ctx.user.fraccionamientoId) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'El residente no pertenece a tu fraccionamiento' });
+        }
 
         const revisadoEn = new Date();
         await db.transaction(async (tx) => {

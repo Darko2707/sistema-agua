@@ -5,6 +5,8 @@ import { get } from '@vercel/blob';
 
 import { auth } from '@/lib/auth';
 import { logger } from '@/lib/logger';
+import { canReadPrivateUpload } from '@/lib/private-upload-access';
+import { inlineComprobanteHeaders } from '@/lib/comprobante-file';
 
 const PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 400 300">
   <rect width="400" height="300" fill="#f8f9fa"/>
@@ -16,6 +18,13 @@ const PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="400" hei
   <text x="200" y="195" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" fill="#6c757d" text-anchor="middle">El archivo no se encuentra en el almacenamiento</text>
 </svg>`;
 
+const blobReadWriteToken = process.env.SIS4S_BLOB_READ_WRITE_TOKEN ?? process.env.BLOB_READ_WRITE_TOKEN;
+const blobStoreId = process.env.SIS4S_BLOB_STORE_ID ?? process.env.BLOB_STORE_ID;
+const blobAuthOptions = {
+  ...(blobReadWriteToken ? { token: blobReadWriteToken } : {}),
+  ...(blobStoreId ? { storeId: blobStoreId } : {}),
+};
+
 export async function GET(
   req: Request,
   props: { params: Promise<{ path: string[] }> },
@@ -26,8 +35,14 @@ export async function GET(
   }
 
   const { path: segments } = await props.params;
-  const relativePart = path.join(...segments);
-  const normalized = path.normalize(relativePart).replace(/^(\.\.(\/|\\|$))+/, '');
+  if (segments.length !== 2 || segments.some(segment => !segment || segment === '.' || segment === '..' || /[\\/]/.test(segment))) {
+    return Response.json({ error: 'Archivo no encontrado' }, { status: 404 });
+  }
+  const normalized = segments.join('/');
+  const reference = `uploads/${normalized}`;
+  if (!await canReadPrivateUpload(session.user.id, reference)) {
+    return Response.json({ error: 'Archivo no encontrado' }, { status: 404 });
+  }
 
   const extension = path.extname(normalized).toLowerCase();
   const mimeMap: Record<string, string> = {
@@ -40,10 +55,11 @@ export async function GET(
   const contentType = mimeMap[extension] || 'application/octet-stream';
 
   // 1. Si existe storage en Vercel Blob (blob privado — requiere token del servidor)
-  if (process.env.BLOB_READ_WRITE_TOKEN) {
+  if (blobReadWriteToken || blobStoreId || process.env.VERCEL === '1') {
     try {
       const blobResult = await get(`uploads/${normalized}`, {
         access: 'private',
+        ...blobAuthOptions,
         useCache: false,
         abortSignal: AbortSignal.timeout(8000),
       });
@@ -52,8 +68,7 @@ export async function GET(
         return new Response(buffer, {
           status: 200,
           headers: {
-            'Content-Type': contentType,
-            'Cache-Control': 'private, max-age=3600',
+            ...inlineComprobanteHeaders(contentType, extension),
           },
         });
       }
@@ -70,8 +85,7 @@ export async function GET(
     return new Response(fileBuffer, {
       status: 200,
       headers: {
-        'Content-Type': contentType,
-        'Cache-Control': 'private, max-age=3600',
+        ...inlineComprobanteHeaders(contentType, extension),
       },
     });
   } catch (error) {

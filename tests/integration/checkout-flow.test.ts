@@ -14,7 +14,7 @@ import { nanoid } from 'nanoid';
 import { eq, and, inArray } from 'drizzle-orm';
 
 import { db } from '@/db';
-import { user, fraccionamientos, perfilesResidente, pagos, tickets, comprobantesTransferencia, auditoria } from '@/db/schema';
+import { user, fraccionamientos, perfilesResidente, pagos, tickets, comprobantesTransferencia, auditoria, servicios, fraccionamientoServicios, cargosServicios } from '@/db/schema';
 import { ProcesarPagoMpHandler } from '@/src/application/pagos/commands/procesar-pago-mp.handler';
 import { residenteRepo, pagoRepo } from '@/src/infrastructure/db/repositories';
 import { parseExternalReference } from '@/src/infrastructure/mercadopago/parser';
@@ -35,6 +35,8 @@ const FX = {
   adminEmail:`test.admin.${suffix}@integration-test.local`,
   fraccionamientoId: '' as string,
   perfilId:  '' as string,
+  serviceId: '' as string,
+  activationId: '' as string,
 };
 
 const ANIO = 2090; // far future — never conflicts with real payments
@@ -99,12 +101,19 @@ afterAll(async () => {
       await db.delete(pagos).where(eq(pagos.perfilId, FX.perfilId));
     }
 
+    const testCargos = await db.select({ id: cargosServicios.id }).from(cargosServicios).where(eq(cargosServicios.perfilId, FX.perfilId));
+    if (testCargos.length) {
+      await db.delete(tickets).where(inArray(tickets.cargoServicioId, testCargos.map(cargo => cargo.id)));
+      await db.delete(cargosServicios).where(inArray(cargosServicios.id, testCargos.map(cargo => cargo.id)));
+    }
+
     // 2. Residente user → cascades to perfilesResidente
     await db.delete(user).where(eq(user.id, FX.resId));
 
     await db.delete(user).where(eq(user.id, FX.adminId));
     await db.delete(user).where(eq(user.id, FX.repId));
     await db.delete(fraccionamientos).where(eq(fraccionamientos.id, FX.fraccionamientoId));
+    if (FX.serviceId) await db.delete(servicios).where(eq(servicios.id, FX.serviceId));
   } catch (e) {
     console.error('Integration test teardown failed:', e);
   }
@@ -365,6 +374,18 @@ describe('Comprobantes de transferencia para Tesorería', () => {
       fraccionamientoId: FX.fraccionamientoId,
     },
   });
+  const residentCaller = () => pagosRouter.createCaller({
+    headers: new Headers(),
+    user: {
+      id: FX.resId,
+      name: 'Test Residente',
+      email: FX.resEmail,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      role: 'residente',
+      fraccionamientoId: FX.fraccionamientoId,
+    },
+  });
 
   async function seedComprobante(concepto: string, mes: number, anio: number) {
     const fileReference = `uploads/${FX.resId}/comprobante-${suffix}-${concepto}.pdf`;
@@ -451,6 +472,12 @@ describe('Comprobantes de transferencia para Tesorería', () => {
     ]);
     expect(transferReceipt && 'transferencia' in transferReceipt ? transferReceipt.transferencia.monto : null).toBe(savedPayment?.monto);
     expect(auditRow).toBeDefined();
+
+    await expect(caller().aprobarComprobante({ comprobanteId: receipt.id })).rejects.toThrow('Comprobante no encontrado o ya procesado');
+    const pagosDelPeriodo = await db.select({ id: pagos.id }).from(pagos).where(and(
+      eq(pagos.perfilId, FX.perfilId), eq(pagos.mes, mes), eq(pagos.anio, anio), eq(pagos.estado, 'pagado'),
+    ));
+    expect(pagosDelPeriodo).toHaveLength(1);
   });
 
   it('exige motivo para rechazar y no altera pagos del residente', async () => {
@@ -489,5 +516,74 @@ describe('Comprobantes de transferencia para Tesorería', () => {
     expect(rejectedReceipt?.fechaRevision).toBeInstanceOf(Date);
     expect(pagosDespues).toHaveLength(pagosAntes.length);
     expect(auditRow).toBeDefined();
+  });
+
+  it('confirma servicios de forma atómica e impide acreditarlos dos veces bajo concurrencia', async () => {
+    const [service] = await db.insert(servicios).values({
+      clave: `test-${suffix}`, nombre: 'Servicio integración', activo: true,
+    }).returning({ id: servicios.id });
+    FX.serviceId = service.id;
+    const [activation] = await db.insert(fraccionamientoServicios).values({
+      fraccionamientoId: FX.fraccionamientoId, servicioId: service.id,
+      estado: 'activo', montoMensual: '20.00', montoReconexion: '0.00',
+    }).returning({ id: fraccionamientoServicios.id });
+    FX.activationId = activation.id;
+    const [cargo] = await db.insert(cargosServicios).values({
+      fraccionamientoId: FX.fraccionamientoId, perfilId: FX.perfilId,
+      fraccionamientoServicioId: activation.id, mes: 4, anio: ANIO,
+      monto: '20.00', estado: 'pendiente',
+    }).returning({ id: cargosServicios.id });
+    const [receipt] = await db.insert(comprobantesTransferencia).values({
+      perfilId: FX.perfilId, fraccionamientoId: FX.fraccionamientoId,
+      monto: '20.00', concepto: 'Servicio integración',
+      comprobanteUrl: buildComprobanteViewUrl(`uploads/${FX.resId}/servicio-${suffix}.pdf`),
+      metadatos: { cargosServicioIds: [cargo.id] },
+    }).returning({ id: comprobantesTransferencia.id });
+
+    const outcomes = await Promise.allSettled([
+      caller().aprobarComprobante({ comprobanteId: receipt.id }),
+      caller().aprobarComprobante({ comprobanteId: receipt.id }),
+    ]);
+    expect(outcomes.filter(outcome => outcome.status === 'fulfilled')).toHaveLength(1);
+
+    const savedCargo = await db.query.cargosServicios.findFirst({ where: (row, { eq }) => eq(row.id, cargo.id) });
+    const savedReceipt = await db.query.comprobantesTransferencia.findFirst({ where: (row, { eq }) => eq(row.id, receipt.id) });
+    const cargoTickets = await db.select({ id: tickets.id }).from(tickets).where(eq(tickets.cargoServicioId, cargo.id));
+    const cargoAudit = await db.select({ id: auditoria.id }).from(auditoria).where(and(
+      eq(auditoria.entidad, 'cargos_servicios'), eq(auditoria.entidadId, cargo.id),
+      eq(auditoria.accion, 'servicio.cargo.pagado_transferencia'),
+    ));
+    expect(savedCargo?.estado).toBe('pagado');
+    expect(savedReceipt?.estado).toBe('aprobado');
+    expect(savedReceipt?.fechaRevision).toBeInstanceOf(Date);
+    expect(savedReceipt?.revisadoPor).toBe(FX.adminId);
+    expect(cargoTickets).toHaveLength(1);
+    expect(cargoAudit).toHaveLength(1);
+  });
+
+  it('serializa envíos concurrentes y deja un solo comprobante pendiente por periodo de agua', async () => {
+    const outcomes = await Promise.allSettled([
+      residentCaller().registrarComprobanteTransferencia({
+        monto: 100, concepto: 'Pago de agua', comprobanteUrl: '/api/upload?ref=prueba-a.pdf',
+        metadatos: { meses: [{ mes: 8, anio: ANIO }] },
+      }),
+      residentCaller().registrarComprobanteTransferencia({
+        monto: 100, concepto: 'Pago de agua', comprobanteUrl: '/api/upload?ref=prueba-b.pdf',
+        metadatos: { meses: [{ mes: 8, anio: ANIO }] },
+      }),
+    ]);
+    const successful = outcomes.filter((outcome): outcome is PromiseFulfilledResult<{ ok: boolean; id: string }> => outcome.status === 'fulfilled');
+    expect(successful).toHaveLength(1);
+    expect(outcomes.filter(outcome => outcome.status === 'rejected')).toHaveLength(1);
+
+    const createdReceipt = await db.select({ id: comprobantesTransferencia.id })
+      .from(comprobantesTransferencia)
+      .where(and(
+        eq(comprobantesTransferencia.id, successful[0]!.value.id),
+        eq(comprobantesTransferencia.perfilId, FX.perfilId),
+        eq(comprobantesTransferencia.fraccionamientoId, FX.fraccionamientoId),
+        eq(comprobantesTransferencia.estado, 'pendiente_validacion'),
+      ));
+    expect(createdReceipt).toHaveLength(1);
   });
 });

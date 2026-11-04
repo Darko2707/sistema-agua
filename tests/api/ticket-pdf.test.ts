@@ -85,6 +85,7 @@ const BASE_TICKET = {
   folio: FOLIO,
   pdfUrl: null as string | null,
   pago: {
+    estado: 'pagado',
     mes: 8,
     anio: 2026,
     monto: 123,
@@ -93,7 +94,7 @@ const BASE_TICKET = {
     comisionMercadoPago: 7,
     retencionIsr: 0,
     retencionIva: 0,
-    circuito: { nombre: 'Circuito 1', representanteId: 'representante-1' },
+    fraccionamiento: { nombre: 'Fraccionamiento 1', representanteId: 'representante-1' },
     perfil: {
       userId: 'residente-1',
       edificio: 'A',
@@ -169,6 +170,7 @@ describe('GET /api/tickets/[folio]/pdf', () => {
     const ticketQuery = mockFindTicket.mock.calls[0]?.[0];
     expect(ticketQuery.columns).toEqual({ folio: true, pdfUrl: true });
     expect(ticketQuery.with.pago.columns).toEqual({
+      estado: true,
       mes: true,
       anio: true,
       monto: true,

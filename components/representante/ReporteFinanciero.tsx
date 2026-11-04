@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { trpcReact } from '@/lib/trpc-react';
 import {
-  Plus, Pencil, Trash2, Loader2,
+  Plus, Pencil, Trash2, Loader2, Eye,
   TrendingUp, Users, AlertTriangle, DollarSign, Wallet, Download,
 } from 'lucide-react';
 
@@ -84,18 +84,24 @@ interface GastoModalProps {
     monto: number;
     categoria: CatGasto;
     fecha: string;
+    referencia?: string | null;
   };
   mes: number;
   anio: number;
-  onGuardar: (d: { concepto: string; monto: number; categoria: CatGasto; fecha: string }) => Promise<void>;
+  onGuardar: (d: { concepto: string; monto: number; categoria: CatGasto; fecha: string; referencia: string; idempotencyKey?: string }) => Promise<void>;
 }
 
 function GastoModal({ onClose, titulo, inicial, mes, anio, onGuardar }: GastoModalProps) {
-  const hoy = new Date().toISOString().split('T')[0];
+  const hoyDate = new Date();
+  const hoy = hoyDate.getUTCMonth() + 1 === mes && hoyDate.getUTCFullYear() === anio
+    ? hoyDate.toISOString().split('T')[0]
+    : `${anio}-${String(mes).padStart(2, '0')}-01`;
   const [concepto,   setConcepto]   = useState(inicial?.concepto   ?? '');
   const [monto,      setMonto]      = useState(inicial?.monto      ?? 0);
   const [categoria,  setCategoria]  = useState<CatGasto>(inicial?.categoria ?? 'otros');
   const [fecha,      setFecha]      = useState(inicial?.fecha ?? hoy);
+  const [referencia, setReferencia] = useState(inicial?.referencia ?? '');
+  const [idempotencyKey] = useState(() => globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`);
   const [guardando,  setGuardando]  = useState(false);
   const [errMsg,     setErrMsg]     = useState('');
 
@@ -106,7 +112,7 @@ function GastoModal({ onClose, titulo, inicial, mes, anio, onGuardar }: GastoMod
     setGuardando(true);
     setErrMsg('');
     try {
-      await onGuardar({ concepto: concepto.trim(), monto, categoria, fecha });
+      await onGuardar({ concepto: concepto.trim(), monto, categoria, fecha, referencia: referencia.trim(), ...(inicial?.id ? {} : { idempotencyKey }) });
       onClose();
     } catch (err: unknown) {
       setErrMsg(err instanceof Error ? err.message : 'Error al guardar');
@@ -148,6 +154,10 @@ function GastoModal({ onClose, titulo, inicial, mes, anio, onGuardar }: GastoMod
           <div className="space-y-1">
             <Label htmlFor="fecha">Fecha *</Label>
             <Input id="fecha" type="date" value={fecha} onChange={e => setFecha(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="referencia-gasto">Referencia o folio (opcional)</Label>
+            <Input id="referencia-gasto" maxLength={240} placeholder="Ej. Folio de factura o transferencia" value={referencia} onChange={e => setReferencia(e.target.value)} />
           </div>
           <div className="flex gap-2 justify-end pt-2">
             <Button type="button" variant="outline" onClick={onClose} disabled={guardando}>Cancelar</Button>
@@ -253,8 +263,17 @@ export function ReporteFinanciero() {
 
   const [modalAbierto,        setModalAbierto]        = useState(false);
   const [gastoEditando,       setGastoEditando]        = useState<null | {
-    id: string; concepto: string; monto: number; categoria: CatGasto; fecha: string;
+    id: string; concepto: string; monto: number; categoria: CatGasto; fecha: string; referencia?: string | null;
   }>(null);
+  const [gastoDetalle, setGastoDetalle] = useState<{
+    id: string; concepto: string; monto: string; categoria: string; fecha: Date | string | null;
+    referencia: string | null; creadoEn: Date | string | null; representante: { name: string } | null;
+    anuladaEn: Date | string | null; motivoAnulacion: string | null;
+  } | null>(null);
+  const [filtroConceptoGasto, setFiltroConceptoGasto] = useState('');
+  const [filtroCategoriaGasto, setFiltroCategoriaGasto] = useState('todas');
+  const [filtroFechaDesde, setFiltroFechaDesde] = useState('');
+  const [filtroFechaHasta, setFiltroFechaHasta] = useState('');
   const [ingresoModalAbierto, setIngresoModalAbierto]  = useState(false);
   const [ingresoEditando,     setIngresoEditando]      = useState<IngresoEditing>(null);
   const [eliminandoId,        setEliminandoId]         = useState<string | null>(null);
@@ -275,7 +294,7 @@ export function ReporteFinanciero() {
     onError:   (e) => mostrar(e.message, 'error'),
   });
   const eliminarMutation = trpcReact.reportes.eliminarGasto.useMutation({
-    onSuccess: () => { utils.reportes.reporteFinanciero.invalidate(); mostrar('Gasto eliminado'); },
+    onSuccess: () => { utils.reportes.reporteFinanciero.invalidate(); mostrar('Gasto anulado; se conservó el registro'); },
     onError:   (e) => mostrar(e.message, 'error'),
   });
 
@@ -298,18 +317,28 @@ export function ReporteFinanciero() {
 
   const aniosOpts = Array.from({ length: 5 }, (_, i) => hoy.getFullYear() - 2 + i);
 
-  async function handleAgregarGasto(d: { concepto: string; monto: number; categoria: CatGasto; fecha: string }) {
-    await agregarMutation.mutateAsync({ ...d, mes, anio });
+  async function handleAgregarGasto(d: { concepto: string; monto: number; categoria: CatGasto; fecha: string; referencia: string; idempotencyKey?: string }) {
+    if (!d.idempotencyKey) throw new Error('No se pudo generar la clave segura del registro. Cierra y vuelve a abrir el formulario.');
+    await agregarMutation.mutateAsync({ ...d, mes, anio, idempotencyKey: d.idempotencyKey });
   }
-  async function handleEditarGasto(d: { concepto: string; monto: number; categoria: CatGasto; fecha: string }) {
+  async function handleEditarGasto(d: { concepto: string; monto: number; categoria: CatGasto; fecha: string; referencia: string; idempotencyKey?: string }) {
     if (!gastoEditando) return;
     await editarMutation.mutateAsync({ id: gastoEditando.id, ...d });
   }
   async function handleEliminarGasto(id: string) {
-    if (!confirm('¿Eliminar este gasto? Esta acción no se puede deshacer.')) return;
+    const motivo = prompt('Motivo para anular este gasto (quedará en el historial):');
+    if (!motivo?.trim()) return;
     setEliminandoId(id);
-    try { await eliminarMutation.mutateAsync({ id }); } finally { setEliminandoId(null); }
+    try { await eliminarMutation.mutateAsync({ id, motivo: motivo.trim() }); } finally { setEliminandoId(null); }
   }
+
+  const gastosVisibles = (reporte?.gastos ?? []).filter(g => {
+    const fechaGasto = g.fecha ? new Date(g.fecha).toISOString().slice(0, 10) : '';
+    return g.concepto.toLocaleLowerCase('es-MX').includes(filtroConceptoGasto.trim().toLocaleLowerCase('es-MX'))
+      && (filtroCategoriaGasto === 'todas' || g.categoria === filtroCategoriaGasto)
+      && (!filtroFechaDesde || fechaGasto >= filtroFechaDesde)
+      && (!filtroFechaHasta || fechaGasto <= filtroFechaHasta);
+  });
 
   async function handleAgregarIngreso(d: { concepto: string; monto: number; fecha: string }) {
     await agregarIngresoMutation.mutateAsync({ ...d, mes, anio });
@@ -413,8 +442,10 @@ export function ReporteFinanciero() {
       {cargando ? <Skeleton /> : reporte ? (
         <>
           {/* KPIs */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <KpiCard icon={<DollarSign className="h-4 w-4" />} label="Total recaudado" value={mxn(reporte.totalRecaudado)} color="text-green-600" />
+            <KpiCard icon={<Wallet className="h-4 w-4" />} label="Cargos esperados" value={mxn(reporte.totalEsperadoCargos)} />
+            <KpiCard icon={<AlertTriangle className="h-4 w-4" />} label="Saldo pendiente" value={mxn(reporte.saldoPendiente)} color={reporte.saldoPendiente > 0 ? 'text-amber-600' : 'text-green-600'} />
             <KpiCard icon={<Users className="h-4 w-4" />} label="Residentes" value={String(reporte.totalResidentes)} sub={`${reporte.totalPagaron} pagaron`} />
             <KpiCard icon={<AlertTriangle className="h-4 w-4" />} label="Morosos" value={String(reporte.totalMorosos)} color={reporte.totalMorosos > 0 ? 'text-red-600' : 'text-green-600'} />
             <KpiCard icon={<TrendingUp className="h-4 w-4" />} label="% Cobranza" value={`${reporte.porcentajeCobranza.toFixed(1)}%`} color={reporte.porcentajeCobranza >= 80 ? 'text-green-600' : 'text-amber-600'} />
@@ -426,7 +457,7 @@ export function ReporteFinanciero() {
               <div className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
                 <div className="flex items-center gap-2 flex-wrap">
                   <Wallet className="h-5 w-5 text-muted-foreground" />
-                  <span className="font-medium">Saldo del período</span>
+                  <span className="font-medium">Saldo de caja del período</span>
                   <span className="text-xs text-muted-foreground">
                     (pagos {mxn(reporte.totalPagos ?? reporte.totalRecaudado)}
                     {(reporte.totalIngresosAdicionales ?? 0) > 0 ? ` + extras ${mxn(reporte.totalIngresosAdicionales ?? 0)}` : ''}
@@ -483,6 +514,15 @@ export function ReporteFinanciero() {
                   <Plus className="h-4 w-4" />Agregar gasto
                 </Button>
               </div>
+              <div className="grid gap-3 pt-3 sm:grid-cols-2 lg:grid-cols-4" aria-label="Filtros de gastos">
+                <Input aria-label="Buscar concepto de gasto" placeholder="Filtrar por concepto" value={filtroConceptoGasto} onChange={event => setFiltroConceptoGasto(event.target.value)} />
+                <select aria-label="Filtrar categoría de gasto" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={filtroCategoriaGasto} onChange={event => setFiltroCategoriaGasto(event.target.value)}>
+                  <option value="todas">Todas las categorías</option>
+                  {Object.entries(CAT_LABEL).map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                </select>
+                <Input aria-label="Gastos desde fecha" type="date" value={filtroFechaDesde} onChange={event => setFiltroFechaDesde(event.target.value)} />
+                <Input aria-label="Gastos hasta fecha" type="date" value={filtroFechaHasta} onChange={event => setFiltroFechaHasta(event.target.value)} />
+              </div>
             </CardHeader>
             <CardContent className="p-0">
               <Table>
@@ -491,41 +531,48 @@ export function ReporteFinanciero() {
                     <TableHead>Concepto</TableHead>
                     <TableHead>Categoría</TableHead>
                     <TableHead>Fecha</TableHead>
+                    <TableHead>Registró</TableHead>
                     <TableHead className="text-right">Monto</TableHead>
-                    <TableHead className="w-20" />
+                    <TableHead>Estado</TableHead>
+                    <TableHead className="w-28" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {reporte.gastos.length === 0 && (
+                  {gastosVisibles.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={5} className="py-10 text-center text-muted-foreground">
-                        Sin gastos para {MESES_FULL[mes - 1]} {anio}.
+                      <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
+                        {reporte.gastos.length === 0 ? `Sin gastos para ${MESES_FULL[mes - 1]} ${anio}.` : 'No hay gastos que coincidan con los filtros.'}
                         <br />
-                        <Button variant="link" size="sm" className="mt-1" onClick={() => { setGastoEditando(null); setModalAbierto(true); }}>
+                        {reporte.gastos.length === 0 && <Button variant="link" size="sm" className="mt-1" onClick={() => { setGastoEditando(null); setModalAbierto(true); }}>
                           Registrar primer gasto
-                        </Button>
+                        </Button>}
                       </TableCell>
                     </TableRow>
                   )}
-                  {reporte.gastos.map(g => (
-                    <TableRow key={g.id}>
+                  {gastosVisibles.map(g => (
+                    <TableRow key={g.id} className={g.anuladaEn ? 'bg-slate-50 text-muted-foreground' : undefined}>
                       <TableCell className="font-medium">{g.concepto}</TableCell>
                       <TableCell><Badge variant="outline" className="text-xs">{CAT_LABEL[g.categoria as CatGasto] ?? g.categoria}</Badge></TableCell>
                       <TableCell className="text-sm text-muted-foreground">
                         {new Date(g.fecha!).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' })}
                       </TableCell>
-                      <TableCell className="text-right font-medium text-red-600">{mxn(Number(g.monto))}</TableCell>
+                      <TableCell>{g.representante?.name ?? 'Usuario eliminado'}</TableCell>
+                      <TableCell className={`text-right font-medium ${g.anuladaEn ? 'line-through' : 'text-red-600'}`}>{mxn(Number(g.monto))}</TableCell>
+                      <TableCell><Badge variant={g.anuladaEn ? 'destructive' : 'secondary'}>{g.anuladaEn ? 'Anulado' : 'Vigente'}</Badge></TableCell>
                       <TableCell>
                         <div className="flex gap-1 justify-end">
-                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => {
-                            setGastoEditando({ id: g.id, concepto: g.concepto, monto: Number(g.monto), categoria: g.categoria as CatGasto, fecha: g.fecha ? new Date(g.fecha).toISOString().split('T')[0] : new Date().toISOString().split('T')[0] });
+                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" aria-label="Ver detalle del gasto" onClick={() => setGastoDetalle(g)}>
+                            <Eye className="h-3.5 w-3.5" />
+                          </Button>
+                          {!g.anuladaEn && <Button variant="ghost" size="sm" className="h-7 w-7 p-0" aria-label="Editar gasto" onClick={() => {
+                            setGastoEditando({ id: g.id, concepto: g.concepto, monto: Number(g.monto), categoria: g.categoria as CatGasto, fecha: g.fecha ? new Date(g.fecha).toISOString().split('T')[0] : new Date().toISOString().split('T')[0], referencia: g.referencia });
                             setModalAbierto(true);
                           }}>
                             <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50" disabled={eliminandoId === g.id} onClick={() => handleEliminarGasto(g.id)}>
+                          </Button>}
+                          {!g.anuladaEn && <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-red-500 hover:text-red-700 hover:bg-red-50" aria-label="Anular gasto" disabled={eliminandoId === g.id} onClick={() => handleEliminarGasto(g.id)}>
                             {eliminandoId === g.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                          </Button>
+                          </Button>}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -622,6 +669,23 @@ export function ReporteFinanciero() {
           mes={mes} anio={anio}
           onGuardar={gastoEditando ? handleEditarGasto : handleAgregarGasto}
         />
+      )}
+      {gastoDetalle && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setGastoDetalle(null)}>
+          <section role="dialog" aria-modal="true" aria-labelledby="gasto-detalle-titulo" className="w-full max-w-lg space-y-4 rounded-xl bg-background p-6 shadow-2xl" onClick={event => event.stopPropagation()}>
+            <div className="flex items-center justify-between"><h2 id="gasto-detalle-titulo" className="text-lg font-semibold">Detalle del gasto</h2><Button variant="outline" size="sm" onClick={() => setGastoDetalle(null)}>Cerrar</Button></div>
+            <dl className="grid grid-cols-[130px_1fr] gap-3 text-sm">
+              <dt className="text-muted-foreground">Concepto</dt><dd className="font-medium">{gastoDetalle.concepto}</dd>
+              <dt className="text-muted-foreground">Importe</dt><dd>{mxn(Number(gastoDetalle.monto))}</dd>
+              <dt className="text-muted-foreground">Categoría</dt><dd>{CAT_LABEL[gastoDetalle.categoria as CatGasto] ?? gastoDetalle.categoria}</dd>
+              <dt className="text-muted-foreground">Fecha del gasto</dt><dd>{gastoDetalle.fecha ? new Date(gastoDetalle.fecha).toLocaleDateString('es-MX') : '—'}</dd>
+              <dt className="text-muted-foreground">Referencia</dt><dd>{gastoDetalle.referencia || 'Sin referencia'}</dd>
+              <dt className="text-muted-foreground">Registró</dt><dd>{gastoDetalle.representante?.name ?? 'Usuario eliminado'}</dd>
+              <dt className="text-muted-foreground">Registrado el</dt><dd>{gastoDetalle.creadoEn ? new Date(gastoDetalle.creadoEn).toLocaleString('es-MX') : '—'}</dd>
+              {gastoDetalle.anuladaEn && <><dt className="text-muted-foreground">Estado</dt><dd>Anulado: {gastoDetalle.motivoAnulacion || 'Sin motivo registrado'}</dd></>}
+            </dl>
+          </section>
+        </div>
       )}
       {ingresoModalAbierto && (
         <IngresoModal

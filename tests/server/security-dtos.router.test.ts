@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
   exportarResidentes: vi.fn(),
   exportarPagos: vi.fn(),
+  exportarCargos: vi.fn(),
   exportarCortes: vi.fn(),
   exportarTickets: vi.fn(),
   exportarAuditoria: vi.fn(),
@@ -13,6 +14,7 @@ vi.mock('@/db', () => ({
     query: {
       perfilesResidente: { findMany: mocks.exportarResidentes },
       pagos: { findMany: mocks.exportarPagos },
+      cargosServicios: { findMany: mocks.exportarCargos },
       cortes: { findMany: mocks.exportarCortes },
       tickets: { findMany: mocks.exportarTickets },
       auditoria: { findMany: mocks.exportarAuditoria },
@@ -58,6 +60,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.exportarResidentes.mockResolvedValue([]);
   mocks.exportarPagos.mockResolvedValue([]);
+  mocks.exportarCargos.mockResolvedValue([]);
   mocks.exportarCortes.mockResolvedValue([]);
   mocks.exportarTickets.mockResolvedValue([]);
   mocks.exportarAuditoria.mockResolvedValue([]);

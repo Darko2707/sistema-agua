@@ -523,6 +523,8 @@ export async function generarReporteFinancieroExcel(params: {
   generadoEn: Date;
   totalRecaudado: number;
   totalPagos?: number;
+  totalEsperadoCargos?: number;
+  saldoPendiente?: number;
   totalIngresosAdicionales?: number;
   totalResidentes: number;
   totalPagaron: number;
@@ -574,6 +576,8 @@ export async function generarReporteFinancieroExcel(params: {
   const kpis: [string, string | number, string][] = [
     ['Total Recaudado',         params.totalRecaudado,                     '"$"#,##0.00'],
     ['  · Pagos registrados',   params.totalPagos ?? params.totalRecaudado, '"$"#,##0.00'],
+    ['Cargos esperados',        params.totalEsperadoCargos ?? 0,            '"$"#,##0.00'],
+    ['Saldo pendiente',         params.saldoPendiente ?? 0,                 '"$"#,##0.00'],
     ...serviceKpis,
     ['  · Ingresos adicionales', params.totalIngresosAdicionales ?? 0,     '"$"#,##0.00'],
     ['Total Gastos',            params.totalGastos,                        '"$"#,##0.00'],
@@ -819,6 +823,8 @@ export interface MesResumen {
   totalGastos:              number;
   saldo:                    number;
   cantidadPagos:            number;
+  totalEsperadoCargos?:     number;
+  saldoPendiente?:          number;
 }
 
 export interface GastoRangoReporte extends GastoReporte {
@@ -840,6 +846,8 @@ export async function generarReporteFinancieroRangoExcel(params: {
   generadoEn:  Date;
   totalRecaudado:            number;
   totalPagos:                number;
+  totalEsperadoCargos?:      number;
+  saldoPendiente?:           number;
   totalIngresosAdicionales:  number;
   totalGastos:               number;
   saldo:                     number;
@@ -892,6 +900,8 @@ export async function generarReporteFinancieroRangoExcel(params: {
   const kpis: [string, string | number, string][] = [
     ['Total Recaudado',          params.totalRecaudado,           '"$"#,##0.00'],
     ['  · Pagos registrados',    params.totalPagos,               '"$"#,##0.00'],
+    ['Cargos esperados',         params.totalEsperadoCargos ?? 0, '"$"#,##0.00'],
+    ['Saldo pendiente',          params.saldoPendiente ?? 0,      '"$"#,##0.00'],
     ...serviceKpis,
     ['  · Ingresos adicionales', params.totalIngresosAdicionales, '"$"#,##0.00'],
     ['Total Gastos',             params.totalGastos,              '"$"#,##0.00'],
@@ -934,9 +944,9 @@ export async function generarReporteFinancieroRangoExcel(params: {
   // Hoja 2: Desglose por mes
   // ══════════════════════════════════════
   const wsM = wb.addWorksheet('Por Mes');
-  agregarLogo(wb, wsM, 8);
+  agregarLogo(wb, wsM, 9);
 
-  wsM.mergeCells('A1:H1');
+  wsM.mergeCells('A1:I1');
   const tm = wsM.getCell('A1');
   tm.value = `Desglose Mensual — ${periodoLabel}`;
   tm.font  = { bold: true, size: 14, color: { argb: 'FF' + COLOR_HEADER } };
@@ -944,7 +954,7 @@ export async function generarReporteFinancieroRangoExcel(params: {
   wsM.getRow(1).height = 32;
   wsM.addRow([]);
 
-  const mhRow = wsM.addRow(['Período', 'Pagos', '# Cobros', 'Ingresos extras', 'Total ingresos', 'Gastos', 'Saldo mes']);
+  const mhRow = wsM.addRow(['Período', 'Cargos esperados', 'Pagos confirmados', '# Cobros', 'Ingresos extras', 'Total ingresos', 'Saldo pendiente', 'Gastos', 'Saldo de caja']);
   mhRow.height = 20;
   mhRow.eachCell(cell => {
     cell.fill      = headerFill(COLOR_HEADER);
@@ -956,10 +966,12 @@ export async function generarReporteFinancieroRangoExcel(params: {
   params.porMes.forEach((m, i) => {
     const row = wsM.addRow([
       `${MESES_ES[m.mes - 1]} ${m.anio}`,
+      m.totalEsperadoCargos ?? 0,
       m.totalPagos,
       m.cantidadPagos,
       m.totalIngresosAdicionales,
       m.totalRecaudado,
+      m.saldoPendiente ?? 0,
       m.totalGastos,
       m.saldo,
     ]);
@@ -971,10 +983,10 @@ export async function generarReporteFinancieroRangoExcel(params: {
       cell.alignment = { horizontal: 'center', vertical: 'middle' };
       cell.font      = { size: 10 };
       if (colNum === 1) cell.alignment.horizontal = 'left';
-      if ([2, 4, 5, 6].includes(colNum)) cell.numFmt = '"$"#,##0.00';
-      if (colNum === 5) cell.font = { bold: true, color: { argb: 'FF065F46' }, size: 10 };
-      if (colNum === 6 && m.totalGastos > 0) cell.font = { color: { argb: 'FF991B1B' }, size: 10 };
-      if (colNum === 7) {
+      if ([2, 3, 5, 6, 7, 8, 9].includes(colNum)) cell.numFmt = '"$"#,##0.00';
+      if (colNum === 6) cell.font = { bold: true, color: { argb: 'FF065F46' }, size: 10 };
+      if (colNum === 8 && m.totalGastos > 0) cell.font = { color: { argb: 'FF991B1B' }, size: 10 };
+      if (colNum === 9) {
         cell.numFmt = '"$"#,##0.00';
         cell.font   = { bold: true, color: { argb: m.saldo >= 0 ? 'FF065F46' : 'FF991B1B' }, size: 10 };
       }
@@ -983,10 +995,12 @@ export async function generarReporteFinancieroRangoExcel(params: {
 
   const mTotalRow = wsM.addRow([
     'TOTAL',
+    params.totalEsperadoCargos ?? params.porMes.reduce((sum, m) => sum + (m.totalEsperadoCargos ?? 0), 0),
     params.totalPagos,
     params.porMes.reduce((s, m) => s + m.cantidadPagos, 0),
     params.totalIngresosAdicionales,
     params.totalRecaudado,
+    params.saldoPendiente ?? params.porMes.reduce((sum, m) => sum + (m.saldoPendiente ?? 0), 0),
     params.totalGastos,
     params.saldo,
   ]);
@@ -997,16 +1011,10 @@ export async function generarReporteFinancieroRangoExcel(params: {
     cell.border    = border();
     cell.alignment = { horizontal: 'center', vertical: 'middle' };
     if (colNum === 1) cell.alignment.horizontal = 'left';
-    if ([2, 4, 5, 6, 7].includes(colNum)) cell.numFmt = '"$"#,##0.00';
+    if ([2, 3, 5, 6, 7, 8, 9].includes(colNum)) cell.numFmt = '"$"#,##0.00';
   });
 
-  wsM.getColumn(1).width = 18;
-  wsM.getColumn(2).width = 14;
-  wsM.getColumn(3).width = 10;
-  wsM.getColumn(4).width = 16;
-  wsM.getColumn(5).width = 16;
-  wsM.getColumn(6).width = 14;
-  wsM.getColumn(7).width = 14;
+  [18, 17, 17, 10, 16, 18, 17, 14, 15].forEach((width, index) => { wsM.getColumn(index + 1).width = width; });
 
   // ══════════════════════════════════════
   // Hoja 3: Pagos Registrados (rango completo)

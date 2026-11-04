@@ -85,6 +85,7 @@ export type CrearPagosManualBatchInput = {
     fraccionamientoId: string;
     revisadoPor: string;
     meses: Array<{ mes: number; anio: number }>;
+    cargoServicioIds?: string[];
   };
 };
 

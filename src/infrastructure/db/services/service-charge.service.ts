@@ -38,6 +38,8 @@ export async function generateMonthlyServiceCharges(input: ServiceChargePeriod) 
       eq(fraccionamientoServicios.estado, 'activo'),
       eq(servicios.activo, true),
       ne(servicios.clave, 'agua'),
+      ne(servicios.clave, 'donativo'),
+      ne(servicios.clave, 'donativo'),
     ));
 
   if (rows.length === 0) return { generados: 0, candidatos: 0 };

@@ -26,7 +26,7 @@ La figura de capas y el mapa de componentes se mantienen en el anexo complementa
 | Node.js / Express | Next.js ejecuta las rutas del servidor; `express` no figura en `package.json`. | Describir como backend integrado en Next.js, no como servicio Express. |
 | tRPC / Server Actions | tRPC sí está en dependencias y en `server/`; no se identificó uso de Server Actions en el código revisado. | Documentar tRPC y Route Handlers; no atribuir Server Actions sin otra evidencia. |
 | PostgreSQL / Sequelize | PostgreSQL y Drizzle aparecen en esquema, consultas y migraciones. `sequelize` no figura como dependencia activa. | Drizzle es el ORM vigente. |
-| `PhotoEvidence` | [models/photo-evidence.js](../models/photo-evidence.js) contiene un modelo Sequelize legado; la tabla operativa vigente es `evidencias_orden_trabajo` en [db/schema.ts](../db/schema.ts). | No mezclar el modelo legado con el esquema activo ni usarlo como evidencia de persistencia actual. |
+| `PhotoEvidence` | [models/photo-evidence.mjs](../models/photo-evidence.mjs) contiene un modelo Sequelize legado; la tabla operativa vigente es `evidencias_orden_trabajo` en [db/schema.ts](../db/schema.ts). | No mezclar el modelo legado con el esquema activo ni usarlo como evidencia de persistencia actual. |
 | Circuitos / Viviendas | El esquema actual usa `fraccionamientos`; el perfil residente guarda `edificio` y `departamento`. No hay tablas `circuitos` ni `viviendas` declaradas en el esquema Drizzle vigente. | Tratar “circuito” y “vivienda” como conceptos del modelo anterior o etiquetas funcionales, no como tablas activas. |
 
 ### 2.1 Fragmentos de implementación
@@ -124,7 +124,7 @@ El handler real también valida que el archivo no esté vacío, limita formatos 
 
 #### Aclaración sobre el modelo Sequelize legado
 
-El repositorio contiene [models/photo-evidence.js](../models/photo-evidence.js), cuyo extracto inicia `PhotoEvidence.init(...)` y referencia `Activities` y `Workers`. Sin embargo, Sequelize no aparece en las dependencias del `package.json`, el esquema activo está definido en Drizzle y esa clase no coincide con `evidencias_orden_trabajo`. Por tanto, es evidencia de un artefacto legado en el árbol, no del modelo desplegado actual. El ejemplo de implementación vigente que debe citarse es el esquema Drizzle anterior.
+El repositorio contiene [models/photo-evidence.mjs](../models/photo-evidence.mjs), cuyo extracto inicia `PhotoEvidence.init(...)` y referencia `Activities` y `Workers`. Sin embargo, Sequelize no aparece en las dependencias del `package.json`, el esquema activo está definido en Drizzle y esa clase no coincide con `evidencias_orden_trabajo`. Por tanto, es evidencia de un artefacto legado en el árbol, no del modelo desplegado actual. El ejemplo de implementación vigente que debe citarse es el esquema Drizzle anterior.
 
 ## 3. Diagrama de componentes y flujo de evidencia fotográfica / comprobantes
 

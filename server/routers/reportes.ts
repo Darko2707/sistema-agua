@@ -1,20 +1,28 @@
 import { router, roleProcedure, operationalRoleProcedure } from '../trpc';
 import { z } from 'zod';
 // eslint-disable-next-line no-restricted-imports -- complex financial aggregations not yet in a repo
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
+import { buildEstadoServiciosFinanciero } from '@/src/application/reportes/estado-servicios-financiero';
 
 // eslint-disable-next-line no-restricted-imports -- complex financial aggregations not yet in a repo
 import { db } from '@/db';
 // eslint-disable-next-line no-restricted-imports -- complex financial aggregations not yet in a repo
 import {
   asignacionesFraccionamiento,
+  auditoria,
   cargosServicios,
   fraccionamientoServicios,
   gastosFraccionamiento,
   ingresosAdicionales,
   servicios,
 } from '@/db/schema';
+
+const gastoMontoSchema = z.number().finite().positive('El monto debe ser positivo')
+  .max(99_999_999.99, 'El monto excede el máximo permitido')
+  .refine(value => Math.abs(value * 100 - Math.round(value * 100)) < 1e-7, 'El monto debe tener como máximo dos decimales');
+const gastoFechaSchema = z.string().datetime({ offset: true }).or(z.string().date());
+const gastoConceptoSchema = z.string().trim().min(1, 'Concepto requerido').max(180);
 
 // ─── helpers ───────────────────────────────────────────────────────────────
 
@@ -354,9 +362,10 @@ export const reportesRouter = router({
     .query(async ({ ctx, input }) => {
       const fraccionamiento = await getFraccionamientoDelTesorera(ctx.user.id, ctx.user.fraccionamientoId!);
 
-      const [residentes, pagosPeriodo, cargosServiciosPeriodo, gastosPeriodo, ingresosPeriodo, ordenesPeriodo] = await Promise.all([
+      const [residentes, pagosPeriodo, cargosServiciosPeriodo, gastosPeriodo, ingresosPeriodo, ordenesPeriodo, serviciosTenant] = await Promise.all([
         db.query.perfilesResidente.findMany({
           where: (p, { eq }) => eq(p.fraccionamientoId, fraccionamiento.id),
+          with: { usuario: { columns: { name: true, responsableCargos: true } } },
         }),
         db.query.pagos.findMany({
           where: (p, { eq, and }) =>
@@ -364,7 +373,6 @@ export const reportesRouter = router({
               eq(p.fraccionamientoId, fraccionamiento.id),
               eq(p.mes, input.mes),
               eq(p.anio, input.anio),
-              eq(p.estado, 'pagado'),
             ),
           with: { perfil: true },
         }),
@@ -373,7 +381,6 @@ export const reportesRouter = router({
             eq(cargo.fraccionamientoId, fraccionamiento.id),
             eq(cargo.mes, input.mes),
             eq(cargo.anio, input.anio),
-            eq(cargo.estado, 'pagado'),
           ),
           with: { perfil: true, fraccionamientoServicio: { with: { servicio: true } } },
         }),
@@ -385,6 +392,7 @@ export const reportesRouter = router({
               eq(g.anio, input.anio),
             ),
           orderBy: (g, { desc }) => [desc(g.fecha)],
+          with: { representante: true },
         }),
         db.query.ingresosAdicionales.findMany({
           where: (i, { eq, and }) =>
@@ -401,18 +409,34 @@ export const reportesRouter = router({
           ),
           columns: { tipo: true, estado: true },
         }),
+        db.query.fraccionamientoServicios.findMany({
+          where: (fs, { eq }) => eq(fs.fraccionamientoId, fraccionamiento.id),
+          with: { servicio: true },
+        }),
       ]);
 
-      const cargosAdicionales = cargosServiciosPeriodo.filter((cargo) => cargo.fraccionamientoServicio?.servicio?.clave !== 'agua');
-      const totalAgua = pagosPeriodo.reduce((s, p) => s + montoDisponibleFraccionamiento(p), 0);
+      const pagosConfirmados = pagosPeriodo.filter((pago) => pago.estado === 'pagado');
+      const cargosPagados = cargosServiciosPeriodo.filter((cargo) => cargo.estado === 'pagado');
+      const cargosAdicionales = cargosPagados.filter((cargo) => cargo.fraccionamientoServicio?.servicio?.clave !== 'agua');
+      const estadoServicios = buildEstadoServiciosFinanciero(
+        fraccionamiento.nombre,
+        [{ mes: input.mes, anio: input.anio }],
+        residentes,
+        serviciosTenant,
+        pagosPeriodo,
+        cargosServiciosPeriodo,
+      );
+      const totalEsperadoCargos = estadoServicios.reduce((sum, row) => sum + row.monto, 0);
+      const saldoPendiente = estadoServicios.reduce((sum, row) => sum + (row.estado === 'pendiente' ? row.monto : 0), 0);
+      const totalAgua = pagosConfirmados.reduce((s, p) => s + montoDisponibleFraccionamiento(p), 0);
       const totalServicios = cargosAdicionales.reduce((s, cargo) => s + Number(cargo.monto), 0);
       const totalPagos             = totalAgua + totalServicios;
       const totalIngresosAdicionales = ingresosPeriodo.reduce((s, i) => s + Number(i.monto), 0);
       const totalRecaudado         = totalPagos + totalIngresosAdicionales;
-      const totalGastos            = gastosPeriodo.reduce((s, g) => s + Number(g.monto), 0);
+      const totalGastos            = gastosPeriodo.reduce((s, g) => s + (g.anuladaEn ? 0 : Number(g.monto)), 0);
       const montoMensual   = Number(fraccionamiento.montoMensual);
       const perfilesPagados = new Set([
-        ...pagosPeriodo.map((p) => p.perfilId),
+        ...pagosConfirmados.map((p) => p.perfilId),
         ...cargosAdicionales.map((cargo) => cargo.perfilId),
       ]);
       const totalPagaron = perfilesPagados.size;
@@ -431,7 +455,7 @@ export const reportesRouter = router({
       const edificios = [...new Set(residentes.map((r) => r.edificio))].sort();
       const porEdificio = edificios.map((ed) => {
         const resEdificio  = residentes.filter((r) => r.edificio === ed);
-        const pagosEdificio = pagosPeriodo.filter((p) => p.perfil?.edificio === ed);
+        const pagosEdificio = pagosConfirmados.filter((p) => p.perfil?.edificio === ed);
         const cargosEdificio = cargosAdicionales.filter((cargo) => cargo.perfil?.edificio === ed);
         const pagoIds = new Set([...pagosEdificio.map((p) => p.perfilId), ...cargosEdificio.map((cargo) => cargo.perfilId)]);
         return {
@@ -449,6 +473,8 @@ export const reportesRouter = router({
         anio:                    input.anio,
         totalRecaudado,
         totalPagos,
+        totalEsperadoCargos,
+        saldoPendiente,
         totalAgua,
         totalServicios,
         totalIngresosAdicionales,
@@ -470,74 +496,134 @@ export const reportesRouter = router({
   // ══════════════════════════════════════════════════════════════════════════
   agregarGasto: operationalRoleProcedure('tesorera')
     .input(z.object({
-      concepto:  z.string().min(1, 'Concepto requerido'),
-      monto:     z.number().positive('El monto debe ser positivo'),
+      concepto:  gastoConceptoSchema,
+      monto:     gastoMontoSchema,
       categoria: z.enum(['mantenimiento', 'administracion', 'servicios', 'otros']),
-      fecha:     z.string().datetime({ offset: true }).or(z.string().date()),
+      fecha:     gastoFechaSchema,
       mes:       z.number().int().min(1).max(12),
       anio:      z.number().int().min(2020).max(2099),
+      referencia: z.string().trim().max(240).optional(),
+      idempotencyKey: z.string().uuid(),
+    }).superRefine((input, ctx) => {
+      const date = new Date(input.fecha);
+      if (date.getUTCMonth() + 1 !== input.mes || date.getUTCFullYear() !== input.anio) {
+        ctx.addIssue({ code: 'custom', path: ['fecha'], message: 'La fecha debe pertenecer al mes y año del reporte' });
+      }
     }))
     .mutation(async ({ ctx, input }) => {
       const fraccionamiento = await getFraccionamientoDelTesorera(ctx.user.id, ctx.user.fraccionamientoId!);
+      return db.transaction(async tx => {
+        const [gasto] = await tx.insert(gastosFraccionamiento).values({
+          fraccionamientoId: fraccionamiento.id,
+          representanteId: ctx.user.id,
+          idempotencyKey: input.idempotencyKey,
+          concepto: input.concepto,
+          monto: input.monto.toFixed(2),
+          categoria: input.categoria,
+          referencia: input.referencia || null,
+          fecha: new Date(input.fecha),
+          mes: input.mes,
+          anio: input.anio,
+        }).onConflictDoNothing().returning();
 
-      const [gasto] = await db.insert(gastosFraccionamiento).values({
-        fraccionamientoId: fraccionamiento.id,
-        representanteId: ctx.user.id,
-        concepto:        input.concepto,
-        monto:           String(input.monto),
-        categoria:       input.categoria,
-        fecha:           new Date(input.fecha),
-        mes:             input.mes,
-        anio:            input.anio,
-      }).returning();
+        if (!gasto) {
+          const previous = await tx.query.gastosFraccionamiento.findFirst({
+            where: (g, { eq, and }) => and(eq(g.fraccionamientoId, fraccionamiento.id), eq(g.idempotencyKey, input.idempotencyKey)),
+          });
+          if (!previous) throw new TRPCError({ code: 'CONFLICT', message: 'No se pudo confirmar el registro repetido' });
+          const sameRequest = previous.representanteId === ctx.user.id
+            && previous.concepto === input.concepto
+            && previous.monto === input.monto.toFixed(2)
+            && previous.categoria === input.categoria
+            && previous.referencia === (input.referencia || null)
+            && previous.fecha?.getTime() === new Date(input.fecha).getTime()
+            && previous.mes === input.mes
+            && previous.anio === input.anio;
+          if (!sameRequest) throw new TRPCError({ code: 'CONFLICT', message: 'La clave de solicitud ya se usó con datos distintos' });
+          return previous;
+        }
 
-      return gasto;
+        await tx.insert(auditoria).values({
+          actorId: ctx.user.id,
+          accion: 'gasto.creado',
+          entidad: 'gastos_fraccionamiento',
+          entidadId: gasto.id,
+          detalle: { fraccionamientoId: fraccionamiento.id, concepto: gasto.concepto, monto: gasto.monto, categoria: gasto.categoria, fecha: gasto.fecha, referencia: gasto.referencia, mes: gasto.mes, anio: gasto.anio },
+        });
+        return gasto;
+      });
     }),
 
   editarGasto: operationalRoleProcedure('tesorera')
     .input(z.object({
       id:        z.string().uuid(),
-      concepto:  z.string().min(1).optional(),
-      monto:     z.number().positive().optional(),
+      concepto:  gastoConceptoSchema.optional(),
+      monto:     gastoMontoSchema.optional(),
       categoria: z.enum(['mantenimiento', 'administracion', 'servicios', 'otros']).optional(),
-      fecha:     z.string().optional(),
+      fecha:     gastoFechaSchema.optional(),
+      referencia: z.string().trim().max(240).nullable().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const fraccionamiento = await getFraccionamientoDelTesorera(ctx.user.id, ctx.user.fraccionamientoId!);
+      return db.transaction(async tx => {
+        const gasto = await tx.query.gastosFraccionamiento.findFirst({
+          where: (g, { eq, and, isNull }) => and(eq(g.id, input.id), eq(g.fraccionamientoId, fraccionamiento.id), isNull(g.anuladaEn)),
+        });
+        if (!gasto) throw new TRPCError({ code: 'NOT_FOUND', message: 'El gasto no existe, está anulado o pertenece a otro fraccionamiento' });
 
-      const gasto = await db.query.gastosFraccionamiento.findFirst({
-        where: (g, { eq, and }) => and(eq(g.id, input.id), eq(g.fraccionamientoId, ctx.user.fraccionamientoId!)),
+        const updates: Partial<typeof gastosFraccionamiento.$inferInsert> = {};
+        if (input.concepto !== undefined) updates.concepto = input.concepto;
+        if (input.monto !== undefined) updates.monto = input.monto.toFixed(2);
+        if (input.categoria !== undefined) updates.categoria = input.categoria;
+        if (input.fecha !== undefined) {
+          const date = new Date(input.fecha);
+          updates.fecha = date;
+          updates.mes = date.getUTCMonth() + 1;
+          updates.anio = date.getUTCFullYear();
+        }
+        if (input.referencia !== undefined) updates.referencia = input.referencia;
+
+        const [updated] = await tx.update(gastosFraccionamiento).set(updates).where(and(
+          eq(gastosFraccionamiento.id, input.id),
+          eq(gastosFraccionamiento.fraccionamientoId, fraccionamiento.id),
+          isNull(gastosFraccionamiento.anuladaEn),
+        )).returning();
+        if (!updated) throw new TRPCError({ code: 'CONFLICT', message: 'El gasto cambió o fue anulado; actualiza el historial' });
+        await tx.insert(auditoria).values({
+          actorId: ctx.user.id,
+          accion: 'gasto.editado',
+          entidad: 'gastos_fraccionamiento',
+          entidadId: gasto.id,
+          detalle: { fraccionamientoId: fraccionamiento.id, anterior: { concepto: gasto.concepto, monto: gasto.monto, categoria: gasto.categoria, fecha: gasto.fecha, referencia: gasto.referencia }, nuevo: { concepto: updated.concepto, monto: updated.monto, categoria: updated.categoria, fecha: updated.fecha, referencia: updated.referencia } },
+        });
+        return updated;
       });
-      if (!gasto)                          throw new TRPCError({ code: 'NOT_FOUND' });
-
-      const updates: Partial<typeof gastosFraccionamiento.$inferInsert> = {};
-      if (input.concepto)  updates.concepto  = input.concepto;
-      if (input.monto)     updates.monto     = String(input.monto);
-      if (input.categoria) updates.categoria = input.categoria;
-      if (input.fecha)     updates.fecha     = new Date(input.fecha);
-
-      await db.update(gastosFraccionamiento).set(updates).where(and(
-        eq(gastosFraccionamiento.id, input.id),
-        eq(gastosFraccionamiento.fraccionamientoId, ctx.user.fraccionamientoId!),
-      ));
-      return { ok: true };
     }),
 
   eliminarGasto: operationalRoleProcedure('tesorera')
-    .input(z.object({ id: z.string().uuid() }))
+    .input(z.object({ id: z.string().uuid(), motivo: z.string().trim().min(3).max(500) }))
     .mutation(async ({ ctx, input }) => {
       const fraccionamiento = await getFraccionamientoDelTesorera(ctx.user.id, ctx.user.fraccionamientoId!);
-
-      const gasto = await db.query.gastosFraccionamiento.findFirst({
-        where: (g, { eq, and }) => and(eq(g.id, input.id), eq(g.fraccionamientoId, ctx.user.fraccionamientoId!)),
+      return db.transaction(async tx => {
+        const [gasto] = await tx.update(gastosFraccionamiento).set({
+          anuladaEn: new Date(),
+          anuladaPor: ctx.user.id,
+          motivoAnulacion: input.motivo,
+        }).where(and(
+          eq(gastosFraccionamiento.id, input.id),
+          eq(gastosFraccionamiento.fraccionamientoId, fraccionamiento.id),
+          isNull(gastosFraccionamiento.anuladaEn),
+        )).returning();
+        if (!gasto) throw new TRPCError({ code: 'NOT_FOUND', message: 'El gasto no existe, ya está anulado o pertenece a otro fraccionamiento' });
+        await tx.insert(auditoria).values({
+          actorId: ctx.user.id,
+          accion: 'gasto.anulado',
+          entidad: 'gastos_fraccionamiento',
+          entidadId: gasto.id,
+          detalle: { fraccionamientoId: fraccionamiento.id, concepto: gasto.concepto, monto: gasto.monto, motivo: input.motivo },
+        });
+        return { ok: true, anuladaEn: gasto.anuladaEn };
       });
-      if (!gasto)                          throw new TRPCError({ code: 'NOT_FOUND' });
-
-      await db.delete(gastosFraccionamiento).where(and(
-        eq(gastosFraccionamiento.id, input.id),
-        eq(gastosFraccionamiento.fraccionamientoId, ctx.user.fraccionamientoId!),
-      ));
-      return { ok: true };
     }),
 
   // ══════════════════════════════════════════════════════════════════════════

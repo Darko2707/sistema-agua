@@ -719,14 +719,22 @@ export const gastosFraccionamiento = pgTable('gastos_fraccionamiento', {
   id:              uuid('id').defaultRandom().primaryKey(),
   fraccionamientoId: uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
   representanteId: text('representante_id').notNull().references(() => user.id),
+  idempotencyKey:  text('idempotency_key'),
   concepto:        text('concepto').notNull(),
   monto:           decimal('monto', { precision: 10, scale: 2 }).notNull(),
   categoria:       categoriaGastoEnum('categoria').notNull().default('otros'),
+  referencia:      text('referencia'),
   fecha:           timestamp('fecha').notNull().defaultNow(),
   mes:             integer('mes').notNull(),
   anio:            integer('anio').notNull(),
   creadoEn:        timestamp('creado_en').defaultNow(),
-}, (t) => [index('idx_gastos_fraccionamiento_periodo').on(t.fraccionamientoId, t.mes, t.anio)]);
+  anuladaEn:       timestamp('anulada_en'),
+  anuladaPor:      text('anulada_por').references(() => user.id, { onDelete: 'set null' }),
+  motivoAnulacion: text('motivo_anulacion'),
+}, (t) => [
+  index('idx_gastos_fraccionamiento_periodo').on(t.fraccionamientoId, t.mes, t.anio),
+  uniqueIndex('uq_gastos_idempotency_tenant').on(t.fraccionamientoId, t.idempotencyKey),
+]);
 
 // ─────────────────────────────────────────────
 // Relaciones

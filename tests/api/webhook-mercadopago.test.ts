@@ -10,8 +10,7 @@ const mockFindPaymentIntent = vi.fn();
 vi.mock('@/src/application/pagos/commands/procesar-pago-mp.handler', () => ({
   // Arrow-function field defers access to mockExecute until call time (avoids TDZ).
   ProcesarPagoMpHandler: class {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    execute = (...args: any[]) => mockExecute(...args);
+    execute = (...args: unknown[]) => mockExecute(...args);
   },
 }));
 
@@ -143,12 +142,11 @@ beforeEach(() => {
       representanteId: 'representante-001',
       activo: true,
     },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  } as any);
+  } as unknown as NonNullable<Awaited<ReturnType<typeof db.query.perfilesResidente.findFirst>>>);
   vi.mocked(db.query.fraccionamientoMetodosPago.findFirst).mockResolvedValue({
     accessTokenCifrado: 'encrypted-token',
     collectorId: '98765',
-  } as any);
+  } as unknown as NonNullable<Awaited<ReturnType<typeof db.query.fraccionamientoMetodosPago.findFirst>>>);
 
   vi.mocked(decryptTokenSafe).mockReturnValue('access-token-plain');
 

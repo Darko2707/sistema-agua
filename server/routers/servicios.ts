@@ -71,6 +71,12 @@ export const serviciosRouter = router({
       await subscriptionService.requireOperational(input.fraccionamientoId);
       const [service] = await db.query.servicios.findMany({ where: (s, { eq }) => eq(s.id, input.servicioId), limit: 1 });
       if (!service || !service.activo) throw new TRPCError({ code: 'NOT_FOUND', message: 'Servicio no encontrado' });
+      if (service.clave === 'donativo') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Los donativos se administran desde el módulo de Donativos' });
+      }
+      if (service.clave === 'donativo') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Los donativos se administran desde el módulo de Donativos' });
+      }
       if (service.clave === 'agua' && input.estado === 'inactivo') {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'El servicio de agua es obligatorio y no se puede desactivar' });
       }

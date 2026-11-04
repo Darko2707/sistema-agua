@@ -1,6 +1,12 @@
 -- El dominio ya opera por fraccionamiento. Conservamos los registros y las
 -- relaciones existentes, eliminando únicamente los nombres heredados.
-ALTER TYPE IF EXISTS rol_asignacion_circuito RENAME TO rol_asignacion_fraccionamiento;
+DO $$
+BEGIN
+  IF to_regtype('public.rol_asignacion_circuito') IS NOT NULL
+    AND to_regtype('public.rol_asignacion_fraccionamiento') IS NULL THEN
+    ALTER TYPE public.rol_asignacion_circuito RENAME TO rol_asignacion_fraccionamiento;
+  END IF;
+END $$;
 --> statement-breakpoint
 DO $$
 BEGIN

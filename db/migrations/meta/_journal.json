@@ -414,6 +414,20 @@
       "when": 1792627200000,
       "tag": "0058_perfiles_servicios_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1792713600000,
+      "tag": "0059_concepto_donativo",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1792800000000,
+      "tag": "0060_gastos_audit_idempotency",
+      "breakpoints": true
     }
   ]
 }

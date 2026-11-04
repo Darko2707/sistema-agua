@@ -1,4 +1,4 @@
-import { and, eq, gte, lt, sql, type SQL } from 'drizzle-orm';
+import { and, eq, gte, inArray, lt, ne, sql, type SQL } from 'drizzle-orm';
 import { db } from '@/db';
 import {
   auditoria,
@@ -10,6 +10,9 @@ import {
   notificaciones,
   mercadoPagoPaymentIntents,
   comprobantesTransferencia,
+  cargosServicios,
+  fraccionamientoServicios,
+  servicios,
 } from '@/db/schema';
 import type {
   PagoRepository,
@@ -38,6 +41,7 @@ import {
   periodoInicioCapturaTesorera,
 } from '@/src/domain/pagos/periodos-tesoreria';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
+import { generarFolioServicio } from '@/src/domain/pagos/folio.vo';
 import { TRPCError } from '@trpc/server';
 
 type PagoTransactionExecutor = {
@@ -404,7 +408,8 @@ export class DrizzlePagoRepository implements PagoRepository {
     const maximoPeriodos = input.politica.tipo === 'tesorera_escalonada'
       ? MAX_MESES_POR_PAGO_TESORERA
       : 36;
-    if (input.pagos.length < 1 || input.pagos.length > maximoPeriodos) {
+    const transferenciaSoloServicios = Boolean(input.aprobarComprobante?.cargoServicioIds?.length) && input.pagos.length === 0;
+    if ((!transferenciaSoloServicios && input.pagos.length < 1) || input.pagos.length > maximoPeriodos) {
       throw new TRPCError({
         code: 'BAD_REQUEST',
         message: `El lote debe contener entre 1 y ${maximoPeriodos} periodos`,
@@ -440,6 +445,69 @@ export class DrizzlePagoRepository implements PagoRepository {
             .filter(pago => requestedKeys.has(periodoKey(pago)))
             .map(pago => [periodoKey(pago), pago] as const),
         );
+
+        const transferApproval = input.aprobarComprobante;
+        const cargoServicioIds = [...new Set(transferApproval?.cargoServicioIds ?? [])];
+        if (transferApproval && cargoServicioIds.length > 0) {
+          const cargos = await tx.select({
+            id: cargosServicios.id,
+            monto: cargosServicios.monto,
+            estado: cargosServicios.estado,
+            servicioNombre: servicios.nombre,
+            servicioClave: servicios.clave,
+          }).from(cargosServicios)
+            .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, cargosServicios.fraccionamientoServicioId))
+            .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
+            .where(and(
+              eq(cargosServicios.perfilId, input.perfilId),
+              eq(cargosServicios.fraccionamientoId, perfil.fraccionamientoId!),
+              inArray(cargosServicios.id, cargoServicioIds),
+              ne(servicios.clave, 'agua'),
+            ));
+          if (cargos.length !== cargoServicioIds.length || cargos.some(cargo => cargo.estado !== 'pendiente')) {
+            throw new TRPCError({ code: 'CONFLICT', message: 'Uno o más cargos ya fueron pagados, cancelados o no pertenecen al residente.' });
+          }
+          const cargoMonto = cargos.reduce((sum, cargo) => sum + Number(cargo.monto), 0);
+          const comprobante = await tx.query.comprobantesTransferencia.findFirst({
+            where: (row, { eq }) => eq(row.id, transferApproval.comprobanteId),
+            columns: { monto: true },
+          });
+          const aguaMonto = input.pagos.reduce((sum, pago) => sum + Number(pago.monto), 0);
+          if (comprobante && Math.abs(Number(comprobante.monto) - aguaMonto - cargoMonto) > 0.01) {
+            throw new TRPCError({ code: 'CONFLICT', message: 'El importe del comprobante no coincide con los periodos y cargos seleccionados.' });
+          }
+          for (const cargo of cargos) {
+            const folio = generarFolioServicio();
+            const [updated] = await tx.update(cargosServicios).set({
+              estado: 'pagado', metodo: 'transferencia', folio, pagadoEn: new Date(),
+            }).where(and(eq(cargosServicios.id, cargo.id), eq(cargosServicios.estado, 'pendiente')))
+              .returning({ id: cargosServicios.id });
+            if (!updated) throw new TRPCError({ code: 'CONFLICT', message: 'Un cargo cambió de estado durante la aprobación.' });
+            await tx.insert(tickets).values({ pagoId: null, cargoServicioId: cargo.id, tipo: 'servicio', folio, pdfUrl: null });
+            await tx.insert(auditoria).values({
+              actorId: transferApproval.revisadoPor,
+              accion: 'servicio.cargo.pagado_transferencia',
+              entidad: 'cargos_servicios',
+              entidadId: cargo.id,
+              detalle: { perfilId: input.perfilId, fraccionamientoId: perfil.fraccionamientoId, metodo: 'transferencia', folio, comprobanteId: transferApproval.comprobanteId, servicio: cargo.servicioNombre },
+            });
+          }
+          const [receipt] = await tx.select({ metadatos: comprobantesTransferencia.metadatos })
+            .from(comprobantesTransferencia)
+            .where(eq(comprobantesTransferencia.id, transferApproval.comprobanteId)).limit(1);
+          if (receipt) await tx.update(comprobantesTransferencia).set({
+            metadatos: { ...(receipt.metadatos ?? {}), cargosAcreditadosIds: cargoServicioIds }, actualizadoEn: new Date(),
+          }).where(eq(comprobantesTransferencia.id, transferApproval.comprobanteId));
+        } else if (transferApproval) {
+          const comprobante = await tx.query.comprobantesTransferencia.findFirst({
+            where: (row, { eq }) => eq(row.id, transferApproval.comprobanteId),
+            columns: { monto: true },
+          });
+          const aguaMonto = input.pagos.reduce((sum, pago) => sum + Number(pago.monto), 0);
+          if (comprobante && Math.abs(Number(comprobante.monto) - aguaMonto) > 0.01) {
+            throw new TRPCError({ code: 'CONFLICT', message: 'El importe del comprobante no coincide con los periodos seleccionados.' });
+          }
+        }
 
         if (input.politica.tipo === 'tesorera_escalonada') {
           if (input.pagos.some(pago => pago.fraccionamientoId !== perfil.fraccionamientoId)) {

@@ -7,6 +7,7 @@ import { reportesRouter } from './reportes'
 import { operacionRouter } from './operacion'
 import { suscripcionesRouter } from './suscripciones'
 import { serviciosRouter } from './servicios'
+import { donativosRouter } from './donativos'
 import { fraccionamientosRouter } from './fraccionamientos'
 
 export const appRouter = router({
@@ -18,6 +19,7 @@ export const appRouter = router({
   operacion: operacionRouter,
   suscripciones: suscripcionesRouter,
   servicios: serviciosRouter,
+  donativos: donativosRouter,
   fraccionamientos: fraccionamientosRouter,
 })
 

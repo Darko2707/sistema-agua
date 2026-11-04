@@ -69,6 +69,20 @@ const PAYMENT_RESULT = {
   },
 } as const;
 
+function parseComprobanteMetadata(value: unknown): Record<string, unknown> | null {
+  let parsed = value;
+  if (typeof parsed === 'string') {
+    try {
+      parsed = JSON.parse(parsed) as unknown;
+    } catch {
+      return null;
+    }
+  }
+  return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+    ? parsed as Record<string, unknown>
+    : null;
+}
+
 // ── Compresión de imágenes en cliente ──────────────────────────────────────────
 /**
  * Comprime una imagen usando canvas si supera `maxBytes` (por defecto 2 MB).
@@ -340,7 +354,7 @@ export function ResidenteDashboard() {
     enabled: !!sessionData?.user,
   });
   const tieneAsignacionCuadrilla = Boolean(asignacionQ.data && asignacionQ.data.length > 0);
-  const sincronizarCargos = trpcReact.servicios.sincronizarMisCargos.useMutation({
+  const sincronizarCargosMutation = trpcReact.servicios.sincronizarMisCargos.useMutation({
     onSuccess: () => { void utils.servicios.misCargos.invalidate(); },
   });
 
@@ -371,12 +385,13 @@ export function ResidenteDashboard() {
   const haSincronizado = useRef(false);
 
   const paymentResultParam = searchParams.get('payment') as keyof typeof PAYMENT_RESULT | null;
-  const [displayedPaymentResult, setDisplayedPaymentResult] = useState<keyof typeof PAYMENT_RESULT | null>(null);
+  const [displayedPaymentResult] = useState<keyof typeof PAYMENT_RESULT | null>(() =>
+    paymentResultParam && PAYMENT_RESULT[paymentResultParam] ? paymentResultParam : null,
+  );
 
-  // Announce MP result and clean URL
+  // Announce the initial Mercado Pago result and remove the transient URL parameter.
   useEffect(() => {
     if (paymentResultParam && PAYMENT_RESULT[paymentResultParam]) {
-      setDisplayedPaymentResult(paymentResultParam);
       announcerRef.current?.focus();
       const url = new URL(window.location.href);
       url.searchParams.delete('payment');
@@ -404,13 +419,13 @@ export function ResidenteDashboard() {
     if (haSincronizado.current) return;
     if (!sessionData?.user || !historial?.perfil) return;
     haSincronizado.current = true;
-    sincronizarCargos.mutate(undefined, {
+    sincronizarCargosMutation.mutate(undefined, {
       onError: (err) => {
         // Silencioso en segundo plano para no interrumpir al residente
         console.warn('sincronizarMisCargos error:', err);
       },
     });
-  }, [sessionData?.user, historial?.perfil]);
+  }, [sessionData?.user, historial?.perfil, sincronizarCargosMutation]);
 
   const roleWithoutResidentProfile = sessionData?.user?.role;
   const workerHome = homePathForRole(roleWithoutResidentProfile);
@@ -432,14 +447,14 @@ export function ResidenteDashboard() {
     for (const c of (comprobantesPendientesList ?? [])) {
       if (!c) continue;
       if (c.estado === 'pendiente_validacion' && c.metadatos) {
-        let meta = c.metadatos as any;
-        if (typeof meta === 'string') {
-          try { meta = JSON.parse(meta); } catch { meta = null; }
-        }
-        if (meta && typeof meta === 'object' && Array.isArray(meta.meses)) {
-          for (const m of meta.meses) {
-            if (m && typeof m.mes === 'number' && typeof m.anio === 'number') {
-              set.add(`${m.anio}-${m.mes}`);
+        const meta = parseComprobanteMetadata(c.metadatos);
+        if (meta && Array.isArray(meta.meses)) {
+          for (const value of meta.meses) {
+            if (value && typeof value === 'object') {
+              const period = value as Record<string, unknown>;
+              if (typeof period.mes === 'number' && typeof period.anio === 'number') {
+                set.add(`${period.anio}-${period.mes}`);
+              }
             }
           }
         }
@@ -453,13 +468,10 @@ export function ResidenteDashboard() {
     for (const c of (comprobantesPendientesList ?? [])) {
       if (!c) continue;
       if (c.estado === 'pendiente_validacion' && c.metadatos) {
-        let meta = c.metadatos as any;
-        if (typeof meta === 'string') {
-          try { meta = JSON.parse(meta); } catch { meta = null; }
-        }
-        if (meta && typeof meta === 'object' && Array.isArray(meta.cargosServicioIds)) {
+        const meta = parseComprobanteMetadata(c.metadatos);
+        if (meta && Array.isArray(meta.cargosServicioIds)) {
           for (const id of meta.cargosServicioIds) {
-            if (id) set.add(String(id));
+            if (typeof id === 'string' || typeof id === 'number') set.add(String(id));
           }
         }
       }
@@ -579,8 +591,6 @@ export function ResidenteDashboard() {
   const miRol    = (sessionData?.user?.role as string) ?? 'residente';
 
   const initials = userName.trim().split(/\s+/).map(n => n[0]).slice(0, 2).join('').toUpperCase();
-  const periodoActual = `${MESES[Math.max(0, mesActual - 1)] ?? ''} ${anioActual}`;
-
   const primerPeriodoAgua = (periodosDisponiblesAgua && periodosDisponiblesAgua.length > 0)
     ? periodosDisponiblesAgua[0]
     : { mes: mesActual, anio: anioActual };
@@ -594,8 +604,6 @@ export function ResidenteDashboard() {
   const periodoAguaInicioLabel = `${MESES[mesInicioIdx] ?? ''} ${primerPeriodoAgua?.anio ?? anioActual}`;
   const periodoAguaFinLabel = `${MESES[mesFinIdx] ?? ''} ${ultimoPeriodoAgua?.anio ?? anioActual}`;
   const tieneMesesAguaDisponibles = (periodosDisponiblesAgua?.length ?? 0) > 0;
-  const periodosPendientesTarjeta = periodosDisponiblesAgua ?? [];
-  const primerPeriodoTarjeta = primerPeriodoAgua;
   const periodoTarjetaLabel = periodoAguaInicioLabel;
 
   const puedePagarConTarjeta = totalBaseCheckout > 0 && (incluirAgua ? perfil.estadoAgua !== 'pendiente_reconexion' : true);
@@ -1312,12 +1320,14 @@ export function ResidenteDashboard() {
               <div role="list" aria-label="Historial de pagos">
                 {historyItems.map((p, i) => {
                   if (!p) return null;
-                  const pAny = p as any;
-                  const montoFinal = pAny?.montoTotalEfectivo ?? p?.montoBase ?? p?.monto ?? 0;
+                  const historyRecord = p as unknown as Record<string, unknown>;
+                  const montoFinal = historyRecord.montoTotalEfectivo ?? p?.montoBase ?? p?.monto ?? 0;
                   const montoNum = Number(montoFinal);
                   const montoTexto = isNaN(montoNum) ? '0.00' : montoNum.toFixed(2);
-                  const desglose = typeof pAny?.desgloseConceptos === 'string' && pAny.desgloseConceptos.trim() ? pAny.desgloseConceptos : null;
-                  const comprobanteUrl = typeof pAny?.comprobanteUrl === 'string' && pAny.comprobanteUrl.trim() ? pAny.comprobanteUrl : null;
+                  const desgloseValue = historyRecord.desgloseConceptos;
+                  const comprobanteValue = historyRecord.comprobanteUrl;
+                  const desglose = typeof desgloseValue === 'string' && desgloseValue.trim() ? desgloseValue : null;
+                  const comprobanteUrl = typeof comprobanteValue === 'string' && comprobanteValue.trim() ? comprobanteValue : null;
                   const mesIdx = typeof p.mes === 'number' ? Math.max(0, Math.min(11, p.mes - 1)) : Math.max(0, mesActual - 1);
                   const mesTexto = MESES[mesIdx] ?? '';
                   const anioTexto = p.anio ? String(p.anio) : String(anioActual);

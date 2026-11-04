@@ -16,6 +16,7 @@ import type {
 } from '@/server/services/excel-reportes';
 import { MESES_CORTO as MESES_ES } from '@/lib/meses';
 import { guardReportExport } from '@/lib/report-export-guard';
+import { buildEstadoServiciosFinanciero } from '@/src/application/reportes/estado-servicios-financiero';
 
 export const dynamic = 'force-dynamic';
 const MAX_RANGO_MESES = 36;
@@ -193,44 +194,14 @@ function mapearEstadoServicios(
     fraccionamientoServicio?: { servicio?: { clave?: string | null; nombre?: string | null } | null } | null;
   }>,
 ): EstadoServicioReporteItem[] {
-  const rows: EstadoServicioReporteItem[] = [];
-  const indicePeriodo = (mes: number, anio: number) => anio * 12 + mes;
-  for (const periodo of periodos) {
-    for (const residente of residentes) {
-      if (!residente.usuario?.responsableCargos) continue;
-      for (const activacion of serviciosTenant) {
-        const servicio = activacion.servicio;
-        if (!servicio?.activo || !servicio.nombre || !servicio.clave) continue;
-        const inicioResidente = residente.creadoEn
-          ? indicePeriodo(residente.creadoEn.getMonth() + 1, residente.creadoEn.getFullYear()) : 0;
-        const inicioServicio = activacion.creadoEn
-          ? indicePeriodo(activacion.creadoEn.getMonth() + 1, activacion.creadoEn.getFullYear()) : 0;
-        if (indicePeriodo(periodo.mes, periodo.anio) < Math.max(inicioResidente, inicioServicio)) continue;
-
-        const cargo = cargos.find(c => c.perfilId === residente.id
-          && c.fraccionamientoServicioId === activacion.id && c.mes === periodo.mes && c.anio === periodo.anio);
-        const pagoAgua = servicio.clave === 'agua'
-          ? pagosAgua.find(p => p.perfilId === residente.id && p.mes === periodo.mes && p.anio === periodo.anio)
-          : undefined;
-        const cargoAguaPagado = servicio.clave === 'agua' && cargo?.estado === 'pagado';
-        rows.push({
-          residenteNombre: residente.usuario.name ?? 'Sin asignar',
-          edificio: residente.edificio ?? '',
-          departamento: residente.departamento ?? '',
-          fraccionamiento: fraccionamientoNombre,
-          servicio: servicio.nombre,
-          estado: pagoAgua || cargoAguaPagado ? 'pagado' : cargo?.estado ?? 'pendiente',
-          metodo: pagoAgua?.metodo ?? cargo?.metodo ?? null,
-          monto: pagoAgua
-            ? montoDisponibleFraccionamiento(pagoAgua)
-            : cargo ? Number(cargo.monto) : Number(activacion.montoMensual),
-          mes: periodo.mes,
-          anio: periodo.anio,
-        });
-      }
-    }
-  }
-  return rows;
+  return buildEstadoServiciosFinanciero(
+    fraccionamientoNombre,
+    periodos,
+    residentes,
+    serviciosTenant,
+    pagosAgua,
+    cargos,
+  );
 }
 
 async function resolverFraccionamiento(userId: string, fraccionamientoId: string) {
@@ -291,7 +262,6 @@ export async function GET(req: Request) {
       db.query.pagos.findMany({
         where: (p, { eq, and, or }) => and(
           eq(p.fraccionamientoId, fraccionamiento.id),
-          eq(p.estado, 'pagado'),
           or(...mesesLista.map(m => and(eq(p.mes, m.mes), eq(p.anio, m.anio)))),
         ),
         with: { perfil: { with: { usuario: true } } },
@@ -306,13 +276,13 @@ export async function GET(req: Request) {
       db.query.fraccionamientoServicios.findMany({
         where: (servicio, { and, eq }) => and(
           eq(servicio.fraccionamientoId, fraccionamiento.id),
-          eq(servicio.estado, 'activo'),
         ),
         with: { servicio: true },
       }),
       db.query.gastosFraccionamiento.findMany({
-        where: (g, { eq, and, or }) => and(
+        where: (g, { eq, and, or, isNull }) => and(
           eq(g.fraccionamientoId, fraccionamiento.id),
+          isNull(g.anuladaEn),
           or(...mesesLista.map(m => and(eq(g.mes, m.mes), eq(g.anio, m.anio)))),
         ),
         orderBy: (g, { desc }) => [desc(g.anio), desc(g.mes), desc(g.fecha)],
@@ -327,17 +297,22 @@ export async function GET(req: Request) {
     ]);
 
     // Desglose por mes
+    const pagosConfirmados = pagosTodos.filter(pago => pago.estado === 'pagado');
     const cargosPagados = cargosServiciosTodos.filter(cargo => cargo.estado === 'pagado');
+    const estadoServicios = mapearEstadoServicios(fraccionamiento.nombre, mesesLista, residentes, serviciosTenant, pagosTodos, cargosServiciosTodos);
     const porMes: MesResumen[] = mesesLista.map(({ mes, anio }) => {
-      const pagosM   = pagosTodos.filter(p => p.mes === mes && p.anio === anio);
+      const pagosM   = pagosConfirmados.filter(p => p.mes === mes && p.anio === anio);
       const cargosM  = cargosPagados.filter(cargo => cargo.mes === mes && cargo.anio === anio && cargo.fraccionamientoServicio?.servicio?.clave !== 'agua');
       const gastosM  = gastosTodos.filter(g => g.mes === mes && g.anio === anio);
       const ingresosM = ingresosTodos.filter(i => i.mes === mes && i.anio === anio);
+      const estadosM = estadoServicios.filter(row => row.mes === mes && row.anio === anio);
+      const totalEsperadoCargos = estadosM.reduce((sum, row) => sum + row.monto, 0);
+      const saldoPendiente = estadosM.reduce((sum, row) => sum + (row.estado === 'pendiente' ? row.monto : 0), 0);
       const totalPagos               = pagosM.reduce((s, p) => s + montoDisponibleFraccionamiento(p), 0) + cargosM.reduce((s, cargo) => s + Number(cargo.monto), 0);
       const totalIngresosAdicionales = ingresosM.reduce((s, i) => s + Number(i.monto), 0);
       const totalRecaudado           = totalPagos + totalIngresosAdicionales;
       const totalGastos              = gastosM.reduce((s, g) => s + Number(g.monto), 0);
-      return { mes, anio, totalPagos, totalIngresosAdicionales, totalRecaudado, totalGastos, saldo: totalRecaudado - totalGastos, cantidadPagos: pagosM.length + cargosM.length };
+      return { mes, anio, totalPagos, totalIngresosAdicionales, totalRecaudado, totalGastos, saldo: totalRecaudado - totalGastos, cantidadPagos: pagosM.length + cargosM.length, totalEsperadoCargos, saldoPendiente };
     });
 
     const totalPagos               = porMes.reduce((s, m) => s + m.totalPagos, 0);
@@ -350,7 +325,7 @@ export async function GET(req: Request) {
     const edificios   = [...new Set(residentes.map(r => r.edificio))].sort();
     const porEdificio = edificios.map(ed => {
       const resEd  = residentes.filter(r => r.edificio === ed);
-      const pagEd  = pagosTodos.filter(p => p.perfil?.edificio === ed);
+      const pagEd  = pagosConfirmados.filter(p => p.perfil?.edificio === ed);
       const cargosEd = cargosPagados.filter(cargo => cargo.perfil?.edificio === ed && cargo.fraccionamientoServicio?.servicio?.clave !== 'agua');
       const pagIds = new Set([...pagEd.map(p => p.perfilId), ...cargosEd.map(cargo => cargo.perfilId)]);
       return {
@@ -381,16 +356,17 @@ export async function GET(req: Request) {
 
     const { pagosReporte, totalesPorServicio } = mapearPagosReporte(
       fraccionamiento.nombre,
-      pagosTodos,
+      pagosConfirmados,
       cargosPagados,
     );
-    const estadoServicios = mapearEstadoServicios(fraccionamiento.nombre, mesesLista, residentes, serviciosTenant, pagosTodos, cargosServiciosTodos);
 
     const xlsxBuffer = await generarReporteFinancieroRangoExcel({
       fraccionamiento: fraccionamiento.nombre,
       mesDesde, anioDesde, mesHasta, anioHasta,
       generadoEn:  new Date(),
       totalRecaudado, totalPagos, totalIngresosAdicionales, totalGastos, saldo,
+      totalEsperadoCargos: porMes.reduce((sum, month) => sum + (month.totalEsperadoCargos ?? 0), 0),
+      saldoPendiente: porMes.reduce((sum, month) => sum + (month.saldoPendiente ?? 0), 0),
       totalResidentes: residentes.length,
       porEdificio,
       gastos:   gastosMapeados,
@@ -429,7 +405,7 @@ export async function GET(req: Request) {
       with: { usuario: { columns: { name: true, responsableCargos: true } } },
     }),
     db.query.pagos.findMany({
-      where: (p, { eq, and }) => and(eq(p.fraccionamientoId, fraccionamiento.id), eq(p.mes, mes), eq(p.anio, anio), eq(p.estado, 'pagado')),
+      where: (p, { eq, and }) => and(eq(p.fraccionamientoId, fraccionamiento.id), eq(p.mes, mes), eq(p.anio, anio)),
       with: { perfil: { with: { usuario: true } } },
     }),
     db.query.cargosServicios.findMany({
@@ -439,12 +415,11 @@ export async function GET(req: Request) {
     db.query.fraccionamientoServicios.findMany({
       where: (servicio, { and, eq }) => and(
         eq(servicio.fraccionamientoId, fraccionamiento.id),
-        eq(servicio.estado, 'activo'),
       ),
       with: { servicio: true },
     }),
     db.query.gastosFraccionamiento.findMany({
-      where: (g, { eq, and }) => and(eq(g.fraccionamientoId, fraccionamiento.id), eq(g.mes, mes), eq(g.anio, anio)),
+      where: (g, { eq, and, isNull }) => and(eq(g.fraccionamientoId, fraccionamiento.id), eq(g.mes, mes), eq(g.anio, anio), isNull(g.anuladaEn)),
       orderBy: (g, { desc }) => [desc(g.fecha)],
     }),
     db.query.ingresosAdicionales.findMany({
@@ -453,13 +428,17 @@ export async function GET(req: Request) {
     }),
   ]);
 
+  const pagosConfirmados = pagosPeriodo.filter(pago => pago.estado === 'pagado');
   const cargosPagados = cargosServiciosPeriodo.filter(cargo => cargo.estado === 'pagado');
+  const estadoServicios = mapearEstadoServicios(fraccionamiento.nombre, [{ mes, anio }], residentes, serviciosTenant, pagosPeriodo, cargosServiciosPeriodo);
+  const totalEsperadoCargos = estadoServicios.reduce((sum, row) => sum + row.monto, 0);
+  const saldoPendiente = estadoServicios.reduce((sum, row) => sum + (row.estado === 'pendiente' ? row.monto : 0), 0);
   const cargosAdicionales = cargosPagados.filter((cargo) => cargo.fraccionamientoServicio?.servicio?.clave !== 'agua');
-  const totalPagos               = pagosPeriodo.reduce((s, p) => s + montoDisponibleFraccionamiento(p), 0) + cargosAdicionales.reduce((s, cargo) => s + Number(cargo.monto), 0);
+  const totalPagos               = pagosConfirmados.reduce((s, p) => s + montoDisponibleFraccionamiento(p), 0) + cargosAdicionales.reduce((s, cargo) => s + Number(cargo.monto), 0);
   const totalIngresosAdicionales = ingresosPeriodo.reduce((s, i) => s + Number(i.monto), 0);
   const totalRecaudado           = totalPagos + totalIngresosAdicionales;
   const totalGastos              = gastosPeriodo.reduce((s, g) => s + Number(g.monto), 0);
-  const perfilesPagados = new Set([...pagosPeriodo.map((p) => p.perfilId), ...cargosAdicionales.map((cargo) => cargo.perfilId)]);
+  const perfilesPagados = new Set([...pagosConfirmados.map((p) => p.perfilId), ...cargosAdicionales.map((cargo) => cargo.perfilId)]);
   const totalPagaron = perfilesPagados.size;
   const porcentajeCobranza = residentes.length > 0
     ? Math.round((totalPagaron / residentes.length) * 100 * 10) / 10
@@ -468,7 +447,7 @@ export async function GET(req: Request) {
   const edificios = [...new Set(residentes.map(r => r.edificio))].sort();
   const porEdificio = edificios.map(ed => {
     const resEd  = residentes.filter(r => r.edificio === ed);
-    const pagEd  = pagosPeriodo.filter(p => p.perfil?.edificio === ed);
+    const pagEd  = pagosConfirmados.filter(p => p.perfil?.edificio === ed);
     const cargosEd = cargosAdicionales.filter(cargo => cargo.perfil?.edificio === ed);
     const pagIds = new Set([...pagEd.map(p => p.perfilId), ...cargosEd.map(cargo => cargo.perfilId)]);
     return {
@@ -482,10 +461,9 @@ export async function GET(req: Request) {
 
   const { pagosReporte, totalesPorServicio } = mapearPagosReporte(
     fraccionamiento.nombre,
-    pagosPeriodo,
+    pagosConfirmados,
     cargosPagados,
   );
-  const estadoServicios = mapearEstadoServicios(fraccionamiento.nombre, [{ mes, anio }], residentes, serviciosTenant, pagosPeriodo, cargosServiciosPeriodo);
 
   const xlsxBuffer = await generarReporteFinancieroExcel({
     fraccionamiento:    fraccionamiento.nombre,
@@ -493,6 +471,8 @@ export async function GET(req: Request) {
     generadoEn:         new Date(),
     totalRecaudado,
     totalPagos,
+    totalEsperadoCargos,
+    saldoPendiente,
     totalIngresosAdicionales,
     totalResidentes:    residentes.length,
     totalPagaron,

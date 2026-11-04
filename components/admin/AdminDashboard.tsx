@@ -146,6 +146,9 @@ export function AdminDashboard() {
           <Button variant="outline" onClick={() => router.push('/admin/servicios')}>
             Servicios y cargos
           </Button>
+          <Button variant="outline" onClick={() => router.push('/admin/donativos')}>
+            Donativos
+          </Button>
           <Button variant="outline" onClick={() => router.push('/admin/asignaciones')}>
             Personal operativo
           </Button>

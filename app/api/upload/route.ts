@@ -7,6 +7,7 @@ import { get, put } from '@vercel/blob';
 import { auth } from '@/lib/auth';
 import { buildComprobanteViewUrl, inlineComprobanteHeaders } from '@/lib/comprobante-file';
 import { logger } from '@/lib/logger';
+import { canReadPrivateUpload } from '@/lib/private-upload-access';
 
 // Dar más tiempo a la función en Vercel para procesar uploads grandes
 export const maxDuration = 30; // segundos
@@ -236,7 +237,13 @@ export async function GET(req: Request) {
       if (!extension) {
         return Response.json({ error: 'Tipo de comprobante no permitido' }, { status: 415 });
       }
+      if (Math.floor(match[2].length * 3 / 4) > MAX_FILE_SIZE_BYTES) {
+        return Response.json({ error: 'El archivo excede el límite máximo permitido de 5 MB.' }, { status: 413 });
+      }
       const buffer = Buffer.from(match[2], 'base64');
+      if (!validateFileSignature(buffer, mime)) {
+        return Response.json({ error: 'El contenido no coincide con el tipo de archivo declarado' }, { status: 415 });
+      }
       return new Response(buffer, {
         status: 200,
         headers: inlineComprobanteHeaders(mime, extension),
@@ -244,10 +251,17 @@ export async function GET(req: Request) {
     }
   }
 
+  if (ref.length > 256) return Response.json({ error: 'Referencia inválida' }, { status: 400 });
+
   // Prevención de directory traversal
   const normalized = path.normalize(ref).replace(/^(\.\.(\/|\\|$))+/, '');
   if (!normalized.startsWith('uploads/') && !normalized.startsWith('uploads\\')) {
     return Response.json({ error: 'Ruta no permitida' }, { status: 400 });
+  }
+  const canonicalReference = normalized.replaceAll('\\', '/');
+  if (!await canReadPrivateUpload(session.user.id, canonicalReference)) {
+    // Avoid revealing whether another user's file reference exists.
+    return Response.json({ error: 'Archivo no encontrado' }, { status: 404 });
   }
 
   const extension = path.extname(normalized).toLowerCase();
