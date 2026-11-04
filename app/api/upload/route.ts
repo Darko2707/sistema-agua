@@ -72,6 +72,13 @@ export async function POST(req: Request) {
     return Response.json({ error: 'No autorizado' }, { status: 401 });
   }
 
+  if (process.env.VERCEL === '1' && !process.env.BLOB_READ_WRITE_TOKEN) {
+    return Response.json(
+      { error: 'El almacenamiento de comprobantes no está configurado. Contacta al administrador del sistema.' },
+      { status: 503 },
+    );
+  }
+
   // 2. Extracción del formulario multipart
   let formData: FormData;
   try {
@@ -141,11 +148,8 @@ export async function POST(req: Request) {
       // pasen por la verificación de sesión.
       fileUrl = buildComprobanteViewUrl(blobResult.pathname);
     } else {
-      // En entornos serverless/efímeros sin bucket de storage externo,
-      // formatear como Data URL base64 para persistir el archivo de manera garantizada
-      // en la base de datos sin depender de /var/task/.uploads.
-      // Límite defensivo: el Data URL base64 aumenta ~33% el tamaño; si supera 4 MB
-      // codificado se rechaza para evitar columnas TEXT demasiado grandes en la BD.
+      // Fallback local para desarrollo. En Vercel exigimos Blob porque el disco
+      // de una función serverless no persiste entre solicitudes.
       storedReference = safeFilename;
       fileUrl = buildComprobanteViewUrl(safeFilename);
 
@@ -208,6 +212,12 @@ export async function GET(req: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session?.user) {
     return Response.json({ error: 'No autorizado' }, { status: 401 });
+  }
+  if (process.env.VERCEL === '1' && !process.env.BLOB_READ_WRITE_TOKEN) {
+    return Response.json(
+      { error: 'El almacenamiento de comprobantes no está configurado. Contacta al administrador del sistema.' },
+      { status: 503 },
+    );
   }
 
   const url = new URL(req.url);
@@ -282,9 +292,9 @@ export async function GET(req: Request) {
   } catch (error) {
     logger.warn('file.serve_not_found', { ref: normalized, error });
     const acceptHeader = req.headers.get('accept') || '';
-    const isImageRequest = acceptHeader.includes('image/') ||
-      acceptHeader.includes('text/html') ||
-      req.headers.get('sec-fetch-dest') === 'image';
+    const isImageRequest = contentType.startsWith('image/') && (
+      acceptHeader.includes('image/') || req.headers.get('sec-fetch-dest') === 'image'
+    );
 
     if (isImageRequest) {
       return new Response(PLACEHOLDER_SVG, {
