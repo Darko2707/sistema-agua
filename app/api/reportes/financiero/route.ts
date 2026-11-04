@@ -10,6 +10,7 @@ import type {
   GastoRangoReporte,
   IngresoRangoReporte,
   MesResumen,
+  EstadoServicioReporteItem,
   PagoReporteItem,
   TotalPorServicio,
 } from '@/server/services/excel-reportes';
@@ -169,6 +170,69 @@ function mapearPagosReporte(
   return { pagosReporte, totalesPorServicio };
 }
 
+function mapearEstadoServicios(
+  fraccionamientoNombre: string,
+  periodos: Array<{ mes: number; anio: number }>,
+  residentes: Array<{
+    id: string; edificio?: string | null; departamento?: string | null; creadoEn?: Date | null;
+    usuario?: { name?: string | null; responsableCargos?: boolean | null } | null;
+  }>,
+  serviciosTenant: Array<{
+    id: string; montoMensual: string; creadoEn?: Date | null;
+    servicio?: { clave?: string | null; nombre?: string | null; activo?: boolean } | null;
+  }>,
+  pagosAgua: Array<{
+    perfilId: string;
+    mes: number; anio: number; monto: string; montoBase?: string | null; montoNetoRepresentante?: string | null;
+    estado?: string | null; metodo?: string | null; perfil?: { edificio?: string | null; departamento?: string | null; usuario?: { name?: string | null } | null } | null;
+  }>,
+  cargos: Array<{
+    id: string; perfilId: string; fraccionamientoServicioId: string;
+    mes: number; anio: number; monto: string; estado?: string | null; metodo?: string | null;
+    perfil?: { edificio?: string | null; departamento?: string | null; usuario?: { name?: string | null } | null } | null;
+    fraccionamientoServicio?: { servicio?: { clave?: string | null; nombre?: string | null } | null } | null;
+  }>,
+): EstadoServicioReporteItem[] {
+  const rows: EstadoServicioReporteItem[] = [];
+  const indicePeriodo = (mes: number, anio: number) => anio * 12 + mes;
+  for (const periodo of periodos) {
+    for (const residente of residentes) {
+      if (!residente.usuario?.responsableCargos) continue;
+      for (const activacion of serviciosTenant) {
+        const servicio = activacion.servicio;
+        if (!servicio?.activo || !servicio.nombre || !servicio.clave) continue;
+        const inicioResidente = residente.creadoEn
+          ? indicePeriodo(residente.creadoEn.getMonth() + 1, residente.creadoEn.getFullYear()) : 0;
+        const inicioServicio = activacion.creadoEn
+          ? indicePeriodo(activacion.creadoEn.getMonth() + 1, activacion.creadoEn.getFullYear()) : 0;
+        if (indicePeriodo(periodo.mes, periodo.anio) < Math.max(inicioResidente, inicioServicio)) continue;
+
+        const cargo = cargos.find(c => c.perfilId === residente.id
+          && c.fraccionamientoServicioId === activacion.id && c.mes === periodo.mes && c.anio === periodo.anio);
+        const pagoAgua = servicio.clave === 'agua'
+          ? pagosAgua.find(p => p.perfilId === residente.id && p.mes === periodo.mes && p.anio === periodo.anio)
+          : undefined;
+        const cargoAguaPagado = servicio.clave === 'agua' && cargo?.estado === 'pagado';
+        rows.push({
+          residenteNombre: residente.usuario.name ?? 'Sin asignar',
+          edificio: residente.edificio ?? '',
+          departamento: residente.departamento ?? '',
+          fraccionamiento: fraccionamientoNombre,
+          servicio: servicio.nombre,
+          estado: pagoAgua || cargoAguaPagado ? 'pagado' : cargo?.estado ?? 'pendiente',
+          metodo: pagoAgua?.metodo ?? cargo?.metodo ?? null,
+          monto: pagoAgua
+            ? montoDisponibleFraccionamiento(pagoAgua)
+            : cargo ? Number(cargo.monto) : Number(activacion.montoMensual),
+          mes: periodo.mes,
+          anio: periodo.anio,
+        });
+      }
+    }
+  }
+  return rows;
+}
+
 async function resolverFraccionamiento(userId: string, fraccionamientoId: string) {
   const fraccionamiento = await db.query.fraccionamientos.findFirst({
     where: (f, { eq, and }) => and(eq(f.id, fraccionamientoId), eq(f.tesoreraId, userId), eq(f.activo, true)),
@@ -219,9 +283,10 @@ export async function GET(req: Request) {
     if (mesesLista.length > MAX_RANGO_MESES)
       return new Response('El rango no puede exceder 36 meses', { status: 400 });
 
-    const [residentes, pagosTodos, cargosServiciosTodos, gastosTodos, ingresosTodos] = await Promise.all([
+    const [residentes, pagosTodos, cargosServiciosTodos, serviciosTenant, gastosTodos, ingresosTodos] = await Promise.all([
       db.query.perfilesResidente.findMany({
         where: (p, { eq }) => eq(p.fraccionamientoId, fraccionamiento.id),
+        with: { usuario: { columns: { name: true, responsableCargos: true } } },
       }),
       db.query.pagos.findMany({
         where: (p, { eq, and, or }) => and(
@@ -234,10 +299,16 @@ export async function GET(req: Request) {
       db.query.cargosServicios.findMany({
         where: (cargo, { eq, and, or }) => and(
           eq(cargo.fraccionamientoId, fraccionamiento.id),
-          eq(cargo.estado, 'pagado'),
           or(...mesesLista.map(m => and(eq(cargo.mes, m.mes), eq(cargo.anio, m.anio)))),
         ),
         with: { perfil: { with: { usuario: true } }, fraccionamientoServicio: { with: { servicio: true } } },
+      }),
+      db.query.fraccionamientoServicios.findMany({
+        where: (servicio, { and, eq }) => and(
+          eq(servicio.fraccionamientoId, fraccionamiento.id),
+          eq(servicio.estado, 'activo'),
+        ),
+        with: { servicio: true },
       }),
       db.query.gastosFraccionamiento.findMany({
         where: (g, { eq, and, or }) => and(
@@ -256,9 +327,10 @@ export async function GET(req: Request) {
     ]);
 
     // Desglose por mes
+    const cargosPagados = cargosServiciosTodos.filter(cargo => cargo.estado === 'pagado');
     const porMes: MesResumen[] = mesesLista.map(({ mes, anio }) => {
       const pagosM   = pagosTodos.filter(p => p.mes === mes && p.anio === anio);
-      const cargosM  = cargosServiciosTodos.filter(cargo => cargo.mes === mes && cargo.anio === anio && cargo.fraccionamientoServicio?.servicio?.clave !== 'agua');
+      const cargosM  = cargosPagados.filter(cargo => cargo.mes === mes && cargo.anio === anio && cargo.fraccionamientoServicio?.servicio?.clave !== 'agua');
       const gastosM  = gastosTodos.filter(g => g.mes === mes && g.anio === anio);
       const ingresosM = ingresosTodos.filter(i => i.mes === mes && i.anio === anio);
       const totalPagos               = pagosM.reduce((s, p) => s + montoDisponibleFraccionamiento(p), 0) + cargosM.reduce((s, cargo) => s + Number(cargo.monto), 0);
@@ -279,7 +351,7 @@ export async function GET(req: Request) {
     const porEdificio = edificios.map(ed => {
       const resEd  = residentes.filter(r => r.edificio === ed);
       const pagEd  = pagosTodos.filter(p => p.perfil?.edificio === ed);
-      const cargosEd = cargosServiciosTodos.filter(cargo => cargo.perfil?.edificio === ed && cargo.fraccionamientoServicio?.servicio?.clave !== 'agua');
+      const cargosEd = cargosPagados.filter(cargo => cargo.perfil?.edificio === ed && cargo.fraccionamientoServicio?.servicio?.clave !== 'agua');
       const pagIds = new Set([...pagEd.map(p => p.perfilId), ...cargosEd.map(cargo => cargo.perfilId)]);
       return {
         edificio:          ed,
@@ -310,8 +382,9 @@ export async function GET(req: Request) {
     const { pagosReporte, totalesPorServicio } = mapearPagosReporte(
       fraccionamiento.nombre,
       pagosTodos,
-      cargosServiciosTodos,
+      cargosPagados,
     );
+    const estadoServicios = mapearEstadoServicios(fraccionamiento.nombre, mesesLista, residentes, serviciosTenant, pagosTodos, cargosServiciosTodos);
 
     const xlsxBuffer = await generarReporteFinancieroRangoExcel({
       fraccionamiento: fraccionamiento.nombre,
@@ -324,6 +397,7 @@ export async function GET(req: Request) {
       ingresos: ingresosMapeados,
       porMes,
       pagos:    pagosReporte,
+      estadoServicios,
       totalesPorServicio,
     });
 
@@ -349,17 +423,25 @@ export async function GET(req: Request) {
 
   if (!isMesValido(mes) || !isAnioValido(anio)) return new Response('Parámetros inválidos', { status: 400 });
 
-  const [residentes, pagosPeriodo, cargosServiciosPeriodo, gastosPeriodo, ingresosPeriodo] = await Promise.all([
+  const [residentes, pagosPeriodo, cargosServiciosPeriodo, serviciosTenant, gastosPeriodo, ingresosPeriodo] = await Promise.all([
     db.query.perfilesResidente.findMany({
       where: (p, { eq }) => eq(p.fraccionamientoId, fraccionamiento.id),
+      with: { usuario: { columns: { name: true, responsableCargos: true } } },
     }),
     db.query.pagos.findMany({
       where: (p, { eq, and }) => and(eq(p.fraccionamientoId, fraccionamiento.id), eq(p.mes, mes), eq(p.anio, anio), eq(p.estado, 'pagado')),
       with: { perfil: { with: { usuario: true } } },
     }),
     db.query.cargosServicios.findMany({
-      where: (cargo, { eq, and }) => and(eq(cargo.fraccionamientoId, fraccionamiento.id), eq(cargo.mes, mes), eq(cargo.anio, anio), eq(cargo.estado, 'pagado')),
+      where: (cargo, { eq, and }) => and(eq(cargo.fraccionamientoId, fraccionamiento.id), eq(cargo.mes, mes), eq(cargo.anio, anio)),
       with: { perfil: { with: { usuario: true } }, fraccionamientoServicio: { with: { servicio: true } } },
+    }),
+    db.query.fraccionamientoServicios.findMany({
+      where: (servicio, { and, eq }) => and(
+        eq(servicio.fraccionamientoId, fraccionamiento.id),
+        eq(servicio.estado, 'activo'),
+      ),
+      with: { servicio: true },
     }),
     db.query.gastosFraccionamiento.findMany({
       where: (g, { eq, and }) => and(eq(g.fraccionamientoId, fraccionamiento.id), eq(g.mes, mes), eq(g.anio, anio)),
@@ -371,7 +453,8 @@ export async function GET(req: Request) {
     }),
   ]);
 
-  const cargosAdicionales = cargosServiciosPeriodo.filter((cargo) => cargo.fraccionamientoServicio?.servicio?.clave !== 'agua');
+  const cargosPagados = cargosServiciosPeriodo.filter(cargo => cargo.estado === 'pagado');
+  const cargosAdicionales = cargosPagados.filter((cargo) => cargo.fraccionamientoServicio?.servicio?.clave !== 'agua');
   const totalPagos               = pagosPeriodo.reduce((s, p) => s + montoDisponibleFraccionamiento(p), 0) + cargosAdicionales.reduce((s, cargo) => s + Number(cargo.monto), 0);
   const totalIngresosAdicionales = ingresosPeriodo.reduce((s, i) => s + Number(i.monto), 0);
   const totalRecaudado           = totalPagos + totalIngresosAdicionales;
@@ -400,8 +483,9 @@ export async function GET(req: Request) {
   const { pagosReporte, totalesPorServicio } = mapearPagosReporte(
     fraccionamiento.nombre,
     pagosPeriodo,
-    cargosServiciosPeriodo,
+    cargosPagados,
   );
+  const estadoServicios = mapearEstadoServicios(fraccionamiento.nombre, [{ mes, anio }], residentes, serviciosTenant, pagosPeriodo, cargosServiciosPeriodo);
 
   const xlsxBuffer = await generarReporteFinancieroExcel({
     fraccionamiento:    fraccionamiento.nombre,
@@ -429,6 +513,7 @@ export async function GET(req: Request) {
       fecha:    i.fecha ?? new Date(),
     }) satisfies IngresoAdicionalReporte),
     pagos:    pagosReporte,
+    estadoServicios,
     totalesPorServicio,
   });
 

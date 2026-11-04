@@ -639,6 +639,10 @@ export const pagosRouter = router({
       metadatos: z.object({
         meses: z.array(z.object({ mes: z.number().int().min(1).max(12), anio: z.number().int().min(2020).max(2100) })).optional(),
         cargosServicioIds: z.array(z.string().uuid()).optional(),
+        servicios: z.array(z.object({
+          fraccionamientoServicioId: z.string().uuid(),
+          periodos: z.array(z.object({ mes: z.number().int().min(1).max(12), anio: z.number().int().min(2020).max(2100) })).min(1).max(36),
+        })).max(20).optional(),
         esReconexion: z.boolean().optional(),
         notas: z.string().max(500).optional(),
       }).optional(),
@@ -651,7 +655,8 @@ export const pagosRouter = router({
       // Verificar si alguno de los meses o servicios solicitados ya está en un comprobante pendiente
       const periodosSolicitados = input.metadatos?.meses ?? [];
       const cargosSolicitados = input.metadatos?.cargosServicioIds ?? [];
-      if (periodosSolicitados.length === 0 && cargosSolicitados.length === 0) {
+      const serviciosSolicitados = input.metadatos?.servicios ?? [];
+      if (periodosSolicitados.length === 0 && cargosSolicitados.length === 0 && serviciosSolicitados.length === 0) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
           message: 'El comprobante debe incluir al menos un periodo de agua o un cargo de servicio pendiente.',
@@ -660,6 +665,11 @@ export const pagosRouter = router({
       if (new Set(cargosSolicitados).size !== cargosSolicitados.length
         || new Set(periodosSolicitados.map(({ mes, anio }) => `${anio}-${mes}`)).size !== periodosSolicitados.length) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'El comprobante contiene periodos o cargos duplicados.' });
+      }
+      const clavesServicio = serviciosSolicitados.flatMap(servicio => servicio.periodos.map(periodo =>
+        `${servicio.fraccionamientoServicioId}:${periodo.anio}-${periodo.mes}`));
+      if (new Set(clavesServicio).size !== clavesServicio.length) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'El comprobante contiene periodos de servicio duplicados.' });
       }
 
       const pendientes = await db
@@ -674,14 +684,15 @@ export const pagosRouter = router({
           eq(comprobantesTransferencia.estado, 'pendiente_validacion'),
         ));
 
+      const mesesEnRevision = new Set<string>();
+      const cargosEnRevision = new Set<string>();
+      const periodosServicioEnRevision = new Set<string>();
       if (pendientes.length > 0) {
-        const mesesEnRevision = new Set<string>();
-        const cargosEnRevision = new Set<string>();
-
         for (const p of pendientes) {
           const meta = p.metadatos as {
             meses?: Array<{ mes: number; anio: number }>;
             cargosServicioIds?: string[];
+            servicios?: Array<{ fraccionamientoServicioId: string; periodos: Array<{ mes: number; anio: number }> }>;
           } | null;
           if (meta?.meses && Array.isArray(meta.meses)) {
             for (const m of meta.meses) {
@@ -691,6 +702,11 @@ export const pagosRouter = router({
           if (meta?.cargosServicioIds && Array.isArray(meta.cargosServicioIds)) {
             for (const cId of meta.cargosServicioIds) {
               cargosEnRevision.add(cId);
+            }
+          }
+          for (const servicio of meta?.servicios ?? []) {
+            for (const periodo of servicio.periodos ?? []) {
+              periodosServicioEnRevision.add(`${servicio.fraccionamientoServicioId}:${periodo.anio}-${periodo.mes}`);
             }
           }
         }
@@ -716,17 +732,92 @@ export const pagosRouter = router({
             }
           }
         }
+        for (const servicio of serviciosSolicitados) {
+          for (const periodo of servicio.periodos) {
+            if (periodosServicioEnRevision.has(`${servicio.fraccionamientoServicioId}:${periodo.anio}-${periodo.mes}`)) {
+              throw new TRPCError({ code: 'CONFLICT', message: 'Un servicio y periodo seleccionado ya tiene un comprobante en revisión.' });
+            }
+          }
+        }
       }
 
-      const [creado] = await db.insert(comprobantesTransferencia).values({
-        perfilId:          perfil.id,
-        fraccionamientoId: perfil.fraccionamientoId,
-        monto:             input.monto.toFixed(2),
-        concepto:          input.concepto,
-        comprobanteUrl:    input.comprobanteUrl,
-        estado:            'pendiente_validacion',
-        metadatos:         input.metadatos ?? null,
-      }).returning({ id: comprobantesTransferencia.id });
+      const creado = await db.transaction(async tx => {
+        const nuevosCargosIds: string[] = [];
+        for (const seleccion of serviciosSolicitados) {
+          const [servicioTenant] = await tx.select({
+            id: fraccionamientoServicios.id,
+            montoMensual: fraccionamientoServicios.montoMensual,
+            clave: servicios.clave,
+          }).from(fraccionamientoServicios)
+            .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
+            .where(and(
+              eq(fraccionamientoServicios.id, seleccion.fraccionamientoServicioId),
+              eq(fraccionamientoServicios.fraccionamientoId, perfil.fraccionamientoId!),
+              eq(fraccionamientoServicios.estado, 'activo'),
+              eq(servicios.activo, true),
+              ne(servicios.clave, 'agua'),
+            )).limit(1);
+          if (!servicioTenant) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: 'Uno de los servicios seleccionados ya no está activo en tu fraccionamiento.' });
+          }
+
+          for (const periodo of seleccion.periodos) {
+            const existente = await tx.query.cargosServicios.findFirst({
+              where: (cargo, { and, eq }) => and(
+                eq(cargo.perfilId, perfil.id),
+                eq(cargo.fraccionamientoServicioId, servicioTenant.id),
+                eq(cargo.mes, periodo.mes),
+                eq(cargo.anio, periodo.anio),
+              ),
+              columns: { id: true, estado: true },
+            });
+            if (existente && existente.estado !== 'pendiente') {
+              throw new TRPCError({ code: 'CONFLICT', message: `El cargo de ${periodo.mes}/${periodo.anio} ya fue resuelto.` });
+            }
+            const [insertado] = existente ? [null] : await tx.insert(cargosServicios).values({
+              fraccionamientoId: perfil.fraccionamientoId!,
+              perfilId: perfil.id,
+              fraccionamientoServicioId: servicioTenant.id,
+              mes: periodo.mes,
+              anio: periodo.anio,
+              monto: servicioTenant.montoMensual,
+              estado: 'pendiente',
+            }).onConflictDoNothing().returning({ id: cargosServicios.id });
+            const cargoActual = existente ?? (insertado
+              ? { id: insertado.id, estado: 'pendiente' }
+              : await tx.query.cargosServicios.findFirst({
+                where: (cargo, { and, eq }) => and(
+                  eq(cargo.perfilId, perfil.id),
+                  eq(cargo.fraccionamientoServicioId, servicioTenant.id),
+                  eq(cargo.mes, periodo.mes),
+                  eq(cargo.anio, periodo.anio),
+                ),
+                columns: { id: true, estado: true },
+              }));
+            if (!cargoActual || cargoActual.estado !== 'pendiente') {
+              throw new TRPCError({ code: 'CONFLICT', message: `No se pudo reservar el cargo de ${periodo.mes}/${periodo.anio}.` });
+            }
+            if (cargosEnRevision.has(cargoActual.id)) {
+              throw new TRPCError({ code: 'CONFLICT', message: 'Este servicio y periodo ya está asociado a una transferencia en revisión.' });
+            }
+            nuevosCargosIds.push(cargoActual.id);
+          }
+        }
+
+        const metadatos = input.metadatos
+          ? { ...input.metadatos, cargosServicioIds: [...new Set([...cargosSolicitados, ...nuevosCargosIds])] }
+          : null;
+        const [row] = await tx.insert(comprobantesTransferencia).values({
+          perfilId: perfil.id,
+          fraccionamientoId: perfil.fraccionamientoId!,
+          monto: input.monto.toFixed(2),
+          concepto: input.concepto,
+          comprobanteUrl: input.comprobanteUrl,
+          estado: 'pendiente_validacion',
+          metadatos,
+        }).returning({ id: comprobantesTransferencia.id });
+        return row;
+      });
 
       logger.info('comprobante_transferencia.creado', {
         id: creado?.id,

@@ -17,6 +17,7 @@ const mocks = vi.hoisted(() => ({
   findPerfiles: vi.fn(),
   findPagos: vi.fn(),
   findCargos: vi.fn(),
+  findServiciosTenant: vi.fn(),
   findGastos: vi.fn(),
   findIngresos: vi.fn(),
   findOrdenes: vi.fn(),
@@ -37,6 +38,7 @@ vi.mock('@/db', () => ({
       perfilesResidente: { findMany: mocks.findPerfiles },
       pagos: { findMany: mocks.findPagos },
       cargosServicios: { findMany: mocks.findCargos },
+      fraccionamientoServicios: { findMany: mocks.findServiciosTenant },
       gastosFraccionamiento: { findMany: mocks.findGastos },
       ingresosAdicionales: { findMany: mocks.findIngresos },
       ordenesTrabajo: { findMany: mocks.findOrdenes },
@@ -153,6 +155,7 @@ describe('Reportes de Tesorería — Exportación Excel de Todos los Servicios',
     mocks.findPerfiles.mockResolvedValue([]);
     mocks.findPagos.mockResolvedValue([]);
     mocks.findCargos.mockResolvedValue([]);
+    mocks.findServiciosTenant.mockResolvedValue([]);
     mocks.findGastos.mockResolvedValue([]);
     mocks.findIngresos.mockResolvedValue([]);
     mocks.findOrdenes.mockResolvedValue([]);

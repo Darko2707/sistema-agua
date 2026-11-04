@@ -656,34 +656,42 @@ export function ResidenteDashboard() {
   async function handleSubirComprobante() {
     if (!archivoComprobante) { setErrorTransferencia('Selecciona un archivo de comprobante'); return; }
     const serviciosParaTransferencia = serviciosActivos.filter(s => estaServicioSeleccionado(s.id));
-    let cargosParaTransferencia = cargos ?? [];
-    if (serviciosParaTransferencia.length > 0) {
-      try {
-        await sincronizarCargos.mutateAsync();
-        void utils.servicios.misCargos.invalidate();
-        cargosParaTransferencia = await utils.servicios.misCargos.fetch();
-      } catch (error) {
-        setErrorTransferencia(error instanceof Error ? error.message : 'No se pudieron actualizar los cargos de servicio. Intenta de nuevo.');
-        return;
-      }
-    }
+    const cargosParaTransferencia = cargos ?? [];
     const cargosDisponibles = cargosParaTransferencia.filter(c => c && c.id
       && c.estado === 'pendiente' && !cargosEnRevision.has(c.id));
-    if (serviciosParaTransferencia.some(s => (mesesPorServicio[s.id] || 1)
-      > cargosDisponibles.filter(c => c.fraccionamientoServicioId === s.id).length)) {
-      setErrorTransferencia('Aún no están disponibles todos los cargos de los servicios y meses seleccionados. Actualiza tus cargos e intenta de nuevo.');
+    const periodosPorServicio = serviciosParaTransferencia.map(servicio => {
+      const seleccionados: Array<{ mes: number; anio: number }> = [];
+      const cantidad = mesesPorServicio[servicio.id] || 1;
+      const cargosServicio = cargosDisponibles
+        .filter(c => c.fraccionamientoServicioId === servicio.id)
+        .sort((a, b) => ((a.anio ?? 0) - (b.anio ?? 0)) || ((a.mes ?? 0) - (b.mes ?? 0)));
+      for (const cargo of cargosServicio.slice(0, cantidad)) {
+        seleccionados.push({ mes: cargo.mes, anio: cargo.anio });
+      }
+      for (let offset = 0; seleccionados.length < cantidad && offset < 36; offset += 1) {
+        const periodo = addMonths(mesActual, anioActual, offset);
+        const yaExiste = cargosParaTransferencia.some(c => c.fraccionamientoServicioId === servicio.id
+          && c.mes === periodo.mes && c.anio === periodo.anio);
+        const yaSeleccionado = seleccionados.some(p => p.mes === periodo.mes && p.anio === periodo.anio);
+        if (!yaExiste && !yaSeleccionado) seleccionados.push(periodo);
+      }
+      return { fraccionamientoServicioId: servicio.id, periodos: seleccionados };
+    });
+    if (periodosPorServicio.some(({ fraccionamientoServicioId, periodos }) =>
+      periodos.length !== (mesesPorServicio[fraccionamientoServicioId] || 1))) {
+      setErrorTransferencia('No se pudieron determinar todos los periodos de los servicios. Ajusta los meses seleccionados e inténtalo de nuevo.');
       return;
     }
-    const cargosSeleccionados = serviciosParaTransferencia.flatMap(s => cargosDisponibles
-      .filter(c => c.fraccionamientoServicioId === s.id)
-      .sort((a, b) => ((a.anio ?? 0) - (b.anio ?? 0)) || ((a.mes ?? 0) - (b.mes ?? 0)))
-      .slice(0, mesesPorServicio[s.id] || 1));
+    const periodosCargoExistentes = new Set(periodosPorServicio.flatMap(servicio => servicio.periodos
+      .map(periodo => `${servicio.fraccionamientoServicioId}:${periodo.anio}-${periodo.mes}`)));
+    const cargosSeleccionados = cargosDisponibles.filter(c =>
+      periodosCargoExistentes.has(`${c.fraccionamientoServicioId}:${c.anio}-${c.mes}`));
     const periodosTransferencia = incluirAgua ? periodosDisponiblesAgua.slice(0, mesesAgua) : [];
     if (incluirAgua && periodosTransferencia.length !== mesesAgua) {
       setErrorTransferencia('No hay periodos de agua disponibles para todos los meses seleccionados. Actualiza el estado de cuenta e intenta de nuevo.');
       return;
     }
-    if (periodosTransferencia.length === 0 && cargosSeleccionados.length === 0) {
+    if (periodosTransferencia.length === 0 && periodosPorServicio.length === 0) {
       setErrorTransferencia('Selecciona al menos un periodo de agua o un servicio con cargos pendientes antes de enviar el comprobante.');
       return;
     }
@@ -757,6 +765,7 @@ export function ResidenteDashboard() {
         metadatos: {
           meses: periodosTransferencia,
           cargosServicioIds: selectedCargoIds.length > 0 ? selectedCargoIds : undefined,
+          servicios: periodosPorServicio,
           esReconexion,
         },
       });

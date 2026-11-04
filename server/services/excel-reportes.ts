@@ -104,6 +104,19 @@ export interface PagoReporteItem {
   anio: number;
 }
 
+export interface EstadoServicioReporteItem {
+  residenteNombre: string;
+  edificio: string;
+  departamento: string;
+  fraccionamiento: string;
+  servicio: string;
+  estado: string;
+  metodo: string | null;
+  monto: number;
+  mes: number;
+  anio: number;
+}
+
 export interface TotalPorServicio {
   servicio: string;
   total: number;
@@ -237,6 +250,66 @@ function agregarHojaPagos(
   wsP.getColumn(13).width = 16; // Importe
 
   wsP.views = [{ state: 'frozen', xSplit: 0, ySplit: 3 }];
+}
+
+function agregarHojaEstadoServicios(wb: ExcelJS.Workbook, items: EstadoServicioReporteItem[] = []) {
+  const ws = wb.addWorksheet('Estado servicios');
+  const totalCols = 8;
+  agregarLogo(wb, ws, totalCols);
+  ws.mergeCells(1, 1, 1, totalCols);
+  ws.getCell('A1').value = 'Estado de cargos por servicio';
+  ws.getCell('A1').font = { bold: true, size: 14, color: { argb: `FF${COLOR_HEADER}` } };
+  ws.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' };
+  ws.getRow(1).height = 32;
+  ws.mergeCells(2, 1, 2, totalCols);
+  ws.getCell('A2').value = 'Detalle por residente, periodo y servicio';
+  ws.getCell('A2').font = { size: 10, color: { argb: 'FF6B7280' } };
+  ws.getCell('A2').alignment = { horizontal: 'center' };
+  ws.addRow([]);
+
+  const header = ws.addRow(['Periodo', 'Residente', 'Edificio', 'Depto.', 'Fraccionamiento', 'Servicio', 'Estado', 'Importe']);
+  header.eachCell(cell => {
+    cell.fill = headerFill(COLOR_HEADER);
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 10 };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.border = border();
+  });
+
+  const ordenados = [...items].sort((a, b) => a.anio - b.anio || a.mes - b.mes
+    || a.servicio.localeCompare(b.servicio, 'es')
+    || a.residenteNombre.localeCompare(b.residenteNombre, 'es'));
+  if (ordenados.length === 0) {
+    const row = ws.addRow(['Sin cargos de servicios en el periodo', '', '', '', '', '', '', '']);
+    ws.mergeCells(row.number, 1, row.number, totalCols);
+    row.getCell(1).alignment = { horizontal: 'center' };
+    row.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' } };
+  } else {
+    ordenados.forEach((item, index) => {
+      const row = ws.addRow([
+        `${MESES_FULL[item.mes - 1] ?? `Mes ${item.mes}`} ${item.anio}`,
+        escapeExcelFormula(item.residenteNombre),
+        escapeExcelFormula(item.edificio || '-'),
+        escapeExcelFormula(item.departamento || '-'),
+        escapeExcelFormula(item.fraccionamiento),
+        escapeExcelFormula(item.servicio),
+        escapeExcelFormula(formatEstado(item.estado)),
+        Number(item.monto),
+      ]);
+      row.eachCell({ includeEmpty: true }, (cell, column) => {
+        cell.fill = headerFill(index % 2 ? COLOR_ROW_ALT : COLOR_WHITE);
+        cell.border = border();
+        cell.alignment = { horizontal: [2, 5, 6].includes(column) ? 'left' : 'center', vertical: 'middle' };
+        cell.font = { size: 10 };
+        if (column === 8) {
+          cell.numFmt = '"$"#,##0.00';
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+        }
+      });
+    });
+    ws.autoFilter = { from: 'A4', to: `H${3 + ordenados.length}` };
+  }
+  [18, 28, 12, 12, 24, 20, 16, 16].forEach((width, index) => { ws.getColumn(index + 1).width = width; });
+  ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 3 }];
 }
 
 
@@ -461,6 +534,7 @@ export async function generarReporteFinancieroExcel(params: {
   gastos: GastoReporte[];
   ingresos?: IngresoAdicionalReporte[];
   pagos?: PagoReporteItem[];
+  estadoServicios?: EstadoServicioReporteItem[];
   totalesPorServicio?: TotalPorServicio[];
 }): Promise<Buffer> {
   const ExcelJS = (await import('exceljs')).default;
@@ -551,6 +625,7 @@ export async function generarReporteFinancieroExcel(params: {
     `Período: ${mesNombre} ${params.anio}   |   Generado: ${params.generadoEn.toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}`,
     params.pagos ?? [],
   );
+  agregarHojaEstadoServicios(wb, params.estadoServicios ?? []);
 
   // ════════════════════════════════════════════
   // Hoja 3: Por Edificio  (5 columnas de datos)
@@ -774,6 +849,7 @@ export async function generarReporteFinancieroRangoExcel(params: {
   ingresos:     IngresoRangoReporte[];
   porMes:       MesResumen[];
   pagos?:       PagoReporteItem[];
+  estadoServicios?: EstadoServicioReporteItem[];
   totalesPorServicio?: TotalPorServicio[];
 }): Promise<Buffer> {
   const ExcelJS  = (await import('exceljs')).default;
@@ -941,6 +1017,7 @@ export async function generarReporteFinancieroRangoExcel(params: {
     `Período: ${periodoLabel}   |   Generado: ${params.generadoEn.toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })}`,
     params.pagos ?? [],
   );
+  agregarHojaEstadoServicios(wb, params.estadoServicios ?? []);
 
   // ══════════════════════════════════════
   // Hoja 4: Por Edificio (acumulado)
