@@ -1,7 +1,7 @@
 import type ExcelJS from 'exceljs';
 import fs from 'node:fs';
 import path from 'node:path';
-import { MESES_CORTO as MESES_ES } from '@/lib/meses';
+import { MESES_CORTO as MESES_ES, MESES_FULL } from '@/lib/meses';
 
 const COLOR_HEADER  = '1E4A6E';
 const COLOR_PAGADO  = 'D1FAE5';
@@ -120,7 +120,7 @@ function agregarHojaPagos(
   pagos: PagoReporteItem[] = [],
 ) {
   const wsP = wb.addWorksheet('Pagos');
-  const totalCols = 12;
+  const totalCols = 13;
   agregarLogo(wb, wsP, totalCols);
 
   wsP.mergeCells(1, 1, 1, totalCols);
@@ -147,6 +147,7 @@ function agregarHojaPagos(
     'Depto.',
     'Fraccionamiento',
     'Servicio',
+    'Periodo',
     'Concepto',
     'Método de pago',
     'Referencia externa',
@@ -162,7 +163,7 @@ function agregarHojaPagos(
   });
 
   if (pagos.length === 0) {
-    const emptyRow = wsP.addRow(['Sin pagos registrados para este período', '', '', '', '', '', '', '', '', '', '', '']);
+    const emptyRow = wsP.addRow(['Sin pagos registrados para este período', '', '', '', '', '', '', '', '', '', '', '', '']);
     wsP.mergeCells(emptyRow.number, 1, emptyRow.number, totalCols);
     emptyRow.getCell(1).alignment = { horizontal: 'center' };
     emptyRow.getCell(1).font = { italic: true, color: { argb: 'FF6B7280' } };
@@ -177,6 +178,7 @@ function agregarHojaPagos(
         escapeExcelFormula(p.departamento ? `Depto. ${p.departamento}` : '-'),
         escapeExcelFormula(p.fraccionamiento),
         escapeExcelFormula(p.servicio),
+        escapeExcelFormula(`${MESES_FULL[p.mes - 1] ?? `Mes ${p.mes}`} ${p.anio}`),
         escapeExcelFormula(p.concepto),
         escapeExcelFormula(formatMetodo(p.metodo)),
         escapeExcelFormula(p.referenciaExterna ?? '-'),
@@ -190,9 +192,9 @@ function agregarHojaPagos(
         cell.border    = border();
         cell.alignment = { horizontal: 'center', vertical: 'middle' };
         cell.font      = { size: 10 };
-        if ([2, 3, 6, 8].includes(colNum)) cell.alignment.horizontal = 'left';
+        if ([2, 3, 6, 8, 9].includes(colNum)) cell.alignment.horizontal = 'left';
         if (colNum === 7) cell.font = { bold: true, size: 10 };
-        if (colNum === 12) {
+        if (colNum === 13) {
           cell.numFmt    = '"$"#,##0.00';
           cell.font      = { bold: true, color: { argb: 'FF065F46' }, size: 10 };
           cell.alignment = { horizontal: 'right', vertical: 'middle' };
@@ -203,7 +205,7 @@ function agregarHojaPagos(
     const totalMonto = pagos.reduce((s, p) => s + Number(p.monto), 0);
     const pTotalRow = wsP.addRow([
       `TOTAL PAGOS (${pagos.length} ${pagos.length === 1 ? 'movimiento' : 'movimientos'})`,
-      '', '', '', '', '', '', '', '', '', '',
+      '', '', '', '', '', '', '', '', '', '', '',
       totalMonto,
     ]);
     pTotalRow.height = 20;
@@ -213,7 +215,7 @@ function agregarHojaPagos(
       cell.border    = border();
       cell.alignment = { horizontal: 'center', vertical: 'middle' };
       if (colNum === 1) cell.alignment.horizontal = 'left';
-      if (colNum === 12) {
+      if (colNum === 13) {
         cell.numFmt = '"$"#,##0.00';
         cell.alignment = { horizontal: 'right', vertical: 'middle' };
       }
@@ -227,11 +229,12 @@ function agregarHojaPagos(
   wsP.getColumn(5).width  = 12; // Depto
   wsP.getColumn(6).width  = 22; // Fraccionamiento
   wsP.getColumn(7).width  = 16; // Servicio
-  wsP.getColumn(8).width  = 32; // Concepto
-  wsP.getColumn(9).width  = 16; // Método
-  wsP.getColumn(10).width = 22; // Referencia externa
-  wsP.getColumn(11).width = 12; // Estado
-  wsP.getColumn(12).width = 16; // Importe
+  wsP.getColumn(8).width  = 18; // Periodo
+  wsP.getColumn(9).width  = 32; // Concepto
+  wsP.getColumn(10).width = 16; // Método
+  wsP.getColumn(11).width = 22; // Referencia externa
+  wsP.getColumn(12).width = 12; // Estado
+  wsP.getColumn(13).width = 16; // Importe
 
   wsP.views = [{ state: 'frozen', xSplit: 0, ySplit: 3 }];
 }

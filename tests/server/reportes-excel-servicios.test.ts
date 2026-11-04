@@ -205,10 +205,11 @@ describe('Reportes de Tesorería — Exportación Excel de Todos los Servicios',
     expect(dataRow!.getCell(5).value).toBe('Depto. 101');
     expect(dataRow!.getCell(6).value).toBe('Fraccionamiento Las Palmas');
     expect(dataRow!.getCell(7).value).toBe('Agua');
-    expect(dataRow!.getCell(8).value).toBe('Cuota de agua — Oct 2026');
-    expect(dataRow!.getCell(9).value).toBe('Efectivo');
-    expect(dataRow!.getCell(11).value).toBe('Pagado');
-    expect(dataRow!.getCell(12).value).toBe(250);
+    expect(dataRow!.getCell(8).value).toBe('Octubre 2026');
+    expect(dataRow!.getCell(9).value).toBe('Cuota de agua — Oct 2026');
+    expect(dataRow!.getCell(10).value).toBe('Efectivo');
+    expect(dataRow!.getCell(12).value).toBe('Pagado');
+    expect(dataRow!.getCell(13).value).toBe(250);
   });
 
   // ─── 2. Los pagos de los demás servicios implementados también aparecen ────
@@ -249,6 +250,8 @@ describe('Reportes de Tesorería — Exportación Excel de Todos los Servicios',
     expect(serviciosEncontrados).toContain('Chapeo');
     expect(serviciosEncontrados).toContain('Basura');
     expect(serviciosEncontrados).toContain('Vigilancia');
+    const chapeoRow = wsPagos.getRows(1, wsPagos.rowCount)?.find(row => row.getCell(7).value === 'Chapeo');
+    expect(chapeoRow?.getCell(8).value).toBe('Octubre 2026');
   });
 
   // ─── 3. Los filtros de fecha funcionan ─────────────────────────────────────
@@ -380,7 +383,7 @@ describe('Reportes de Tesorería — Exportación Excel de Todos los Servicios',
     const wsPagos = wb.getWorksheet('Pagos')!;
     const totalRow = wsPagos.getRow(wsPagos.rowCount);
     expect(String(totalRow.getCell(1).value)).toContain('TOTAL PAGOS');
-    expect(Number(totalRow.getCell(12).value)).toBe(totalEsperado);
+    expect(Number(totalRow.getCell(13).value)).toBe(totalEsperado);
   });
 
   // ─── 7. Los usuarios sin permisos no pueden exportar información financiera ─
@@ -492,6 +495,7 @@ describe('Reportes de Tesorería — Exportación Excel de Todos los Servicios',
       'Depto.',
       'Fraccionamiento',
       'Servicio',
+      'Periodo',
       'Concepto',
       'Método de pago',
       'Referencia externa',

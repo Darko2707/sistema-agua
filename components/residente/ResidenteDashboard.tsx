@@ -656,16 +656,27 @@ export function ResidenteDashboard() {
   async function handleSubirComprobante() {
     if (!archivoComprobante) { setErrorTransferencia('Selecciona un archivo de comprobante'); return; }
     const serviciosParaTransferencia = serviciosActivos.filter(s => estaServicioSeleccionado(s.id));
-    const cargosDisponibles = (cargos ?? []).filter(c => c && c.id
+    let cargosParaTransferencia = cargos ?? [];
+    if (serviciosParaTransferencia.length > 0) {
+      try {
+        await sincronizarCargos.mutateAsync();
+        void utils.servicios.misCargos.invalidate();
+        cargosParaTransferencia = await utils.servicios.misCargos.fetch();
+      } catch (error) {
+        setErrorTransferencia(error instanceof Error ? error.message : 'No se pudieron actualizar los cargos de servicio. Intenta de nuevo.');
+        return;
+      }
+    }
+    const cargosDisponibles = cargosParaTransferencia.filter(c => c && c.id
       && c.estado === 'pendiente' && !cargosEnRevision.has(c.id));
     if (serviciosParaTransferencia.some(s => (mesesPorServicio[s.id] || 1)
       > cargosDisponibles.filter(c => c.fraccionamientoServicioId === s.id).length)) {
-      setErrorTransferencia('Uno o más servicios no tienen cargos pendientes suficientes para los meses seleccionados. Actualiza tus cargos e intenta de nuevo.');
+      setErrorTransferencia('Aún no están disponibles todos los cargos de los servicios y meses seleccionados. Actualiza tus cargos e intenta de nuevo.');
       return;
     }
     const cargosSeleccionados = serviciosParaTransferencia.flatMap(s => cargosDisponibles
       .filter(c => c.fraccionamientoServicioId === s.id)
-      .sort((a, b) => (a.anio - b.anio) || (a.mes - b.mes))
+      .sort((a, b) => ((a.anio ?? 0) - (b.anio ?? 0)) || ((a.mes ?? 0) - (b.mes ?? 0)))
       .slice(0, mesesPorServicio[s.id] || 1));
     const periodosTransferencia = incluirAgua ? periodosDisponiblesAgua.slice(0, mesesAgua) : [];
     if (incluirAgua && periodosTransferencia.length !== mesesAgua) {

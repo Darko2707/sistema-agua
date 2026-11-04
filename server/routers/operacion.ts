@@ -384,7 +384,7 @@ export const operacionRouter = router({
     }),
 
   exportacionCompleta: roleProcedure('admin').query(async () => {
-    const [residentes, pagosRows, cortesRows, foliosRows, auditoriaRows] = await Promise.all([
+    const [residentes, pagosRows, cargosServiciosRows, cortesRows, foliosRows, auditoriaRows] = await Promise.all([
       db.query.perfilesResidente.findMany({
         columns: {
           id: true,
@@ -439,6 +439,9 @@ export const operacionRouter = router({
         },
         orderBy: [desc(pagos.creadoEn)],
       }),
+      db.query.cargosServicios.findMany({
+        orderBy: [desc(cargosServicios.creadoEn)],
+      }),
       db.query.cortes.findMany({
         columns: {
           id: true,
@@ -480,6 +483,7 @@ export const operacionRouter = router({
       generadoEn: new Date().toISOString(),
       residentes,
       pagos: pagosRows,
+      cargosServicios: cargosServiciosRows,
       cortes: cortesRows,
       folios: foliosRows,
       auditoria: auditoriaRows,
