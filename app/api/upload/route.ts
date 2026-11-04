@@ -12,6 +12,7 @@ import { logger } from '@/lib/logger';
 export const maxDuration = 30; // segundos
 
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
+const USE_PERSISTENT_BLOB_STORAGE = Boolean(process.env.BLOB_READ_WRITE_TOKEN) || process.env.VERCEL === '1';
 
 const ALLOWED_MIME_TYPES: Record<string, string> = {
   'application/pdf': '.pdf',
@@ -72,13 +73,6 @@ export async function POST(req: Request) {
     return Response.json({ error: 'No autorizado' }, { status: 401 });
   }
 
-  if (process.env.VERCEL === '1' && !process.env.BLOB_READ_WRITE_TOKEN) {
-    return Response.json(
-      { error: 'El almacenamiento de comprobantes no está configurado. Contacta al administrador del sistema.' },
-      { status: 503 },
-    );
-  }
-
   // 2. Extracción del formulario multipart
   let formData: FormData;
   try {
@@ -132,7 +126,7 @@ export async function POST(req: Request) {
     let storedReference: string;
     let fileUrl: string;
 
-    if (process.env.BLOB_READ_WRITE_TOKEN) {
+    if (USE_PERSISTENT_BLOB_STORAGE) {
       const blobResult = await put(safeFilename, buffer, {
         access: 'private',
         contentType: mimeType,
@@ -189,6 +183,12 @@ export async function POST(req: Request) {
     logger.error({ event: 'file.upload_error', error: errorMsg, userId: session.user.id, safeFilename });
 
     // Devolver un mensaje amigable según el tipo de error detectado
+    if (errorMsg.includes('No blob credentials') || errorMsg.includes('no storeId') || errorMsg.includes('OIDC is enabled')) {
+      return Response.json(
+        { error: 'Vercel Blob no está conectado a este proyecto. Conecta un almacén Blob privado y vuelve a desplegar.' },
+        { status: 503 },
+      );
+    }
     if (errorMsg.includes('413') || errorMsg.includes('too large') || errorMsg.includes('size')) {
       return Response.json(
         { error: `El archivo excede el límite y tamaño máximo permitido de ${MAX_FILE_SIZE_BYTES / (1024 * 1024)} MB` },
@@ -212,12 +212,6 @@ export async function GET(req: Request) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session?.user) {
     return Response.json({ error: 'No autorizado' }, { status: 401 });
-  }
-  if (process.env.VERCEL === '1' && !process.env.BLOB_READ_WRITE_TOKEN) {
-    return Response.json(
-      { error: 'El almacenamiento de comprobantes no está configurado. Contacta al administrador del sistema.' },
-      { status: 503 },
-    );
   }
 
   const url = new URL(req.url);
@@ -260,7 +254,7 @@ export async function GET(req: Request) {
   const contentType = mimeMap[extension] || 'application/octet-stream';
 
   // 1. Si existe storage en Vercel Blob, descargar directamente (blob privado)
-  if (process.env.BLOB_READ_WRITE_TOKEN) {
+  if (USE_PERSISTENT_BLOB_STORAGE) {
     try {
       const blobResult = await get(normalized, {
         access: 'private',
@@ -276,6 +270,16 @@ export async function GET(req: Request) {
       }
     } catch (blobErr) {
       logger.warn('file.blob_read_error', { ref: normalized, error: blobErr });
+      if (process.env.VERCEL === '1') {
+        const message = blobErr instanceof Error ? blobErr.message : String(blobErr);
+        const credentialsMissing = message.includes('No blob credentials') || message.includes('no storeId');
+        return Response.json(
+          { error: credentialsMissing
+            ? 'Vercel Blob no está conectado a este proyecto.'
+            : 'El comprobante no está disponible en el almacén de archivos.' },
+          { status: credentialsMissing ? 503 : 404 },
+        );
+      }
     }
   }
 
