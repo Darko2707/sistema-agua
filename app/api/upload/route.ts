@@ -12,7 +12,13 @@ import { logger } from '@/lib/logger';
 export const maxDuration = 30; // segundos
 
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
-const USE_PERSISTENT_BLOB_STORAGE = Boolean(process.env.BLOB_READ_WRITE_TOKEN) || process.env.VERCEL === '1';
+const blobReadWriteToken = process.env.SIS4S_BLOB_READ_WRITE_TOKEN ?? process.env.BLOB_READ_WRITE_TOKEN;
+const blobStoreId = process.env.SIS4S_BLOB_STORE_ID ?? process.env.BLOB_STORE_ID;
+const blobAuthOptions = {
+  ...(blobReadWriteToken ? { token: blobReadWriteToken } : {}),
+  ...(blobStoreId ? { storeId: blobStoreId } : {}),
+};
+const USE_PERSISTENT_BLOB_STORAGE = Boolean(blobReadWriteToken || blobStoreId) || process.env.VERCEL === '1';
 
 const ALLOWED_MIME_TYPES: Record<string, string> = {
   'application/pdf': '.pdf',
@@ -129,6 +135,7 @@ export async function POST(req: Request) {
     if (USE_PERSISTENT_BLOB_STORAGE) {
       const blobResult = await put(safeFilename, buffer, {
         access: 'private',
+        ...blobAuthOptions,
         contentType: mimeType,
         addRandomSuffix: false,
         allowOverwrite: false,
@@ -258,6 +265,7 @@ export async function GET(req: Request) {
     try {
       const blobResult = await get(normalized, {
         access: 'private',
+        ...blobAuthOptions,
         useCache: false,
         abortSignal: AbortSignal.timeout(8000),
       });
