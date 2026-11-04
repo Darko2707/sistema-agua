@@ -649,6 +649,19 @@ export const pagosRouter = router({
       if (!perfil.fraccionamientoId) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes fraccionamiento asignado' });
 
       // Verificar si alguno de los meses o servicios solicitados ya está en un comprobante pendiente
+      const periodosSolicitados = input.metadatos?.meses ?? [];
+      const cargosSolicitados = input.metadatos?.cargosServicioIds ?? [];
+      if (periodosSolicitados.length === 0 && cargosSolicitados.length === 0) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'El comprobante debe incluir al menos un periodo de agua o un cargo de servicio pendiente.',
+        });
+      }
+      if (new Set(cargosSolicitados).size !== cargosSolicitados.length
+        || new Set(periodosSolicitados.map(({ mes, anio }) => `${anio}-${mes}`)).size !== periodosSolicitados.length) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'El comprobante contiene periodos o cargos duplicados.' });
+      }
+
       const pendientes = await db
         .select({
           id: comprobantesTransferencia.id,

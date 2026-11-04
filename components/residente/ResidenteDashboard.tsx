@@ -655,6 +655,27 @@ export function ResidenteDashboard() {
 
   async function handleSubirComprobante() {
     if (!archivoComprobante) { setErrorTransferencia('Selecciona un archivo de comprobante'); return; }
+    const serviciosParaTransferencia = serviciosActivos.filter(s => estaServicioSeleccionado(s.id));
+    const cargosDisponibles = (cargos ?? []).filter(c => c && c.id
+      && c.estado === 'pendiente' && !cargosEnRevision.has(c.id));
+    if (serviciosParaTransferencia.some(s => (mesesPorServicio[s.id] || 1)
+      > cargosDisponibles.filter(c => c.fraccionamientoServicioId === s.id).length)) {
+      setErrorTransferencia('Uno o más servicios no tienen cargos pendientes suficientes para los meses seleccionados. Actualiza tus cargos e intenta de nuevo.');
+      return;
+    }
+    const cargosSeleccionados = serviciosParaTransferencia.flatMap(s => cargosDisponibles
+      .filter(c => c.fraccionamientoServicioId === s.id)
+      .sort((a, b) => (a.anio - b.anio) || (a.mes - b.mes))
+      .slice(0, mesesPorServicio[s.id] || 1));
+    const periodosTransferencia = incluirAgua ? periodosDisponiblesAgua.slice(0, mesesAgua) : [];
+    if (incluirAgua && periodosTransferencia.length !== mesesAgua) {
+      setErrorTransferencia('No hay periodos de agua disponibles para todos los meses seleccionados. Actualiza el estado de cuenta e intenta de nuevo.');
+      return;
+    }
+    if (periodosTransferencia.length === 0 && cargosSeleccionados.length === 0) {
+      setErrorTransferencia('Selecciona al menos un periodo de agua o un servicio con cargos pendientes antes de enviar el comprobante.');
+      return;
+    }
     setSubiendoComprobante(true);
     setErrorTransferencia(null);
     try {
@@ -716,16 +737,14 @@ export function ResidenteDashboard() {
         ? conceptosList.join(' + ')
         : `Pago transferencia – ${periodoTarjetaLabel}`;
 
-      const selectedCargoIds = (cargos ?? [])
-        .filter(c => c && c.id && estaServicioSeleccionado(c.fraccionamientoServicioId) && c.estado === 'pendiente' && !cargosEnRevision.has(c.id))
-        .map(c => c.id);
+      const selectedCargoIds = cargosSeleccionados.map(c => c.id);
 
       await registrarComprobanteMutation.mutateAsync({
         monto: totalBaseCheckout,
         concepto,
         comprobanteUrl,
         metadatos: {
-          meses: incluirAgua ? periodosDisponiblesAgua.slice(0, mesesAgua) : [],
+          meses: periodosTransferencia,
           cargosServicioIds: selectedCargoIds.length > 0 ? selectedCargoIds : undefined,
           esReconexion,
         },
