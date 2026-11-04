@@ -18,7 +18,7 @@ describe('guardia de migración para checkout mixto', () => {
 
   it('protege el ENUM de 0052 con un bootstrap externo a Drizzle', () => {
     expect(migration).toContain("ALTER TYPE mercado_pago_intent_tipo ADD VALUE IF NOT EXISTS 'mixto'");
-    expect(migration).toContain("tipo = 'mixto'");
+    expect(migration).toContain("tipo::text = 'mixto'");
     expect(bootstrap).toContain("ADD VALUE IF NOT EXISTS '${CHECKOUT_MIXTO_ENUM_VALUE}'");
     expect(bootstrap).toContain('Do not wrap this');
     expect(bootstrap).toContain('drizzle.__drizzle_migrations');

@@ -379,12 +379,15 @@ export function ResidenteDashboard() {
   const [incluirAgua, setIncluirAgua] = useState(true);
   const [serviciosSeleccionados, setServiciosSeleccionados] = useState<Record<string, boolean>>({});
   const [mesesPorServicio, setMesesPorServicio] = useState<Record<string, number>>({});
+  const [donativosSeleccionados, setDonativosSeleccionados] = useState<Record<string, boolean>>({});
 
   const menuRef      = useRef<HTMLDivElement>(null);
   const announcerRef = useRef<HTMLDivElement>(null);
   const haSincronizado = useRef(false);
+  const cargoDeepLinkApplied = useRef<string | null>(null);
 
   const paymentResultParam = searchParams.get('payment') as keyof typeof PAYMENT_RESULT | null;
+  const requestedCargoId = searchParams.get('cargoId');
   const [displayedPaymentResult] = useState<keyof typeof PAYMENT_RESULT | null>(() =>
     paymentResultParam && PAYMENT_RESULT[paymentResultParam] ? paymentResultParam : null,
   );
@@ -478,6 +481,29 @@ export function ResidenteDashboard() {
     }
     return set;
   }, [comprobantesPendientesList]);
+
+  const cargosDonativoDisponibles = useMemo(() => (Array.isArray(cargos) ? cargos : [])
+    .filter(c => c?.servicio === 'donativo' && c.estado === 'pendiente' && c.id && !cargosEnRevision.has(c.id))
+    .sort((a, b) => ((a.anio ?? 0) - (b.anio ?? 0)) || ((a.mes ?? 0) - (b.mes ?? 0))), [cargos, cargosEnRevision]);
+
+  useEffect(() => {
+    if (!requestedCargoId) {
+      cargoDeepLinkApplied.current = null;
+      return;
+    }
+    if (cargoDeepLinkApplied.current === requestedCargoId || !servicios) return;
+    const requestedCargo = cargosDonativoDisponibles.find(cargo => cargo.id === requestedCargoId);
+    if (!requestedCargo) return;
+
+    cargoDeepLinkApplied.current = requestedCargoId;
+    setIncluirAgua(false);
+    setServiciosSeleccionados(Object.fromEntries(servicios.map(service => [service.id, false])));
+    setDonativosSeleccionados(Object.fromEntries(cargosDonativoDisponibles.map(cargo => [cargo.id, cargo.id === requestedCargoId])));
+  }, [requestedCargoId, servicios, cargosDonativoDisponibles]);
+
+  function estaDonativoSeleccionado(cargoId: string) {
+    return cargoId in donativosSeleccionados ? donativosSeleccionados[cargoId] : true;
+  }
 
   function estaServicioSeleccionado(servicioId: string) {
     if (!servicioId) return false;
@@ -581,7 +607,10 @@ export function ResidenteDashboard() {
     .filter(s => estaServicioSeleccionado(s.id))
     .reduce((sum, s) => sum + calcularSubtotalServicio(s, mesesPorServicio[s.id] || 1), 0);
 
-  const totalBaseCheckout = (incluirAgua ? montoBaseAgua : 0) + totalServiciosSeleccionados;
+  const donativosMarcados = cargosDonativoDisponibles.filter(c => estaDonativoSeleccionado(c.id));
+  const totalDonativosSeleccionados = donativosMarcados.reduce((sum, cargo) => sum + (Number(cargo.monto) || 0), 0);
+
+  const totalBaseCheckout = (incluirAgua ? montoBaseAgua : 0) + totalServiciosSeleccionados + totalDonativosSeleccionados;
   const desgloseCheckout = totalBaseCheckout > 0 ? calcularDesglosePago(totalBaseCheckout) : null;
   const totalCheckout = desgloseVigente && totalBaseCheckout > 0
     ? Number(desgloseCheckout?.total ?? totalBaseCheckout)
@@ -641,6 +670,10 @@ export function ResidenteDashboard() {
           value: `$${sub.toFixed(2)}`,
         };
       }),
+    ...donativosMarcados.map(cargo => ({
+      label: `Donativo (${String(cargo.mes).padStart(2, '0')}/${cargo.anio})`,
+      value: `$${Number(cargo.monto).toFixed(2)}`,
+    })),
     { label: 'Comisión Mercado Pago', value: `$${desgloseCheckout.comisionMercadoPago}` },
     { label: 'Retención ISR (MP)', value: `$${desgloseCheckout.retencionIsr}` },
     { label: 'Retención IVA (MP)', value: `$${desgloseCheckout.retencionIva}` },
@@ -657,7 +690,7 @@ export function ResidenteDashboard() {
     await checkout({
       mesesAgua: incluirAgua ? mesesAgua : 0,
       servicios: adelantosServicios,
-      cargoIds: [],
+      cargoIds: donativosMarcados.map(cargo => cargo.id),
     });
   }
 
@@ -699,7 +732,8 @@ export function ResidenteDashboard() {
       setErrorTransferencia('No hay periodos de agua disponibles para todos los meses seleccionados. Actualiza el estado de cuenta e intenta de nuevo.');
       return;
     }
-    if (periodosTransferencia.length === 0 && periodosPorServicio.length === 0) {
+    const cargosDonativoParaTransferencia = cargosDonativoDisponibles.filter(c => estaDonativoSeleccionado(c.id));
+    if (periodosTransferencia.length === 0 && periodosPorServicio.length === 0 && cargosDonativoParaTransferencia.length === 0) {
       setErrorTransferencia('Selecciona al menos un periodo de agua o un servicio con cargos pendientes antes de enviar el comprobante.');
       return;
     }
@@ -759,12 +793,18 @@ export function ResidenteDashboard() {
           const sub = calcularSubtotalServicio(s, count);
           conceptosList.push(`${s.nombre}${count > 1 ? ` ${count} meses` : ''} ($${sub.toFixed(2)})`);
         });
+      cargosDonativoParaTransferencia.forEach(cargo => {
+        conceptosList.push(`Donativo ${String(cargo.mes).padStart(2, '0')}/${cargo.anio} ($${Number(cargo.monto).toFixed(2)})`);
+      });
 
       const concepto = conceptosList.length > 0
         ? conceptosList.join(' + ')
         : `Pago transferencia – ${periodoTarjetaLabel}`;
 
-      const selectedCargoIds = cargosSeleccionados.map(c => c.id);
+      const selectedCargoIds = [...new Set([
+        ...cargosSeleccionados.map(c => c.id),
+        ...cargosDonativoParaTransferencia.map(c => c.id),
+      ])];
 
       await registrarComprobanteMutation.mutateAsync({
         monto: totalBaseCheckout,
@@ -1172,6 +1212,29 @@ export function ResidenteDashboard() {
                 No hay servicios adicionales configurados para tu fraccionamiento.
               </div>
             )}
+
+            {cargosDonativoDisponibles.length > 0 && (
+              <section aria-label="Donativos pendientes" style={{ background: '#fffdf5', border: '1px solid #F4D77A', borderRadius: 18, padding: 16 }}>
+                <div style={{ fontFamily: FB, fontSize: 15, fontWeight: 800, color: C.green, marginBottom: 4 }}>Donativos pendientes</div>
+                <p style={{ fontSize: 12, color: C.textWarm, margin: '0 0 10px' }}>Son cargos únicos. Elige cuáles quieres incluir en este pago.</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {cargosDonativoDisponibles.map(cargo => (
+                    <label key={cargo.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, border: '1px solid #F2E7C5', borderRadius: 12, padding: '10px 12px', cursor: 'pointer' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                        <input
+                          type="checkbox"
+                          checked={estaDonativoSeleccionado(cargo.id)}
+                          onChange={event => setDonativosSeleccionados(previous => ({ ...previous, [cargo.id]: event.target.checked }))}
+                          aria-label={`Incluir donativo ${cargo.mes}/${cargo.anio}`}
+                        />
+                        <span>Donativo · {String(cargo.mes).padStart(2, '0')}/{cargo.anio}</span>
+                      </span>
+                      <strong>${Number(cargo.monto).toFixed(2)} MXN</strong>
+                    </label>
+                  ))}
+                </div>
+              </section>
+            )}
           </div>
 
           {/* ── Summary & Checkout Card ── */}
@@ -1201,6 +1264,12 @@ export function ResidenteDashboard() {
                       </div>
                     );
                   })}
+                {donativosMarcados.map(cargo => (
+                  <div key={cargo.id} style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>Donativo ({String(cargo.mes).padStart(2, '0')}/{cargo.anio})</span>
+                    <span style={{ fontWeight: 700 }}>${Number(cargo.monto).toFixed(2)}</span>
+                  </div>
+                ))}
 
                 <div style={{ height: 1, background: C.border3, margin: '6px 0' }} />
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800 }}>
@@ -1469,6 +1538,12 @@ export function ResidenteDashboard() {
                     </div>
                   );
                 })}
+              {donativosMarcados.map(cargo => (
+                <div key={cargo.id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <span style={{ color: '#666' }}>Donativo ({String(cargo.mes).padStart(2, '0')}/{cargo.anio})</span>
+                  <span style={{ fontWeight: 700 }}>${Number(cargo.monto).toFixed(2)}</span>
+                </div>
+              ))}
               <div style={{ height: 1, background: '#E0D8CC', margin: '6px 0' }}/>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 800, fontSize: 14.5, color: C.green }}>
                 <span>Total</span>

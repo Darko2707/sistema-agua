@@ -36,7 +36,7 @@ export default function ServiciosResidentePage() {
             </Button>
             <div>
               <h1 className="font-[family-name:var(--font-bricolage)] text-2xl font-bold text-[#15493a]">Mis servicios</h1>
-              <p className="mt-0.5 text-sm text-[#9a8e72]">Servicios obligatorios de tu fraccionamiento</p>
+              <p className="mt-0.5 text-sm text-[#9a8e72]">Servicios y cargos asociados a tu vivienda</p>
             </div>
           </div>
         </div>
@@ -72,14 +72,21 @@ export default function ServiciosResidentePage() {
             <CardTitle className="text-lg text-[#15493a]">Cargos pendientes</CardTitle>
             <p className="flex gap-2 text-sm font-normal leading-5 text-muted-foreground">
               <Info className="mt-0.5 h-4 w-4 shrink-0 text-[#9a8e72]" />
-              Son cargos obligatorios configurados para tu fraccionamiento. Puedes pagarlos junto con el agua desde el inicio.
+              Incluye cargos de servicios y cargos únicos, como donativos. Puedes seleccionar qué pagar desde el inicio.
             </p>
           </CardHeader>
           <CardContent className="space-y-3">
             {cargosPendientes.map((cargo) => (
-              <div key={cargo.id} className="rounded-xl border border-amber-200 bg-amber-50/50 p-4">
-                <p className="font-semibold">{cargo.nombreServicio}</p>
-                <p className="text-sm text-muted-foreground">Periodo {cargo.mes}/{cargo.anio} · ${cargo.monto} MXN</p>
+              <div key={cargo.id} className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50/50 p-4">
+                <div>
+                  <p className="font-semibold">{cargo.nombreServicio}</p>
+                  <p className="text-sm text-muted-foreground">Periodo {cargo.mes}/{cargo.anio} · ${cargo.monto} MXN</p>
+                </div>
+                {cargo.servicio === 'donativo' && (
+                  <Button size="sm" onClick={() => router.push(`/residente?cargoId=${encodeURIComponent(cargo.id)}`)}>
+                    Pagar donativo
+                  </Button>
+                )}
               </div>
             ))}
             {cargosPendientes.length === 0 && <p className="text-sm text-muted-foreground">No tienes cargos pendientes.</p>}
