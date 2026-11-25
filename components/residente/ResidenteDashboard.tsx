@@ -943,20 +943,20 @@ export function ResidenteDashboard() {
 
         {/* ── Top bar ── */}
         <div style={{ background: C.header, borderBottomLeftRadius: 36, borderBottomRightRadius: 36, padding: '24px 22px 28px', position: 'relative' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
               <LogoMark size={38} />
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <span style={{ fontFamily: FB, fontWeight: 800, fontSize: 17, color: C.green, letterSpacing: '-.02em', display: 'block', lineHeight: 1 }}>
                   SISCO
                 </span>
-                <span style={{ fontSize: 11.5, color: C.textWarm, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase' }}>
+                <span style={{ fontSize: 11.5, color: C.textWarm, fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {perfil.fraccionamiento?.nombre ? `Fracc. ${perfil.fraccionamiento.nombre}` : 'Residencial'}
                 </span>
               </div>
             </div>
 
-            <div ref={menuRef} style={{ position: 'relative' }}>
+            <div ref={menuRef} style={{ position: 'relative', flexShrink: 0 }}>
               <button
                 type="button"
                 onClick={() => setMenuOpen(v => !v)}
@@ -1156,12 +1156,12 @@ export function ResidenteDashboard() {
 
           {/* ── Banner: pagar por transferencia ── */}
           {(perfil.fraccionamiento?.clabe || perfil.fraccionamiento?.numeroCuenta) && (
-            <div style={{ background: 'linear-gradient(135deg, #E8F5E9 0%, #F1F8E9 100%)', border: '1px solid #C8E6C9', borderRadius: 20, padding: '16px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ background: 'linear-gradient(135deg, #E8F5E9 0%, #F1F8E9 100%)', border: '1px solid #C8E6C9', borderRadius: 20, padding: '16px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: '1 1 200px', minWidth: 0 }}>
                 <span style={{ width: 38, height: 38, borderRadius: '50%', background: '#A5D6A7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2E7D32" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="13" rx="2"/><path d="M16 8V6a4 4 0 00-8 0v2"/><path d="M12 13v4"/></svg>
                 </span>
-                <div>
+                <div style={{ minWidth: 0 }}>
                   <div style={{ fontFamily: FB, fontWeight: 700, fontSize: 14.5, color: '#2E7D32' }}>Pagar por transferencia bancaria</div>
                   <div style={{ fontSize: 12, color: '#388E3C', marginTop: 2 }}>Sin comisiones · Disponible para nuevos conceptos o meses futuros</div>
                 </div>
