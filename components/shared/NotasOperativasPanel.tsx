@@ -23,8 +23,6 @@ function getBadgeVariant(rol: string): 'default' | 'secondary' | 'outline' | 'de
       return 'secondary';
     case 'cuadrilla':
     case 'cuadrilla_cortes':
-    case 'operador pozo':
-    case 'operador_pozo':
       return 'outline';
     default:
       return 'secondary';

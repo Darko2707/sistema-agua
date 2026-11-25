@@ -54,7 +54,7 @@ export function PersonalTab({
     try {
       await asignarMultiplesRolesMutation.mutateAsync({
         userId: modalMultiRolUser.id,
-        roles: rolesSeleccionados as ('representante' | 'tesorera' | 'cuadrilla_cortes' | 'operador_pozo' | 'residente')[],
+        roles: rolesSeleccionados as ('representante' | 'tesorera' | 'cuadrilla_cortes' | 'residente')[],
         fraccionamientoId: modalMultiRolUser.fraccionamientoId ?? undefined,
       });
       // Actualizar visualmente el rol principal
@@ -89,74 +89,91 @@ export function PersonalTab({
               {personas.map((p) => (
                 <div
                   key={p.id}
-                  className="flex flex-col gap-4 rounded-xl border bg-background p-4 md:flex-row md:items-center md:justify-between"
+                  className="flex flex-col gap-4 rounded-xl border bg-background p-4 lg:flex-row lg:items-center lg:justify-between"
                 >
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <Shield className="h-4 w-4 text-primary" />
-                      <p className="font-medium">{p.name}</p>
+                      <Shield className="h-4 w-4 text-primary shrink-0" />
+                      <p className="font-medium truncate">{p.name}</p>
                     </div>
-                    <p className="text-sm text-muted-foreground">{p.email}</p>
-                    <Badge variant="outline" className="mt-1">
-                      {ROLES.find((r) => r.value === p.role)?.label ?? p.role}
-                    </Badge>
-                    <Badge variant={p.responsableCargos ? 'default' : 'secondary'} className="ml-2 mt-1">
-                      {p.responsableCargos ? 'Con cargos' : 'Sin cargos'}
-                    </Badge>
+                    <p className="text-sm text-muted-foreground truncate">{p.email}</p>
+                    <div className="flex flex-wrap gap-1.5 mt-1.5">
+                      <Badge variant="outline">
+                        {ROLES.find((r) => r.value === p.role)?.label ?? p.role}
+                      </Badge>
+                      <Badge variant={p.responsableCargos ? 'default' : 'secondary'}>
+                        {p.responsableCargos ? 'Con cargos' : 'Sin cargos'}
+                      </Badge>
+                      {p.roles && p.roles.length > 1 && (
+                        <Badge variant="secondary" className="bg-amber-100 text-amber-800 border-amber-300">
+                          {p.roles.length} roles activos
+                        </Badge>
+                      )}
+                    </div>
                   </div>
-                  <select
-                    value={p.fraccionamientoId ? p.role : (rolPendiente[p.id] ?? 'cuadrilla_cortes')}
-                    disabled={actualizando === p.id}
-                    onChange={(e) => {
-                      if (p.fraccionamientoId) onCambiarRol(p.id, e.target.value);
-                      else setRolPendiente((prev) => ({ ...prev, [p.id]: e.target.value as 'residente' | 'cuadrilla_cortes' }));
-                    }}
-                    className="h-10 rounded-lg border bg-background px-3 md:w-72"
-                  >
-                    {ROLES_ASIGNABLES.map((r) => (
-                      <option key={r.value} value={r.value}>{r.label}</option>
-                    ))}
-                  </select>
-                  {!p.fraccionamientoId && (
-                    <>
-                      <select
-                        value={fraccionamientoPendiente[p.id] ?? ''}
-                        disabled={actualizando === p.id}
-                        onChange={(e) => setFraccionamientoPendiente((prev) => ({ ...prev, [p.id]: e.target.value }))}
-                        className="h-10 rounded-lg border bg-background px-3 md:w-56"
-                        aria-label={`Fraccionamiento para ${p.name}`}
-                      >
-                        <option value="">Asignar fraccionamiento…</option>
-                        {fraccionamientos.map((fraccionamiento) => <option key={fraccionamiento.id} value={fraccionamiento.id}>{fraccionamiento.nombre}</option>)}
-                      </select>
-                      <button
-                        type="button"
-                        disabled={actualizando === p.id || !fraccionamientoPendiente[p.id]}
-                        onClick={() => onAsignarCuentaSinCargos(p.id, fraccionamientoPendiente[p.id], rolPendiente[p.id] ?? 'cuadrilla_cortes')}
-                        className="h-10 rounded-lg border bg-background px-3 text-sm"
-                      >
-                        Asignar personal
-                      </button>
-                    </>
-                  )}
-                  <button
-                    type="button"
-                    disabled={actualizando === p.id}
-                    onClick={() => onCambiarResponsabilidadCargos(p.id, !p.responsableCargos)}
-                    className="h-10 rounded-lg border bg-background px-3 text-sm"
-                  >
-                    {p.responsableCargos ? 'Quitar cargos' : 'Activar cargos'}
-                  </button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-10 text-xs gap-1 border-primary/40 text-primary hover:bg-primary/10"
-                    onClick={() => abrirModalMultiRol(p)}
-                  >
-                    <Users className="h-3.5 w-3.5" />
-                    Multi-Rol
-                  </Button>
+
+                  <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+                    <select
+                      value={p.fraccionamientoId ? p.role : (rolPendiente[p.id] ?? 'cuadrilla_cortes')}
+                      disabled={actualizando === p.id}
+                      onChange={(e) => {
+                        if (p.fraccionamientoId) onCambiarRol(p.id, e.target.value);
+                        else setRolPendiente((prev) => ({ ...prev, [p.id]: e.target.value as 'residente' | 'cuadrilla_cortes' }));
+                      }}
+                      className="h-10 rounded-lg border bg-background px-3 text-sm flex-1 sm:flex-initial sm:w-56"
+                    >
+                      {ROLES_ASIGNABLES.map((r) => (
+                        <option key={r.value} value={r.value}>{r.label}</option>
+                      ))}
+                    </select>
+
+                    {!p.fraccionamientoId && (
+                      <>
+                        <select
+                          value={fraccionamientoPendiente[p.id] ?? ''}
+                          disabled={actualizando === p.id}
+                          onChange={(e) => setFraccionamientoPendiente((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                          className="h-10 rounded-lg border bg-background px-3 text-sm flex-1 sm:flex-initial sm:w-52"
+                          aria-label={`Fraccionamiento para ${p.name}`}
+                        >
+                          <option value="">Asignar fraccionamiento…</option>
+                          {fraccionamientos.map((fraccionamiento) => <option key={fraccionamiento.id} value={fraccionamiento.id}>{fraccionamiento.nombre}</option>)}
+                        </select>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={actualizando === p.id || !fraccionamientoPendiente[p.id]}
+                          onClick={() => onAsignarCuentaSinCargos(p.id, fraccionamientoPendiente[p.id], rolPendiente[p.id] ?? 'cuadrilla_cortes')}
+                          className="h-10 text-xs sm:text-sm px-3 flex-1 sm:flex-initial"
+                        >
+                          Asignar personal
+                        </Button>
+                      </>
+                    )}
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={actualizando === p.id}
+                      onClick={() => onCambiarResponsabilidadCargos(p.id, !p.responsableCargos)}
+                      className="h-10 text-xs sm:text-sm px-3 flex-1 sm:flex-initial"
+                    >
+                      {p.responsableCargos ? 'Quitar cargos' : 'Activar cargos'}
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-10 text-xs gap-1 border-primary/40 text-primary hover:bg-primary/10 flex-1 sm:flex-initial"
+                      onClick={() => abrirModalMultiRol(p)}
+                    >
+                      <Users className="h-3.5 w-3.5" />
+                      Multi-Rol
+                    </Button>
+                  </div>
                 </div>
               ))}
             </section>
@@ -167,7 +184,7 @@ export function PersonalTab({
       {/* Modal Multi-Rol */}
       {modalMultiRolUser && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-xl bg-background p-6 shadow-xl border">
+          <div className="w-full max-w-md rounded-xl bg-background p-5 sm:p-6 shadow-xl border max-h-[90vh] overflow-y-auto">
             <div className="flex items-start justify-between">
               <div>
                 <h3 className="text-base font-bold">Asignar Múltiples Roles Operativos</h3>
@@ -199,14 +216,13 @@ export function PersonalTab({
                   { id: 'representante', label: 'Representante', desc: 'Gestión vecinal, cortes y reportes' },
                   { id: 'tesorera', label: 'Tesorero', desc: 'Control de caja, gastos e insumos' },
                   { id: 'cuadrilla_cortes', label: 'Cuadrilla de Cortes', desc: 'Ejecución operativa en campo' },
-                  { id: 'operador_pozo', label: 'Operador de Pozo', desc: 'Supervisión de bombeo e infraestructura' },
                   { id: 'residente', label: 'Residente', desc: 'Titular de vivienda y consulta de estado' },
                 ].map((rol) => {
                   const seleccionado = rolesSeleccionados.includes(rol.id);
                   return (
                     <label
                       key={rol.id}
-                      className={`flex items-start gap-3 p-2 rounded-lg border cursor-pointer transition-colors ${
+                      className={`flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition-colors ${
                         seleccionado
                           ? 'border-primary bg-primary/5 text-primary'
                           : 'border-border bg-background text-foreground hover:bg-muted/40'

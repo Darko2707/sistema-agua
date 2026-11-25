@@ -9,7 +9,6 @@ const ROL_CONFIG: Record<string, { label: string; path: string }> = {
   representante: { label: 'Representante', path: '/representante' },
   tesorera: { label: 'Tesorero', path: '/tesorera/reportes' },
   cuadrilla_cortes: { label: 'Cuadrilla', path: '/trabajador' },
-  operador_pozo: { label: 'Operador', path: '/operador' },
 };
 
 interface Props {
@@ -31,7 +30,7 @@ export function MultiRoleSwitcher({ className, theme = 'dark' }: Props) {
 
   return (
     <div
-      className={`inline-flex items-center gap-1.5 rounded-full p-1 text-xs font-semibold shadow-sm transition-all ${
+      className={`inline-flex flex-wrap items-center gap-1 sm:gap-1.5 rounded-2xl sm:rounded-full p-1 text-xs font-semibold shadow-sm transition-all max-w-full ${
         isDark
           ? 'bg-black/30 border border-white/15 text-white'
           : 'bg-muted border border-border text-foreground'

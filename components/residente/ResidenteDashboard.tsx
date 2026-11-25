@@ -266,7 +266,7 @@ function ServiceCard({
             style={{ width: 18, height: 18, accentColor: C.greenDark, cursor: deshabilitado ? 'not-allowed' : 'pointer', flexShrink: 0 }}
           />
           <div style={{ minWidth: 0 }}>
-            <h3 style={{ fontFamily: FB, fontSize: 16, margin: 0, fontWeight: 700, color: C.textMain, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <h3 style={{ fontFamily: FB, fontSize: 16, margin: 0, fontWeight: 700, color: C.textMain, wordBreak: 'break-word' }}>
               {nombre}
             </h3>
             <div style={{ fontSize: 12, color: C.textWarm, fontWeight: 600, marginTop: 1 }}>
@@ -293,7 +293,7 @@ function ServiceCard({
 
       {seleccionado && (
         <div style={{ marginTop: 14, paddingTop: 12, borderTop: `1px solid ${C.border}` }}>
-          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
             <div style={{ flex: 1, maxWidth: 180 }}>
               <label style={{ display: 'block', fontSize: 11.5, fontWeight: 700, color: C.textWarm, marginBottom: 5 }}>
                 Meses a pagar

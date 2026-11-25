@@ -73,7 +73,7 @@ export function AdminDashboard() {
                 {MESES[ahora.getMonth()]} {ahora.getFullYear()} · {session?.user?.name}
               </p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               <MultiRoleSwitcher theme="dark" />
               <Button variant="secondary" onClick={salir}>
                 <LogOut className="mr-2 h-4 w-4" />
