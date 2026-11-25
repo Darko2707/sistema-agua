@@ -9,6 +9,7 @@ import { suscripcionesRouter } from './suscripciones'
 import { serviciosRouter } from './servicios'
 import { donativosRouter } from './donativos'
 import { fraccionamientosRouter } from './fraccionamientos'
+import { notasOperativasRouter } from './notas-operativas'
 
 export const appRouter = router({
   pagos:     pagosRouter,
@@ -21,6 +22,7 @@ export const appRouter = router({
   servicios: serviciosRouter,
   donativos: donativosRouter,
   fraccionamientos: fraccionamientosRouter,
+  notasOperativas: notasOperativasRouter,
 })
 
 export type AppRouter = typeof appRouter

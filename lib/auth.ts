@@ -1,7 +1,9 @@
 import { APIError, betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { eq } from 'drizzle-orm';
 import { db } from '@/db';
 import * as schema from '@/db/schema';
+import { logger } from '@/lib/logger';
 import {
   esNombrePersonaValido,
   normalizarNombrePersona,
@@ -23,6 +25,7 @@ function nombreCuentaValido(value: unknown): string {
 }
 
 export const auth = betterAuth({
+  baseURL: process.env.BETTER_AUTH_URL || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
   database: drizzleAdapter(db, { provider: 'pg', schema }),
   emailAndPassword: {
     enabled: true,
@@ -59,8 +62,8 @@ export const auth = betterAuth({
       create: {
         async before(newSession) {
           const activeUser = await db.query.user.findFirst({
-            where: (row, { and, eq, isNull }) => and(
-              eq(row.id, newSession.userId),
+            where: (row, { and, eq: opEq, isNull }) => and(
+              opEq(row.id, newSession.userId),
               isNull(row.deletedAt),
             ),
             columns: { id: true, role: true, fraccionamientoId: true },
@@ -70,13 +73,66 @@ export const auth = betterAuth({
           }
           if (activeUser.role !== 'admin' && activeUser.fraccionamientoId) {
             const fraccionamiento = await db.query.fraccionamientos.findFirst({
-              where: (row, { eq }) => eq(row.id, activeUser.fraccionamientoId!),
+              where: (row, { eq: opEq }) => opEq(row.id, activeUser.fraccionamientoId!),
               columns: { activo: true },
             });
             if (!fraccionamiento?.activo) {
               throw new APIError('FORBIDDEN', { message: 'El fraccionamiento esta desactivado' });
             }
           }
+
+          // HU-S4-01: Control de sesión única y anti-piratería
+          const priorSessions = await db.query.session.findMany({
+            where: (row, { eq: opEq }) => opEq(row.userId, newSession.userId),
+          });
+
+          const quinceMinutosAtras = new Date(Date.now() - 15 * 60 * 1000);
+          for (const s of priorSessions) {
+            if (s.ipAddress && newSession.ipAddress && s.ipAddress !== newSession.ipAddress) {
+              const sesionReciente = s.createdAt >= quinceMinutosAtras;
+              if (sesionReciente) {
+                await db.insert(schema.auditoria).values({
+                  actorId: newSession.userId,
+                  accion: 'seguridad.alerta_sesion_concurrente',
+                  entidad: 'session',
+                  entidadId: s.id,
+                  detalle: {
+                    motivo: 'Inicio de sesion concurrente desde IP distinta en intervalo corto',
+                    ipAnterior: s.ipAddress,
+                    ipNueva: newSession.ipAddress,
+                    userAgentAnterior: s.userAgent,
+                    userAgentNuevo: newSession.userAgent,
+                    tiempoTranscurridoSegundos: Math.round((Date.now() - s.createdAt.getTime()) / 1000),
+                  },
+                  ip: newSession.ipAddress,
+                  userAgent: newSession.userAgent,
+                });
+                logger.warn('seguridad.alerta_sesion_concurrente', {
+                  userId: newSession.userId,
+                  ipAnterior: s.ipAddress,
+                  ipNueva: newSession.ipAddress,
+                });
+              }
+            }
+          }
+
+          if (priorSessions.length > 0) {
+            await db.delete(schema.session).where(eq(schema.session.userId, newSession.userId));
+          }
+
+          await db.insert(schema.auditoria).values({
+            actorId: newSession.userId,
+            accion: 'auth.sesion_iniciada',
+            entidad: 'session',
+            entidadId: newSession.id,
+            detalle: {
+              ipAddress: newSession.ipAddress,
+              userAgent: newSession.userAgent,
+              sesionesPreviasInvalidadas: priorSessions.length,
+            },
+            ip: newSession.ipAddress,
+            userAgent: newSession.userAgent,
+          });
         },
       },
     },
@@ -85,19 +141,23 @@ export const auth = betterAuth({
     expiresIn: 60 * 60 * 24 * 7,
     updateAge: 60 * 60 * 24,
   },
+  rateLimit: {
+    enabled: process.env.E2E_PLAYWRIGHT !== '1',
+  },
   // BETTER_AUTH_URL must be set to the HTTPS production URL for SISCO.
   // so that Better Auth generates correct email links and enforces Secure cookies automatically.
   advanced: {
-    useSecureCookies: process.env.NODE_ENV === 'production',
+    useSecureCookies: process.env.NODE_ENV === 'production' && process.env.E2E_PLAYWRIGHT !== '1' && !authUrl?.startsWith('http://'),
     defaultCookieAttributes: {
       // 'lax' (not 'strict') so the session cookie is sent when Mercado Pago
       // redirects back to /residente?payment=success after a cross-site payment.
       // With 'strict' the cookie is silently dropped on that cross-site redirect.
       sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production' && process.env.E2E_PLAYWRIGHT !== '1' && !authUrl?.startsWith('http://'),
     },
   },
   trustedOrigins: [
-    ...(process.env.NODE_ENV === 'development' ? ['http://localhost:3000'] : []),
+    ...(process.env.NODE_ENV === 'development' || process.env.E2E_PLAYWRIGHT === '1' ? ['http://localhost:3000', 'http://localhost:3100'] : []),
     appUrl,
     authUrl,
     vercelUrl,

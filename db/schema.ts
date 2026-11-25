@@ -54,6 +54,7 @@ export const categoriaGastoEnum = pgEnum('categoria_gasto', [
   'mantenimiento',
   'administracion',
   'servicios',
+  'insumos',
   'otros',
 ]);
 
@@ -67,6 +68,7 @@ export const user = pgTable('user', {
   emailVerified: boolean('email_verified').notNull().default(false),
   image:         text('image'),
   role:          rolEnum('role').notNull().default('residente'),
+  roles:         text('roles').array().notNull().default(sql`'{}'::text[]`),
   // La responsabilidad de cargos no es un rol: una persona puede ser parte
   // del personal y, al mismo tiempo, pagar los servicios de su vivienda.
   responsableCargos: boolean('responsable_cargos').notNull().default(true),
@@ -138,6 +140,9 @@ export const fraccionamientos = pgTable('fraccionamientos', {
   titularCuenta:     text('titular_cuenta'),
   numeroCuenta:      text('numero_cuenta'),
   instruccionesTransferencia: text('instrucciones_transferencia'),
+  tipoNomenclatura:  text('tipo_nomenclatura').notNull().default('edificio_depto'),
+  limiteViviendas:   integer('limite_viviendas').notNull().default(50),
+  esquemaTarifa:     text('esquema_tarifa').notNull().default('sencillo'),
   createdAt:         timestamp('created_at').notNull().defaultNow(),
   updatedAt:         timestamp('updated_at').notNull().defaultNow(),
 }, (t) => [
@@ -145,6 +150,7 @@ export const fraccionamientos = pgTable('fraccionamientos', {
   uniqueIndex('uq_fraccionamientos_tesorera_unica').on(t.tesoreraId).where(sql`${t.tesoreraId} IS NOT NULL`),
   index('idx_fraccionamientos_activos_dia_corte').on(t.diaCorte).where(sql`${t.activo} = true`),
   check('chk_fraccionamientos_dia_corte', sql`${t.diaCorte} BETWEEN 1 AND 28`),
+  check('chk_fraccionamientos_tipo_nomenclatura', sql`${t.tipoNomenclatura} IN ('edificio_depto', 'solo_casa')`),
 ]);
 
 export const suscripcionesFraccionamiento = pgTable('suscripciones_fraccionamiento', {
@@ -170,13 +176,20 @@ export const suscripcionesFraccionamiento = pgTable('suscripciones_fraccionamien
 ]);
 
 export const servicios = pgTable('servicios', {
-  id:             uuid('id').defaultRandom().primaryKey(),
-  clave:          text('clave').notNull().unique(),
-  nombre:         text('nombre').notNull(),
-  cobroMensual:   boolean('cobro_mensual').notNull().default(true),
-  conCorteFisico: boolean('con_corte_fisico').notNull().default(false),
-  activo:         boolean('activo').notNull().default(true),
-});
+  id:                    uuid('id').defaultRandom().primaryKey(),
+  clave:                 text('clave').notNull().unique(),
+  nombre:                text('nombre').notNull(),
+  fraccionamientoId:     uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'cascade' }),
+  frecuenciaTipo:        text('frecuencia_tipo').notNull().default('mensual'),
+  intervaloPeriodicidad: integer('intervalo_periodicidad').notNull().default(1),
+  diaCobro:              integer('dia_cobro').notNull().default(1),
+  cobroMensual:          boolean('cobro_mensual').notNull().default(true),
+  conCorteFisico:        boolean('con_corte_fisico').notNull().default(false),
+  activo:                boolean('activo').notNull().default(true),
+}, (t) => [
+  check('chk_servicios_dia_cobro', sql`${t.diaCobro} BETWEEN 1 AND 31`),
+  check('chk_servicios_frecuencia_tipo', sql`${t.frecuenciaTipo} IN ('mensual', 'bimestral', 'trimestral', 'semestral', 'anual', 'personalizado_dias')`),
+]);
 
 export const fraccionamientoServicios = pgTable('fraccionamiento_servicios', {
   id:                uuid('id').defaultRandom().primaryKey(),
@@ -258,6 +271,7 @@ export const asignacionesFraccionamiento = pgTable('asignaciones_fraccionamiento
   fraccionamientoId: uuid('fraccionamiento_id').references(() => fraccionamientos.id, { onDelete: 'restrict' }),
   fraccionamientoServicioId: uuid('fraccionamiento_servicio_id').notNull().references(() => fraccionamientoServicios.id, { onDelete: 'restrict' }),
   rol: rolAsignacionFraccionamientoEnum('rol').notNull(),
+  roles: text('roles').array().notNull().default(sql`'{}'::text[]`),
   activo: boolean('activo').notNull().default(true),
   creadoEn: timestamp('creado_en').notNull().defaultNow(),
   actualizadoEn: timestamp('actualizado_en').notNull().defaultNow(),
@@ -279,6 +293,8 @@ export const perfilesResidente = pgTable('perfiles_residente', {
   telefono:     text('telefono').notNull(),
   sexo:         sexoEnum('sexo').notNull(),
   tenencia:     tenenciaEnum('tenencia').notNull(),
+  tipoOcupante: text('tipo_ocupante').notNull().default('propietario'),
+  duenoPerfilId: uuid('dueno_perfil_id'),
   edificio:             text('edificio').notNull(),
   departamento:         text('departamento').notNull(),
   nombrePropietario:    text('nombre_propietario'),
@@ -287,13 +303,16 @@ export const perfilesResidente = pgTable('perfiles_residente', {
   creadoEn:     timestamp('creado_en').defaultNow(),
 }, (t) => [
   // Dashboard: listar residentes por circuito; filtrar pendientes de corte/reconexión
-  // Defensa final ante altas simultaneas de la misma vivienda.
+  // Defensa final ante altas simultaneas de la misma vivienda para propietarios.
   uniqueIndex('uq_perfiles_residente_ubicacion')
-    .on(t.fraccionamientoId, t.edificio, t.departamento),
+    .on(t.fraccionamientoId, t.edificio, t.departamento)
+    .where(sql`${t.tipoOcupante} = 'propietario'`),
   uniqueIndex('uq_perfiles_residente_tenant_id').on(t.id, t.fraccionamientoId),
+  check('chk_perfiles_tipo_ocupante', sql`${t.tipoOcupante} IN ('propietario', 'inquilino')`),
   check('chk_perfiles_edificio_canonico', sql`${t.edificio} ~ '^[1-9][0-9]{0,5}$'`),
   check('chk_perfiles_departamento_canonico', sql`${t.departamento} ~ '^[1-9][0-9]{0,5}[A-Z]?$'`),
   index('idx_perfiles_fraccionamiento_estado').on(t.fraccionamientoId, t.estadoAgua),
+  foreignKey({ columns: [t.duenoPerfilId], foreignColumns: [t.id], name: 'fk_perfiles_residente_dueno' }),
 ]);
 
 export const perfilesServicios = pgTable('perfiles_servicios', {
@@ -736,6 +755,17 @@ export const gastosFraccionamiento = pgTable('gastos_fraccionamiento', {
   uniqueIndex('uq_gastos_idempotency_tenant').on(t.fraccionamientoId, t.idempotencyKey),
 ]);
 
+export const notasOperativas = pgTable('notas_operativas', {
+  id:                uuid('id').defaultRandom().primaryKey(),
+  fraccionamientoId: uuid('fraccionamiento_id').notNull().references(() => fraccionamientos.id, { onDelete: 'cascade' }),
+  autorId:           text('autor_id').notNull().references(() => user.id, { onDelete: 'restrict' }),
+  rolAutor:          text('rol_autor').notNull(),
+  contenido:         text('contenido').notNull(),
+  createdAt:         timestamp('created_at').notNull().defaultNow(),
+}, (t) => [
+  index('idx_notas_operativas_fraccionamiento').on(t.fraccionamientoId, t.createdAt),
+]);
+
 // ─────────────────────────────────────────────
 // Relaciones
 // ─────────────────────────────────────────────
@@ -761,6 +791,14 @@ export const perfilesResidenteRelations = relations(perfilesResidente, ({ one, m
   fraccionamiento: one(fraccionamientos, {
     fields: [perfilesResidente.fraccionamientoId],
     references: [fraccionamientos.id],
+  }),
+  dueno: one(perfilesResidente, {
+    fields: [perfilesResidente.duenoPerfilId],
+    references: [perfilesResidente.id],
+    relationName: 'inquilinos_dueno',
+  }),
+  inquilinos: many(perfilesResidente, {
+    relationName: 'inquilinos_dueno',
   }),
   pagos:  many(pagos),
   comprobantesTransferencia: many(comprobantesTransferencia),
@@ -929,5 +967,16 @@ export const pushDeliveriesRelations = relations(pushDeliveries, ({ one }) => ({
   suscripcion: one(pushSubscriptions, {
     fields: [pushDeliveries.subscriptionId],
     references: [pushSubscriptions.id],
+  }),
+}));
+
+export const notasOperativasRelations = relations(notasOperativas, ({ one }) => ({
+  fraccionamiento: one(fraccionamientos, {
+    fields: [notasOperativas.fraccionamientoId],
+    references: [fraccionamientos.id],
+  }),
+  autor: one(user, {
+    fields: [notasOperativas.autorId],
+    references: [user.id],
   }),
 }));

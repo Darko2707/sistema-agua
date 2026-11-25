@@ -21,6 +21,7 @@ function toData(row: typeof user.$inferSelect): UserData {
     name: row.name,
     email: row.email,
     role: row.role as UserRole,
+    roles: row.roles ?? [row.role as UserRole],
     responsableCargos: row.responsableCargos,
     fraccionamientoId: row.fraccionamientoId ?? null,
   };
@@ -75,7 +76,15 @@ export class DrizzleUserRepository implements UserRepository {
 
   async updateRole(id: string, role: UserRole): Promise<void> {
     await db.transaction(async (tx) => {
-      await tx.update(user).set({ role, updatedAt: new Date() }).where(eq(user.id, id));
+      await tx.update(user).set({ role, roles: [role], updatedAt: new Date() }).where(eq(user.id, id));
+      await tx.delete(session).where(eq(session.userId, id));
+    });
+  }
+
+  async updateRoles(id: string, roles: string[]): Promise<void> {
+    await db.transaction(async (tx) => {
+      const primaryRole = roles[0] as UserRole;
+      await tx.update(user).set({ role: primaryRole, roles, updatedAt: new Date() }).where(eq(user.id, id));
       await tx.delete(session).where(eq(session.userId, id));
     });
   }

@@ -17,7 +17,7 @@ describe('recibo de transferencia consolidado', () => {
       ],
     });
 
-    expect(items.map(({ descripcion }) => descripcion)).toEqual(['Agua', 'Chapeo']);
+    expect(items.map(({ descripcion }) => descripcion)).toEqual(['Chapeo', 'Mantenimiento de bomba']);
     expect(sumTransferReceiptItems(items)).toBe('70.00');
   });
 

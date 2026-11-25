@@ -175,7 +175,6 @@ describe('Reportes de Tesorería — Exportación Excel de Todos los Servicios',
       generadoEn: new Date('2026-10-24'),
       totalRecaudado: 250,
       totalPagos: 250,
-      totalIngresosAdicionales: 0,
       totalResidentes: 10,
       totalPagaron: 1,
       totalMorosos: 9,
@@ -185,7 +184,7 @@ describe('Reportes de Tesorería — Exportación Excel de Todos los Servicios',
       porEdificio: [],
       gastos: [],
       pagos: [samplePagosReporte[0]],
-      totalesPorServicio: [{ servicio: 'Agua', total: 250, cantidad: 1 }],
+      totalesPorServicio: [{ servicio: 'Mantenimiento de bomba', total: 250, cantidad: 1 }],
     });
 
     const wb = new ExcelJS.Workbook();
@@ -196,7 +195,7 @@ describe('Reportes de Tesorería — Exportación Excel de Todos los Servicios',
     // Find the data row for Juan Pérez
     let dataRow: ExcelJS.Row | null = null;
     wsPagos!.eachRow((row) => {
-      if (row.getCell(2).value === 'FOL-AGUA-001') {
+      if (String(row.getCell(2).value).includes('FOL-AGUA-001')) {
         dataRow = row;
       }
     });
@@ -207,16 +206,16 @@ describe('Reportes de Tesorería — Exportación Excel de Todos los Servicios',
     expect(dataRow!.getCell(4).value).toBe('Edif. 1');
     expect(dataRow!.getCell(5).value).toBe('Depto. 101');
     expect(dataRow!.getCell(6).value).toBe('Fraccionamiento Las Palmas');
-    expect(dataRow!.getCell(7).value).toBe('Agua');
-    expect(dataRow!.getCell(8).value).toBe('Octubre 2026');
-    expect(dataRow!.getCell(9).value).toBe('Cuota de agua — Oct 2026');
-    expect(dataRow!.getCell(10).value).toBe('Efectivo');
-    expect(dataRow!.getCell(12).value).toBe('Pagado');
-    expect(dataRow!.getCell(13).value).toBe(250);
+    // Columna 7 es el monto del servicio 'Mantenimiento de bomba'
+    expect(dataRow!.getCell(7).value).toBe(250);
+    expect(dataRow!.getCell(8).value).toContain('Oct 2026');
+    expect(dataRow!.getCell(9).value).toBe('Efectivo');
+    expect(dataRow!.getCell(10).value).toBe('Pagado completo');
+    expect(dataRow!.getCell(11).value).toBe(250);
   });
 
   // ─── 2. Los pagos de los demás servicios implementados también aparecen ────
-  it('2. Los pagos de los demás servicios implementados (chapeo, basura, vigilancia) también aparecen', async () => {
+  it('2. Los pagos de los demás servicios implementados (chapeo, basura, vigilancia) también aparecen como columnas dinámicas consolidadas', async () => {
     const buffer = await generarReporteFinancieroExcel({
       fraccionamiento: dummyFraccionamiento.nombre,
       mes: 10,
@@ -224,7 +223,6 @@ describe('Reportes de Tesorería — Exportación Excel de Todos los Servicios',
       generadoEn: new Date('2026-10-24'),
       totalRecaudado: 500,
       totalPagos: 500,
-      totalIngresosAdicionales: 0,
       totalResidentes: 10,
       totalPagaron: 3,
       totalMorosos: 7,
@@ -241,20 +239,41 @@ describe('Reportes de Tesorería — Exportación Excel de Todos los Servicios',
     await wb.xlsx.load(buffer as unknown as ExcelJS.Buffer);
     const wsPagos = wb.getWorksheet('Pagos')!;
 
-    const serviciosEncontrados: string[] = [];
+    // Verificar encabezados con servicios dinámicos
+    let headerRow: ExcelJS.Row | null = null;
     wsPagos.eachRow((row) => {
-      const folio = String(row.getCell(2).value ?? '');
-      if (folio.startsWith('FOL-')) {
-        serviciosEncontrados.push(String(row.getCell(7).value));
+      if (row.getCell(1).value === 'Fecha') {
+        headerRow = row;
+      }
+    });
+    expect(headerRow).not.toBeNull();
+    const headers: string[] = [];
+    headerRow!.eachCell((c) => headers.push(String(c.value)));
+    expect(headers).toContain('Mantenimiento de bomba');
+    expect(headers).toContain('Basura');
+    expect(headers).toContain('Chapeo');
+    expect(headers).toContain('Vigilancia');
+
+    // Juan Pérez tiene exactamente una sola fila consolidada con ambos pagos (Bomba $250 y Chapeo $80)
+    let juanRow: ExcelJS.Row | null = null;
+    let juanRowCount = 0;
+    wsPagos.eachRow((row) => {
+      if (row.getCell(3).value === 'Juan Pérez') {
+        juanRow = row;
+        juanRowCount++;
       }
     });
 
-    expect(serviciosEncontrados).toContain('Agua');
-    expect(serviciosEncontrados).toContain('Chapeo');
-    expect(serviciosEncontrados).toContain('Basura');
-    expect(serviciosEncontrados).toContain('Vigilancia');
-    const chapeoRow = wsPagos.getRows(1, wsPagos.rowCount)?.find(row => row.getCell(7).value === 'Chapeo');
-    expect(chapeoRow?.getCell(8).value).toBe('Octubre 2026');
+    expect(juanRowCount).toBe(1);
+    expect(juanRow).not.toBeNull();
+    expect(String(juanRow!.getCell(2).value)).toContain('FOL-AGUA-001');
+    expect(String(juanRow!.getCell(2).value)).toContain('FOL-CHAPEO-001');
+
+    // Columnas: 7=Bomba, 8=Basura, 9=Chapeo, 10=Vigilancia, 11=Concepto, 12=Método, 13=Estado, 14=Importe
+    expect(juanRow!.getCell(7).value).toBe(250);
+    expect(juanRow!.getCell(9).value).toBe(80);
+    expect(juanRow!.getCell(13).value).toBe('Pago parcial (2/4 servicios)');
+    expect(juanRow!.getCell(14).value).toBe(330);
   });
 
   // ─── 3. Los filtros de fecha funcionan ─────────────────────────────────────
@@ -386,7 +405,8 @@ describe('Reportes de Tesorería — Exportación Excel de Todos los Servicios',
     const wsPagos = wb.getWorksheet('Pagos')!;
     const totalRow = wsPagos.getRow(wsPagos.rowCount);
     expect(String(totalRow.getCell(1).value)).toContain('TOTAL PAGOS');
-    expect(Number(totalRow.getCell(13).value)).toBe(totalEsperado);
+    // Última columna es Importe (col 14 con 4 servicios dinámicos)
+    expect(Number(totalRow.getCell(14).value)).toBe(totalEsperado);
   });
 
   // ─── 7. Los usuarios sin permisos no pueden exportar información financiera ─
@@ -413,7 +433,6 @@ describe('Reportes de Tesorería — Exportación Excel de Todos los Servicios',
       generadoEn: new Date('2026-10-24'),
       totalRecaudado: 250,
       totalPagos: 250,
-      totalIngresosAdicionales: 0,
       totalResidentes: 5,
       totalPagaron: 1,
       totalMorosos: 4,
@@ -423,29 +442,26 @@ describe('Reportes de Tesorería — Exportación Excel de Todos los Servicios',
       porEdificio: [],
       gastos: [],
       pagos: soloAgua,
-      totalesPorServicio: [{ servicio: 'Agua', total: 250, cantidad: 1 }],
+      totalesPorServicio: [{ servicio: 'Mantenimiento de bomba', total: 250, cantidad: 1 }],
     });
 
     const wb = new ExcelJS.Workbook();
     await wb.xlsx.load(buffer as unknown as ExcelJS.Buffer);
     const wsPagos = wb.getWorksheet('Pagos')!;
 
-    const serviciosEncontrados: string[] = [];
+    // Exactly 1 data row
+    let dataRows = 0;
     wsPagos.eachRow((r) => {
       const folio = String(r.getCell(2).value ?? '');
       if (folio.startsWith('FOL-')) {
-        serviciosEncontrados.push(String(r.getCell(7).value));
+        dataRows++;
       }
     });
-
-    expect(serviciosEncontrados).toEqual(['Agua']);
-    expect(serviciosEncontrados).not.toContain('Chapeo');
-    expect(serviciosEncontrados).not.toContain('Basura');
-    expect(serviciosEncontrados).not.toContain('Vigilancia');
+    expect(dataRows).toBe(1);
   });
 
   // ─── 9. El archivo generado se puede leer y sus columnas son correctas ─────
-  it('9. El archivo generado tiene todas las hojas requeridas y columnas oficiales', async () => {
+  it('9. El archivo generado tiene todas las hojas requeridas y columnas oficiales con ausencia de ingresos extras e inclusión de insumos', async () => {
     const buffer = await generarReporteFinancieroRangoExcel({
       fraccionamiento: dummyFraccionamiento.nombre,
       mesDesde: 9,
@@ -456,13 +472,33 @@ describe('Reportes de Tesorería — Exportación Excel de Todos los Servicios',
       totalRecaudado: 500,
       totalPagos: 500,
       totalIngresosAdicionales: 0,
-      totalGastos: 0,
-      saldo: 500,
+      totalGastos: 150,
+      saldo: 350,
       totalResidentes: 10,
       porEdificio: [],
-      gastos: [],
+      gastos: [
+        {
+          mes: 10,
+          anio: 2026,
+          concepto: 'Cloro e insumos de alberca',
+          categoria: 'insumos',
+          fecha: new Date('2026-10-15'),
+          monto: 150,
+        },
+      ],
       ingresos: [],
-      porMes: [],
+      porMes: [
+        {
+          mes: 10,
+          anio: 2026,
+          totalPagos: 500,
+          totalIngresosAdicionales: 0,
+          totalRecaudado: 500,
+          totalGastos: 150,
+          saldo: 350,
+          cantidadPagos: 3,
+        },
+      ],
       pagos: samplePagosReporte,
       totalesPorServicio: sampleTotalesPorServicio,
     });
@@ -476,8 +512,38 @@ describe('Reportes de Tesorería — Exportación Excel de Todos los Servicios',
     expect(sheetNames).toContain('Pagos');
     expect(sheetNames).toContain('Por Edificio');
     expect(sheetNames).toContain('Gastos');
-    expect(sheetNames).toContain('Ingresos Adicionales');
 
+    // Hoja 1: Resumen no tiene "Ingresos adicionales" y contiene "Insumos"
+    const wsResumen = wb.getWorksheet('Resumen')!;
+    const resumenLabels: string[] = [];
+    wsResumen.eachRow((r) => {
+      resumenLabels.push(String(r.getCell(1).value));
+    });
+    expect(resumenLabels.some((l) => l.includes('Ingresos adicionales'))).toBe(false);
+    expect(resumenLabels.some((l) => l.includes('Insumos'))).toBe(true);
+
+    // Hoja 2: Por Mes no contiene columna "Ingresos extras"
+    const wsMes = wb.getWorksheet('Por Mes')!;
+    let mesHeaderRow: ExcelJS.Row | null = null;
+    wsMes.eachRow((r) => {
+      if (r.getCell(1).value === 'Período') mesHeaderRow = r;
+    });
+    expect(mesHeaderRow).not.toBeNull();
+    const mesHeaders: string[] = [];
+    mesHeaderRow!.eachCell((c) => mesHeaders.push(String(c.value)));
+    expect(mesHeaders).not.toContain('Ingresos extras');
+    expect(mesHeaders).toEqual([
+      'Período',
+      'Cargos esperados',
+      'Pagos confirmados',
+      '# Cobros',
+      'Total ingresos',
+      'Saldo pendiente',
+      'Gastos',
+      'Saldo de caja',
+    ]);
+
+    // Hoja 3: Pagos tiene el orden estricto de columnas (HU-S4-12)
     const wsPagos = wb.getWorksheet('Pagos')!;
     let headerRow: ExcelJS.Row | null = null;
     wsPagos.eachRow((row) => {
@@ -497,11 +563,12 @@ describe('Reportes de Tesorería — Exportación Excel de Todos los Servicios',
       'Edificio',
       'Depto.',
       'Fraccionamiento',
-      'Servicio',
-      'Periodo',
+      'Mantenimiento de bomba',
+      'Basura',
+      'Chapeo',
+      'Vigilancia',
       'Concepto',
       'Método de pago',
-      'Referencia externa',
       'Estado',
       'Importe',
     ]);

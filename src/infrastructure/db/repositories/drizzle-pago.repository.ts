@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, lt, ne, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, lt, ne, sql, type SQL } from 'drizzle-orm';
 import { db } from '@/db';
 import {
   auditoria,
@@ -13,6 +13,7 @@ import {
   cargosServicios,
   fraccionamientoServicios,
   servicios,
+  user,
 } from '@/db/schema';
 import type {
   PagoRepository,
@@ -25,6 +26,18 @@ import type {
   CrearPagosMercadoPagoBatchResult,
   CorteData,
   MetricasAdmin,
+  ComprobanteEnriquecido,
+  FraccionamientoParaCobro,
+  FraccionamientoParaCobroRepresentante,
+  MetodoPagoMercadoPago,
+  FolioRow,
+  ComprobantePendienteRow,
+  ComprobanteConResidente,
+  ComprobanteConResidenteCompleto,
+  ResidentesParaPagoTesorera,
+  RechazarComprobanteInput,
+  RegistrarCargosObligatoriosManualesInput,
+  CrearComprobanteTransferenciaInput,
 } from '@/src/application/ports/pago.repository';
 import type { PushNotificationInput } from '@/src/application/ports/push-notification';
 import {
@@ -1010,5 +1023,589 @@ export class DrizzlePagoRepository implements PagoRepository {
         };
       }),
     };
+  }
+
+  // ── Métodos extraídos del router pagos.ts ───────────────────────────────────
+
+  async enrichComprobantesByPagoIds(pagoIds: string[]): Promise<ComprobanteEnriquecido[]> {
+    if (pagoIds.length === 0) return [];
+    return db
+      .select({
+        id:             comprobantesTransferencia.id,
+        pagoId:         comprobantesTransferencia.pagoId,
+        monto:          comprobantesTransferencia.monto,
+        concepto:       comprobantesTransferencia.concepto,
+        comprobanteUrl: comprobantesTransferencia.comprobanteUrl,
+        estado:         comprobantesTransferencia.estado,
+      })
+      .from(comprobantesTransferencia)
+      .where(and(
+        inArray(comprobantesTransferencia.pagoId, pagoIds),
+        eq(comprobantesTransferencia.estado, 'aprobado'),
+      ));
+  }
+
+  async findFraccionamientoForCobroRepresentante(
+    fraccionamientoId: string,
+    representanteId: string,
+  ): Promise<FraccionamientoParaCobroRepresentante | null> {
+    const row = await db.query.fraccionamientos.findFirst({
+      where: (f, { and, eq }) => and(
+        eq(f.id, fraccionamientoId),
+        eq(f.representanteId, representanteId),
+        eq(f.activo, true),
+      ),
+      columns: { montoMensual: true, montoReconexion: true },
+    });
+    return row ?? null;
+  }
+
+  async findMetodoPagoMercadoPago(fraccionamientoId: string): Promise<MetodoPagoMercadoPago | null> {
+    const row = await db.query.fraccionamientoMetodosPago.findFirst({
+      where: (m, { and, eq }) => and(
+        eq(m.fraccionamientoId, fraccionamientoId),
+        eq(m.proveedor, 'mercado_pago'),
+        eq(m.activo, true),
+      ),
+      columns: { collectorId: true },
+    });
+    return row ?? null;
+  }
+
+  async findFoliosByPerfilUserId(userId: string): Promise<FolioRow[]> {
+    const perfil = await db.query.perfilesResidente.findFirst({
+      where: (p, { eq }) => eq(p.userId, userId),
+    });
+    if (!perfil) throw new TRPCError({ code: 'NOT_FOUND', message: 'Perfil no encontrado' });
+
+    const pagosList = await db.query.pagos.findMany({
+      where: (p, { eq }) => eq(p.perfilId, perfil.id),
+      with: {
+        perfil: { with: { usuario: true, fraccionamiento: true } },
+      },
+      orderBy: (p, { desc }) => [desc(p.anio), desc(p.mes)],
+    });
+
+    return pagosList.map((p) => ({
+      id:           p.id,
+      folio:        p.folio,
+      mes:          p.mes,
+      anio:         p.anio,
+      monto:        p.monto,
+      estado:       p.estado,
+      esReconexion: p.esReconexion,
+      fechaPago:    p.fechaPago,
+      fraccionamiento: p.perfil?.fraccionamiento?.nombre || 'Sin fraccionamiento',
+      residente:    p.perfil?.usuario?.name    || 'Sin nombre',
+    }));
+  }
+
+  async findPagosForReporteRepresentante(fraccionamientoId: string): Promise<unknown[]> {
+    return db.query.pagos.findMany({
+      where: (p, { eq, and }) => and(eq(p.fraccionamientoId, fraccionamientoId), eq(p.estado, 'pagado')),
+      with: { perfil: true },
+      orderBy: (p, { desc }) => [desc(p.anio), desc(p.mes), desc(p.fechaPago)],
+    });
+  }
+
+  async findPagosByFraccionamientoAndPeriodo(
+    fraccionamientoId: string,
+    mes: number,
+    anio: number,
+  ): Promise<unknown[]> {
+    return db.query.pagos.findMany({
+      where: (p, { eq, and }) =>
+        and(eq(p.fraccionamientoId, fraccionamientoId), eq(p.mes, mes), eq(p.anio, anio), eq(p.estado, 'pagado')),
+      with: { perfil: { with: { usuario: true } } },
+      orderBy: (p, { desc }) => [desc(p.fechaPago)],
+    });
+  }
+
+  async findResidentesParaPagoTesorera(
+    fraccionamientoId: string,
+    tesoreraId: string,
+  ): Promise<ResidentesParaPagoTesorera> {
+    const fraccionamiento = await db.query.fraccionamientos.findFirst({
+      where: (f, { and, eq }) => and(
+        eq(f.id, fraccionamientoId),
+        eq(f.tesoreraId, tesoreraId),
+        eq(f.activo, true),
+      ),
+      columns: { id: true, nombre: true, montoMensual: true, montoReconexion: true },
+    });
+    if (!fraccionamiento) {
+      return { fraccionamiento: null, perfiles: [], cargosPendientes: [] };
+    }
+
+    const perfiles = await db.query.perfilesResidente.findMany({
+      where:  (p, { eq }) => eq(p.fraccionamientoId, fraccionamientoId),
+      with: {
+        usuario: true,
+        pagos: {
+          where: (pg, { eq }) => eq(pg.estado, 'pagado'),
+          columns: { mes: true, anio: true },
+        },
+      },
+    });
+
+    const cargosPendientes = await db.select({
+      id: cargosServicios.id,
+      perfilId: cargosServicios.perfilId,
+      mes: cargosServicios.mes,
+      anio: cargosServicios.anio,
+      monto: cargosServicios.monto,
+      servicio: servicios.nombre,
+    }).from(cargosServicios)
+      .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, cargosServicios.fraccionamientoServicioId))
+      .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
+      .where(and(
+        eq(cargosServicios.fraccionamientoId, fraccionamientoId),
+        eq(cargosServicios.estado, 'pendiente'),
+        ne(servicios.clave, 'agua'),
+      ));
+
+    return {
+      fraccionamiento,
+      perfiles,
+      cargosPendientes,
+    };
+  }
+
+  async findFraccionamientoForCobro(fraccionamientoId: string): Promise<FraccionamientoParaCobro | null> {
+    const row = await db.query.fraccionamientos.findFirst({
+      where: (f, { and, eq }) => and(eq(f.id, fraccionamientoId), eq(f.activo, true)),
+      columns: { montoMensual: true, montoReconexion: true, representanteId: true },
+    });
+    return row ?? null;
+  }
+
+  async findFraccionamientoForCobroTesorera(
+    fraccionamientoId: string,
+    tesoreraId: string,
+  ): Promise<FraccionamientoParaCobro | null> {
+    const row = await db.query.fraccionamientos.findFirst({
+      where: (f, { and, eq }) => and(eq(f.id, fraccionamientoId), eq(f.tesoreraId, tesoreraId), eq(f.activo, true)),
+      columns: { montoMensual: true, montoReconexion: true, representanteId: true },
+    });
+    return row ?? null;
+  }
+
+  async findComprobantePendiente(
+    perfilId: string,
+    fraccionamientoId: string,
+  ): Promise<ComprobantePendienteRow | null> {
+    const [comprobante] = await db
+      .select({
+        id:             comprobantesTransferencia.id,
+        estado:         comprobantesTransferencia.estado,
+        monto:          comprobantesTransferencia.monto,
+        concepto:       comprobantesTransferencia.concepto,
+        fechaEmision:   comprobantesTransferencia.fechaEmision,
+        motivoRechazo:  comprobantesTransferencia.motivoRechazo,
+        metadatos:      comprobantesTransferencia.metadatos,
+      })
+      .from(comprobantesTransferencia)
+      .where(and(
+        eq(comprobantesTransferencia.perfilId, perfilId),
+        eq(comprobantesTransferencia.fraccionamientoId, fraccionamientoId),
+      ))
+      .orderBy(desc(comprobantesTransferencia.creadoEn))
+      .limit(1);
+
+    return comprobante ?? null;
+  }
+
+  async findComprobantesPendientesDeResidente(
+    perfilId: string,
+    fraccionamientoId: string,
+  ): Promise<ComprobantePendienteRow[]> {
+    return db
+      .select({
+        id:             comprobantesTransferencia.id,
+        estado:         comprobantesTransferencia.estado,
+        monto:          comprobantesTransferencia.monto,
+        concepto:       comprobantesTransferencia.concepto,
+        fechaEmision:   comprobantesTransferencia.fechaEmision,
+        motivoRechazo:  comprobantesTransferencia.motivoRechazo,
+        metadatos:      comprobantesTransferencia.metadatos,
+      })
+      .from(comprobantesTransferencia)
+      .where(and(
+        eq(comprobantesTransferencia.perfilId, perfilId),
+        eq(comprobantesTransferencia.fraccionamientoId, fraccionamientoId),
+        eq(comprobantesTransferencia.estado, 'pendiente_validacion'),
+      ))
+      .orderBy(desc(comprobantesTransferencia.creadoEn));
+  }
+
+  async findComprobantesPendientesDeFraccionamiento(
+    fraccionamientoId: string,
+  ): Promise<ComprobanteConResidente[]> {
+    return db
+      .select({
+        id:             comprobantesTransferencia.id,
+        estado:         comprobantesTransferencia.estado,
+        monto:          comprobantesTransferencia.monto,
+        concepto:       comprobantesTransferencia.concepto,
+        comprobanteUrl: comprobantesTransferencia.comprobanteUrl,
+        fechaEmision:   comprobantesTransferencia.fechaEmision,
+        motivoRechazo:  comprobantesTransferencia.motivoRechazo,
+        metadatos:      comprobantesTransferencia.metadatos,
+        perfilId:       comprobantesTransferencia.perfilId,
+        residenteNombre: user.name,
+        residenteEmail:  user.email,
+        edificio:        perfilesResidente.edificio,
+        departamento:    perfilesResidente.departamento,
+      })
+      .from(comprobantesTransferencia)
+      .innerJoin(perfilesResidente, eq(perfilesResidente.id, comprobantesTransferencia.perfilId))
+      .innerJoin(user, eq(user.id, perfilesResidente.userId))
+      .where(and(
+        eq(comprobantesTransferencia.fraccionamientoId, fraccionamientoId),
+        eq(comprobantesTransferencia.estado, 'pendiente_validacion'),
+      ))
+      .orderBy(desc(comprobantesTransferencia.creadoEn));
+  }
+
+  async findTodosComprobantesDeFraccionamiento(
+    fraccionamientoId: string,
+    estado?: string,
+  ): Promise<ComprobanteConResidenteCompleto[]> {
+    const whereEstado = !estado || estado === 'todos'
+      ? undefined
+      : eq(comprobantesTransferencia.estado, estado as 'pendiente_validacion' | 'aprobado' | 'rechazado');
+
+    return db
+      .select({
+        id:              comprobantesTransferencia.id,
+        estado:          comprobantesTransferencia.estado,
+        monto:           comprobantesTransferencia.monto,
+        concepto:        comprobantesTransferencia.concepto,
+        comprobanteUrl:  comprobantesTransferencia.comprobanteUrl,
+        fechaEmision:    comprobantesTransferencia.fechaEmision,
+        fechaRevision:   comprobantesTransferencia.fechaRevision,
+        motivoRechazo:   comprobantesTransferencia.motivoRechazo,
+        metadatos:       comprobantesTransferencia.metadatos,
+        perfilId:        comprobantesTransferencia.perfilId,
+        pagoId:          comprobantesTransferencia.pagoId,
+        residenteNombre: user.name,
+        residenteEmail:  user.email,
+        edificio:        perfilesResidente.edificio,
+        departamento:    perfilesResidente.departamento,
+      })
+      .from(comprobantesTransferencia)
+      .innerJoin(perfilesResidente, eq(perfilesResidente.id, comprobantesTransferencia.perfilId))
+      .innerJoin(user, eq(user.id, perfilesResidente.userId))
+      .where(whereEstado
+        ? and(
+            eq(comprobantesTransferencia.fraccionamientoId, fraccionamientoId),
+            whereEstado,
+          )
+        : eq(comprobantesTransferencia.fraccionamientoId, fraccionamientoId))
+      .orderBy(desc(comprobantesTransferencia.creadoEn));
+  }
+
+  async findComprobanteForAprobacion(
+    comprobanteId: string,
+    fraccionamientoId: string,
+  ): Promise<Record<string, unknown> | null> {
+    const [comprobante] = await db
+      .select()
+      .from(comprobantesTransferencia)
+      .where(and(
+        eq(comprobantesTransferencia.id, comprobanteId),
+        eq(comprobantesTransferencia.fraccionamientoId, fraccionamientoId),
+        eq(comprobantesTransferencia.estado, 'pendiente_validacion'),
+      ))
+      .limit(1);
+
+    return (comprobante as Record<string, unknown>) ?? null;
+  }
+
+  async findComprobanteForRechazo(
+    comprobanteId: string,
+    fraccionamientoId: string,
+  ): Promise<{ id: string; perfilId: string } | null> {
+    const [comprobante] = await db
+      .select({ id: comprobantesTransferencia.id, perfilId: comprobantesTransferencia.perfilId })
+      .from(comprobantesTransferencia)
+      .where(and(
+        eq(comprobantesTransferencia.id, comprobanteId),
+        eq(comprobantesTransferencia.fraccionamientoId, fraccionamientoId),
+        eq(comprobantesTransferencia.estado, 'pendiente_validacion'),
+      ))
+      .limit(1);
+
+    return comprobante ?? null;
+  }
+
+  async rechazarComprobante(input: RechazarComprobanteInput): Promise<void> {
+    const revisadoEn = new Date();
+    await db.transaction(async (tx) => {
+      const [actualizado] = await tx.update(comprobantesTransferencia).set({
+        estado: 'rechazado',
+        motivoRechazo: input.motivoRechazo,
+        fechaRevision: revisadoEn,
+        revisadoPor: input.revisadoPor,
+        actualizadoEn: revisadoEn,
+      }).where(and(
+        eq(comprobantesTransferencia.id, input.comprobanteId),
+        eq(comprobantesTransferencia.fraccionamientoId, input.fraccionamientoId),
+        eq(comprobantesTransferencia.estado, 'pendiente_validacion'),
+      )).returning({ id: comprobantesTransferencia.id });
+      if (!actualizado) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'El comprobante ya fue revisado por otra solicitud' });
+      }
+
+      await tx.insert(auditoria).values({
+        actorId: input.revisadoPor,
+        accion: 'comprobante_transferencia.rechazado',
+        entidad: 'comprobantes_transferencia',
+        entidadId: input.comprobanteId,
+        detalle: { perfilId: input.perfilId, motivo: input.motivoRechazo },
+      });
+    });
+  }
+
+  async registrarCargosObligatoriosManuales(
+    input: RegistrarCargosObligatoriosManualesInput,
+  ): Promise<{ cargos: number; monto: number }> {
+    const cargoIds = [...new Set(input.cargoIds)];
+    if (cargoIds.length === 0) return { cargos: 0, monto: 0 };
+
+    return db.transaction(async (tx) => {
+      const pendientes = await tx.select({
+        id: cargosServicios.id,
+        monto: cargosServicios.monto,
+        servicio: servicios.nombre,
+      }).from(cargosServicios)
+        .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, cargosServicios.fraccionamientoServicioId))
+        .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
+        .where(and(
+          eq(cargosServicios.perfilId, input.perfilId),
+          eq(cargosServicios.fraccionamientoId, input.fraccionamientoId),
+          eq(cargosServicios.estado, 'pendiente'),
+          ne(servicios.clave, 'agua'),
+          inArray(cargosServicios.id, cargoIds),
+        ));
+      if (pendientes.length !== cargoIds.length) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'Uno o más servicios ya no están disponibles; actualiza la lista' });
+      }
+
+      let monto = 0;
+      let cargos = 0;
+      for (const cargo of pendientes) {
+        const folio = generarFolioServicio();
+        const [updated] = await tx.update(cargosServicios).set({
+          estado: 'pagado',
+          metodo: input.metodo,
+          folio,
+          pagadoEn: new Date(),
+        }).where(and(eq(cargosServicios.id, cargo.id), eq(cargosServicios.estado, 'pendiente')))
+          .returning({ id: cargosServicios.id });
+        if (!updated) throw new TRPCError({ code: 'CONFLICT', message: 'Un cargo cambió de estado durante la aprobación; vuelve a revisar la transferencia' });
+        cargos += 1;
+        monto += Number(cargo.monto);
+        await tx.insert(auditoria).values({
+          actorId: input.actorId,
+          accion: 'servicio.cargo.pagado_manual_combinado',
+          entidad: 'cargos_servicios',
+          entidadId: cargo.id,
+          detalle: { perfilId: input.perfilId, fraccionamientoId: input.fraccionamientoId, metodo: input.metodo, folio, servicio: cargo.servicio },
+        });
+        await tx.insert(tickets).values({
+          pagoId: null,
+          cargoServicioId: cargo.id,
+          tipo: 'servicio',
+          folio,
+          pdfUrl: null,
+        });
+      }
+      if (input.comprobanteId) {
+        const [comprobante] = await tx.select({ metadatos: comprobantesTransferencia.metadatos })
+          .from(comprobantesTransferencia)
+          .where(eq(comprobantesTransferencia.id, input.comprobanteId))
+          .limit(1);
+        if (!comprobante) throw new TRPCError({ code: 'NOT_FOUND', message: 'No se encontró el comprobante aprobado' });
+        await tx.update(comprobantesTransferencia).set({
+          metadatos: { ...(comprobante.metadatos ?? {}), cargosAcreditadosIds: pendientes.map(cargo => cargo.id) },
+          actualizadoEn: new Date(),
+        }).where(eq(comprobantesTransferencia.id, input.comprobanteId));
+      }
+      return { cargos, monto };
+    });
+  }
+
+  async crearComprobanteTransferencia(
+    input: CrearComprobanteTransferenciaInput,
+  ): Promise<{ id: string }> {
+    const pendientes = await db
+      .select({
+        id: comprobantesTransferencia.id,
+        metadatos: comprobantesTransferencia.metadatos,
+      })
+      .from(comprobantesTransferencia)
+      .where(and(
+        eq(comprobantesTransferencia.perfilId, input.perfilId),
+        eq(comprobantesTransferencia.fraccionamientoId, input.fraccionamientoId),
+        eq(comprobantesTransferencia.estado, 'pendiente_validacion'),
+      ));
+
+    const mesesEnRevision = new Set<string>();
+    const cargosEnRevision = new Set<string>();
+    const periodosServicioEnRevision = new Set<string>();
+    if (pendientes.length > 0) {
+      for (const p of pendientes) {
+        const meta = p.metadatos as {
+          meses?: Array<{ mes: number; anio: number }>;
+          cargosServicioIds?: string[];
+          servicios?: Array<{ fraccionamientoServicioId: string; periodos: Array<{ mes: number; anio: number }> }>;
+        } | null;
+        if (meta?.meses && Array.isArray(meta.meses)) {
+          for (const m of meta.meses) {
+            mesesEnRevision.add(`${m.anio}-${m.mes}`);
+          }
+        }
+        if (meta?.cargosServicioIds && Array.isArray(meta.cargosServicioIds)) {
+          for (const cId of meta.cargosServicioIds) {
+            cargosEnRevision.add(cId);
+          }
+        }
+        for (const servicio of meta?.servicios ?? []) {
+          for (const periodo of servicio.periodos ?? []) {
+            periodosServicioEnRevision.add(`${servicio.fraccionamientoServicioId}:${periodo.anio}-${periodo.mes}`);
+          }
+        }
+      }
+
+      if (input.metadatos?.meses && Array.isArray(input.metadatos.meses)) {
+        for (const m of input.metadatos.meses) {
+          if (mesesEnRevision.has(`${m.anio}-${m.mes}`)) {
+            throw new TRPCError({
+              code: 'CONFLICT',
+              message: `El periodo ${m.mes}/${m.anio} de agua ya tiene un comprobante en revisión por tu tesorera.`,
+            });
+          }
+        }
+      }
+
+      if (input.metadatos?.cargosServicioIds && Array.isArray(input.metadatos.cargosServicioIds)) {
+        for (const cId of input.metadatos.cargosServicioIds) {
+          if (cargosEnRevision.has(cId)) {
+            throw new TRPCError({
+              code: 'CONFLICT',
+              message: 'Uno o más servicios seleccionados ya tienen un comprobante en revisión por tu tesorera.',
+            });
+          }
+        }
+      }
+      for (const servicio of input.serviciosSolicitados) {
+        for (const periodo of servicio.periodos) {
+          if (periodosServicioEnRevision.has(`${servicio.fraccionamientoServicioId}:${periodo.anio}-${periodo.mes}`)) {
+            throw new TRPCError({ code: 'CONFLICT', message: 'Un servicio y periodo seleccionado ya tiene un comprobante en revisión.' });
+          }
+        }
+      }
+    }
+
+    const creado = await db.transaction(async tx => {
+      await tx.execute(sql`SELECT id FROM perfiles_residente WHERE id = ${input.perfilId} FOR UPDATE`);
+      const pendientesActuales = await tx.select({ metadatos: comprobantesTransferencia.metadatos })
+        .from(comprobantesTransferencia)
+        .where(and(
+          eq(comprobantesTransferencia.perfilId, input.perfilId),
+          eq(comprobantesTransferencia.fraccionamientoId, input.fraccionamientoId),
+          eq(comprobantesTransferencia.estado, 'pendiente_validacion'),
+        ));
+      for (const pendiente of pendientesActuales) {
+        const meta = pendiente.metadatos as typeof input.metadatos | null;
+        const existingPeriods = new Set((meta?.meses ?? []).map(periodo => `${periodo.anio}-${periodo.mes}`));
+        const existingCargoIds = new Set(meta?.cargosServicioIds ?? []);
+        const existingServicePeriods = new Set((meta?.servicios ?? []).flatMap(servicio =>
+          servicio.periodos.map(periodo => `${servicio.fraccionamientoServicioId}:${periodo.anio}-${periodo.mes}`)));
+        const conflicts = input.periodosSolicitados.some(periodo => existingPeriods.has(`${periodo.anio}-${periodo.mes}`))
+          || input.cargosSolicitados.some(cargoId => existingCargoIds.has(cargoId))
+          || input.serviciosSolicitados.some(servicio => servicio.periodos.some(periodo =>
+            existingServicePeriods.has(`${servicio.fraccionamientoServicioId}:${periodo.anio}-${periodo.mes}`)));
+        if (conflicts) throw new TRPCError({ code: 'CONFLICT', message: 'Uno o más periodos o cargos ya tienen un comprobante pendiente de revisión.' });
+      }
+      const nuevosCargosIds: string[] = [];
+      for (const seleccion of input.serviciosSolicitados) {
+        const [servicioTenant] = await tx.select({
+          id: fraccionamientoServicios.id,
+          montoMensual: fraccionamientoServicios.montoMensual,
+          clave: servicios.clave,
+        }).from(fraccionamientoServicios)
+          .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
+          .where(and(
+            eq(fraccionamientoServicios.id, seleccion.fraccionamientoServicioId),
+            eq(fraccionamientoServicios.fraccionamientoId, input.fraccionamientoId),
+            eq(fraccionamientoServicios.estado, 'activo'),
+            eq(servicios.activo, true),
+            ne(servicios.clave, 'agua'),
+          )).limit(1);
+        if (!servicioTenant) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Uno de los servicios seleccionados ya no está activo en tu fraccionamiento.' });
+        }
+
+        for (const periodo of seleccion.periodos) {
+          const existente = await tx.query.cargosServicios.findFirst({
+            where: (cargo, { and, eq }) => and(
+              eq(cargo.perfilId, input.perfilId),
+              eq(cargo.fraccionamientoServicioId, servicioTenant.id),
+              eq(cargo.mes, periodo.mes),
+              eq(cargo.anio, periodo.anio),
+            ),
+            columns: { id: true, estado: true },
+          });
+          if (existente && existente.estado !== 'pendiente') {
+            throw new TRPCError({ code: 'CONFLICT', message: `El cargo de ${periodo.mes}/${periodo.anio} ya fue resuelto.` });
+          }
+          const [insertado] = existente ? [null] : await tx.insert(cargosServicios).values({
+            fraccionamientoId: input.fraccionamientoId,
+            perfilId: input.perfilId,
+            fraccionamientoServicioId: servicioTenant.id,
+            mes: periodo.mes,
+            anio: periodo.anio,
+            monto: servicioTenant.montoMensual,
+            estado: 'pendiente',
+          }).onConflictDoNothing().returning({ id: cargosServicios.id });
+          const cargoActual = existente ?? (insertado
+            ? { id: insertado.id, estado: 'pendiente' }
+            : await tx.query.cargosServicios.findFirst({
+              where: (cargo, { and, eq }) => and(
+                eq(cargo.perfilId, input.perfilId),
+                eq(cargo.fraccionamientoServicioId, servicioTenant.id),
+                eq(cargo.mes, periodo.mes),
+                eq(cargo.anio, periodo.anio),
+              ),
+              columns: { id: true, estado: true },
+            }));
+          if (!cargoActual || cargoActual.estado !== 'pendiente') {
+            throw new TRPCError({ code: 'CONFLICT', message: `No se pudo reservar el cargo de ${periodo.mes}/${periodo.anio}.` });
+          }
+          if (cargosEnRevision.has(cargoActual.id)) {
+            throw new TRPCError({ code: 'CONFLICT', message: 'Este servicio y periodo ya está asociado a una transferencia en revisión.' });
+          }
+          nuevosCargosIds.push(cargoActual.id);
+        }
+      }
+
+      const metadatos = input.metadatos
+        ? { ...input.metadatos, cargosServicioIds: [...new Set([...input.cargosSolicitados, ...nuevosCargosIds])] }
+        : null;
+      const [row] = await tx.insert(comprobantesTransferencia).values({
+        perfilId: input.perfilId,
+        fraccionamientoId: input.fraccionamientoId,
+        monto: input.monto,
+        concepto: input.concepto,
+        comprobanteUrl: input.comprobanteUrl,
+        estado: 'pendiente_validacion',
+        metadatos,
+      }).returning({ id: comprobantesTransferencia.id });
+      return row;
+    });
+
+    return { id: creado.id };
   }
 }

@@ -25,6 +25,7 @@ export type AuthUser = {
   createdAt:     Date;
   updatedAt:     Date;
   role:          UserRole;
+  roles?:        string[];
   /** null only for the global admin or a resident still in onboarding. */
   fraccionamientoId?: string | null;
 };
@@ -79,6 +80,7 @@ export const createTRPCContext = async (opts: { headers: Headers }) => {
     createdAt:     session.user.createdAt,
     updatedAt:     session.user.updatedAt,
     role:          currentUser.role,
+    roles:         (currentUser as { roles?: string[] }).roles ?? [currentUser.role],
     fraccionamientoId: currentUser.fraccionamientoId ?? null,
   };
 
@@ -121,7 +123,9 @@ export const protectedProcedure = t.procedure.use(async ({ ctx, next }) => {
 
 export function roleProcedure(...roles: UserRole[]) {
   return protectedProcedure.use(({ ctx, next }) => {
-    if (!roles.includes(ctx.user.role)) {
+    const userRoles = new Set<string>([ctx.user.role, ...(ctx.user.roles ?? [])]);
+    const hasRole = roles.some(r => userRoles.has(r));
+    if (!hasRole) {
       throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes permisos' });
     }
     return next({ ctx });
@@ -132,7 +136,9 @@ export function roleProcedure(...roles: UserRole[]) {
 export function operationalRoleProcedure(...roles: UserRole[]) {
   return protectedProcedure
     .use(({ ctx, next }) => {
-      if (!roles.includes(ctx.user.role)) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes permisos' });
+      const userRoles = new Set<string>([ctx.user.role, ...(ctx.user.roles ?? [])]);
+      const hasRole = roles.some(r => userRoles.has(r));
+      if (!hasRole) throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes permisos' });
       return next({ ctx });
     })
     .use(async ({ ctx, next }) => {

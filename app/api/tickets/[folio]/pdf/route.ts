@@ -221,6 +221,7 @@ export async function GET(
       retencionIva: ticket.pago.retencionIva,
       emailContacto: process.env.NEXT_PUBLIC_CONTACT_EMAIL ?? 'contactoservicio4soles@gmail.com',
       tipoComprobante: 'agua',
+      servicioNombre: 'Mantenimiento de bomba',
       esReconexion: ticket.pago.esReconexion ?? false,
     };
   } else if (ticket.cargoServicio) {

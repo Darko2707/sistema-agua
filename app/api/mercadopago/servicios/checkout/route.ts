@@ -25,6 +25,9 @@ export async function POST(request: Request) {
 
   const perfil = await residenteRepo.findByUserIdWithPaymentConfig(session.user.id);
   if (!perfil?.fraccionamientoId) return Response.json({ error: 'Perfil sin fraccionamiento' }, { status: 403 });
+  if (perfil.tenencia === 'inquilino' || (perfil as { tipoOcupante?: string | null }).tipoOcupante === 'inquilino') {
+    return Response.json({ error: 'Los inquilinos solo pueden consultar recibos; los pagos debe realizarlos el propietario.' }, { status: 403 });
+  }
   if (perfil.responsableCargos === false) return Response.json({ error: 'Esta cuenta no tiene cargos de vivienda habilitados' }, { status: 403 });
   try {
     await subscriptionService.requireOperational(perfil.fraccionamientoId);

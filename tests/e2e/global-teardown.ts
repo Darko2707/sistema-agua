@@ -1,8 +1,7 @@
-import type { FullConfig } from '@playwright/test';
 import { inArray } from 'drizzle-orm';
 
 /** Remove the deterministic E2E accounts after the suite; related auth and profile rows cascade. */
-export default async function globalTeardown(_config: FullConfig) {
+export default async function globalTeardown() {
   const databaseUrl = process.env.E2E_DATABASE_URL;
   if (!databaseUrl) return;
 

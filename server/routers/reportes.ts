@@ -11,10 +11,8 @@ import { db } from '@/db';
 import {
   asignacionesFraccionamiento,
   auditoria,
-  cargosServicios,
   fraccionamientoServicios,
   gastosFraccionamiento,
-  ingresosAdicionales,
   servicios,
 } from '@/db/schema';
 
@@ -325,7 +323,7 @@ export const reportesRouter = router({
           input.desde ? gte(o.creadoEn, new Date(input.desde)) : undefined,
           input.hasta ? lte(o.creadoEn, new Date(input.hasta)) : undefined,
         ),
-        with: { perfil: { with: { usuario: true } }, fraccionamiento: true, trabajador: true },
+        with: { perfil: { with: { usuario: true } }, fraccionamiento: true, trabajador: true, evidencias: true },
         orderBy: (o, { desc }) => [desc(o.creadoEn)],
       });
 
@@ -339,6 +337,14 @@ export const reportesRouter = router({
         iniciadoEn: row.iniciadoEn,
         completadoEn: row.completadoEn,
         canceladoEn: row.canceladoEn,
+        evidencias: (row.evidencias ?? []).map((e) => ({
+          id: e.id,
+          url: `/api/upload?ref=${encodeURIComponent(e.referenciaArchivo)}`,
+          referencia: e.referenciaArchivo,
+          contentType: e.contentType,
+          creadoEn: e.creadoEn,
+          subidoPor: e.subidoPor,
+        })),
         residente: {
           id: row.perfil.id,
           nombre: row.perfil.usuario?.name ?? '',
@@ -431,8 +437,8 @@ export const reportesRouter = router({
       const totalAgua = pagosConfirmados.reduce((s, p) => s + montoDisponibleFraccionamiento(p), 0);
       const totalServicios = cargosAdicionales.reduce((s, cargo) => s + Number(cargo.monto), 0);
       const totalPagos             = totalAgua + totalServicios;
-      const totalIngresosAdicionales = ingresosPeriodo.reduce((s, i) => s + Number(i.monto), 0);
-      const totalRecaudado         = totalPagos + totalIngresosAdicionales;
+      const totalIngresosAdicionales = 0;
+      const totalRecaudado         = totalPagos;
       const totalGastos            = gastosPeriodo.reduce((s, g) => s + (g.anuladaEn ? 0 : Number(g.monto)), 0);
       const montoMensual   = Number(fraccionamiento.montoMensual);
       const perfilesPagados = new Set([
@@ -498,7 +504,7 @@ export const reportesRouter = router({
     .input(z.object({
       concepto:  gastoConceptoSchema,
       monto:     gastoMontoSchema,
-      categoria: z.enum(['mantenimiento', 'administracion', 'servicios', 'otros']),
+      categoria: z.enum(['mantenimiento', 'administracion', 'servicios', 'insumos', 'otros']),
       fecha:     gastoFechaSchema,
       mes:       z.number().int().min(1).max(12),
       anio:      z.number().int().min(2020).max(2099),
@@ -559,7 +565,7 @@ export const reportesRouter = router({
       id:        z.string().uuid(),
       concepto:  gastoConceptoSchema.optional(),
       monto:     gastoMontoSchema.optional(),
-      categoria: z.enum(['mantenimiento', 'administracion', 'servicios', 'otros']).optional(),
+      categoria: z.enum(['mantenimiento', 'administracion', 'servicios', 'insumos', 'otros']).optional(),
       fecha:     gastoFechaSchema.optional(),
       referencia: z.string().trim().max(240).nullable().optional(),
     }))
@@ -626,70 +632,61 @@ export const reportesRouter = router({
       });
     }),
 
-  // ══════════════════════════════════════════════════════════════════════════
-  // CRUD INGRESOS ADICIONALES
-  // ══════════════════════════════════════════════════════════════════════════
+  listarGastos: operationalRoleProcedure('tesorera', 'representante', 'admin')
+    .input(z.object({
+      fraccionamientoId: z.string().uuid().optional(),
+      categoria: z.enum(['mantenimiento', 'administracion', 'servicios', 'insumos', 'otros']).optional(),
+      mes: z.number().int().min(1).max(12).optional(),
+      anio: z.number().int().min(2020).max(2099).optional(),
+    }).optional())
+    .query(async ({ ctx, input }) => {
+      if (ctx.user.role !== 'admin' && input?.fraccionamientoId && input.fraccionamientoId !== ctx.user.fraccionamientoId) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes acceso a gastos de otro fraccionamiento' });
+      }
+      const tenantId = ctx.user.role === 'admin'
+        ? (input?.fraccionamientoId ?? ctx.user.fraccionamientoId)
+        : ctx.user.fraccionamientoId;
+      if (!tenantId) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Fraccionamiento requerido' });
+
+      return db.query.gastosFraccionamiento.findMany({
+        where: (g, { eq, and, isNull }) => and(
+          eq(g.fraccionamientoId, tenantId),
+          isNull(g.anuladaEn),
+          input?.categoria ? eq(g.categoria, input.categoria) : undefined,
+          input?.mes ? eq(g.mes, input.mes) : undefined,
+          input?.anio ? eq(g.anio, input.anio) : undefined,
+        ),
+        orderBy: (g, { desc }) => [desc(g.fecha)],
+      });
+    }),
+
+  // Ingresos extras / adicionales descontinuados en backend
   agregarIngreso: operationalRoleProcedure('tesorera')
     .input(z.object({
-      concepto: z.string().min(1, 'Concepto requerido'),
-      monto:    z.number().positive('El monto debe ser positivo'),
-      fecha:    z.string().datetime({ offset: true }).or(z.string().date()),
-      mes:      z.number().int().min(1).max(12),
-      anio:     z.number().int().min(2020).max(2099),
+      concepto: z.string().optional(),
+      monto:    z.number().optional(),
+      fecha:    z.any().optional(),
+      mes:      z.number().optional(),
+      anio:     z.number().optional(),
     }))
-    .mutation(async ({ ctx, input }) => {
-      const fraccionamiento = await getFraccionamientoDelTesorera(ctx.user.id, ctx.user.fraccionamientoId!);
-      const [ingreso] = await db.insert(ingresosAdicionales).values({
-        fraccionamientoId: fraccionamiento.id,
-        representanteId: ctx.user.id,
-        concepto:        input.concepto,
-        monto:           String(input.monto),
-        fecha:           new Date(input.fecha),
-        mes:             input.mes,
-        anio:            input.anio,
-      }).returning();
-      return ingreso;
+    .mutation(async () => {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Los ingresos adicionales han sido descontinuados en la tesorería' });
     }),
 
   editarIngreso: operationalRoleProcedure('tesorera')
     .input(z.object({
       id:       z.string().uuid(),
-      concepto: z.string().min(1).optional(),
-      monto:    z.number().positive().optional(),
-      fecha:    z.string().optional(),
+      concepto: z.string().optional(),
+      monto:    z.number().optional(),
+      fecha:    z.any().optional(),
     }))
-    .mutation(async ({ ctx, input }) => {
-      const fraccionamiento = await getFraccionamientoDelTesorera(ctx.user.id, ctx.user.fraccionamientoId!);
-      const ingreso = await db.query.ingresosAdicionales.findFirst({
-        where: (i, { eq, and }) => and(eq(i.id, input.id), eq(i.fraccionamientoId, ctx.user.fraccionamientoId!)),
-      });
-      if (!ingreso)                            throw new TRPCError({ code: 'NOT_FOUND' });
-
-      const updates: Partial<typeof ingresosAdicionales.$inferInsert> = {};
-      if (input.concepto) updates.concepto = input.concepto;
-      if (input.monto)    updates.monto    = String(input.monto);
-      if (input.fecha)    updates.fecha    = new Date(input.fecha);
-
-      await db.update(ingresosAdicionales).set(updates).where(and(
-        eq(ingresosAdicionales.id, input.id),
-        eq(ingresosAdicionales.fraccionamientoId, ctx.user.fraccionamientoId!),
-      ));
-      return { ok: true };
+    .mutation(async () => {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Los ingresos adicionales han sido descontinuados en la tesorería' });
     }),
 
   eliminarIngreso: operationalRoleProcedure('tesorera')
     .input(z.object({ id: z.string().uuid() }))
-    .mutation(async ({ ctx, input }) => {
-      const fraccionamiento = await getFraccionamientoDelTesorera(ctx.user.id, ctx.user.fraccionamientoId!);
-      const ingreso = await db.query.ingresosAdicionales.findFirst({
-        where: (i, { eq, and }) => and(eq(i.id, input.id), eq(i.fraccionamientoId, ctx.user.fraccionamientoId!)),
-      });
-      if (!ingreso)                            throw new TRPCError({ code: 'NOT_FOUND' });
-
-      await db.delete(ingresosAdicionales).where(and(
-        eq(ingresosAdicionales.id, input.id),
-        eq(ingresosAdicionales.fraccionamientoId, ctx.user.fraccionamientoId!),
-      ));
-      return { ok: true };
+    .mutation(async () => {
+      throw new TRPCError({ code: 'BAD_REQUEST', message: 'Los ingresos adicionales han sido descontinuados en la tesorería' });
     }),
 });

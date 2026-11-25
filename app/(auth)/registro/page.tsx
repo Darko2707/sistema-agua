@@ -41,9 +41,7 @@ const perfilSchema = z.object({
   sexo: z.enum(['masculino', 'femenino', 'otro']),
   tenencia: z.enum(['propietario', 'inquilino']),
   fraccionamientoId: z.string().trim().min(1, 'Selecciona tu fraccionamiento'),
-  edificio: z.string().trim()
-    .regex(/^\d{1,6}$/, 'Usa un número de hasta 6 dígitos')
-    .refine(value => /[1-9]/.test(value), 'Debe ser mayor que cero'),
+  edificio: z.string().trim().optional(),
   deptoNumero: z.string().trim()
     .regex(/^\d{1,6}$/, 'Usa un número de hasta 6 dígitos')
     .refine(value => /[1-9]/.test(value), 'Debe ser mayor que cero'),
@@ -60,6 +58,13 @@ const perfilSchema = z.object({
     }
     if (data.nombrePropietario && !esNombrePersonaValido(data.nombrePropietario)) {
       ctx.addIssue({ code: 'custom', message: NOMBRE_PERSONA_ERROR, path: ['nombrePropietario'] });
+    }
+  }
+  if (data.edificio && data.edificio.trim().length > 0) {
+    if (!/^\d{1,6}$/.test(data.edificio.trim())) {
+      ctx.addIssue({ code: 'custom', message: 'Usa un número de hasta 6 dígitos', path: ['edificio'] });
+    } else if (!/[1-9]/.test(data.edificio)) {
+      ctx.addIssue({ code: 'custom', message: 'Debe ser mayor que cero', path: ['edificio'] });
     }
   }
 });
@@ -99,9 +104,12 @@ export default function RegistroPage() {
 
   const tenencia = useWatch({ control: perfil.control, name: 'tenencia' });
   const esInquilino = tenencia === 'inquilino';
+  const fraccionamientoId = useWatch({ control: perfil.control, name: 'fraccionamientoId' });
   const deptoNumero = useWatch({ control: perfil.control, name: 'deptoNumero' }) ?? '';
   const deptoLetra = useWatch({ control: perfil.control, name: 'deptoLetra' }) ?? '';
   const fraccionamientos = fraccionamientosQuery.data ?? [];
+  const selectedFracc = fraccionamientos.find((f) => f.id === fraccionamientoId);
+  const esSoloCasa = selectedFracc?.tipoNomenclatura === 'solo_casa';
 
   useEffect(() => {
     let active = true;
@@ -267,12 +275,16 @@ export default function RegistroPage() {
         if (!sessionResult.data?.user) throw new Error('No pudimos confirmar la sesión de la cuenta.');
         await aceptarLegales();
       }
+      const tenant = fraccionamientos.find((f) => f.id === data.fraccionamientoId.trim());
+      const soloCasa = tenant?.tipoNomenclatura === 'solo_casa';
+      const edificioFinal = soloCasa ? '1' : normalizarNumero(data.edificio || '1');
+
       await trpc.usuarios.crearPerfil.mutate({
         telefono: data.telefono,
         sexo: data.sexo,
         tenencia: data.tenencia,
         fraccionamientoId: data.fraccionamientoId.trim(),
-        edificio: normalizarNumero(data.edificio),
+        edificio: edificioFinal,
         departamento,
         ...(data.tenencia === 'inquilino' && {
           nombrePropietario: data.nombrePropietario
@@ -505,25 +517,32 @@ export default function RegistroPage() {
               </div>
             </fieldset>
           )}
-          <div className="auth-grid-2">
+          <div className={esSoloCasa ? '' : 'auth-grid-2'}>
+            {!esSoloCasa && (
+              <div>
+                <label htmlFor="edificio" style={labelBase}>Edificio</label>
+                <input id="edificio" type="text" inputMode="numeric" maxLength={6} className="auth-inp" placeholder="1" aria-required="true" aria-describedby={perfil.formState.errors.edificio ? 'edif-err' : undefined} aria-invalid={!!perfil.formState.errors.edificio} style={inputBase} {...perfil.register('edificio')} />
+                <FieldError id="edif-err" message={perfil.formState.errors.edificio?.message} />
+              </div>
+            )}
             <div>
-              <label htmlFor="edificio" style={labelBase}>Edificio</label>
-              <input id="edificio" type="text" inputMode="numeric" maxLength={6} className="auth-inp" placeholder="1" aria-required="true" aria-describedby={perfil.formState.errors.edificio ? 'edif-err' : undefined} aria-invalid={!!perfil.formState.errors.edificio} style={inputBase} {...perfil.register('edificio')} />
-              <FieldError id="edif-err" message={perfil.formState.errors.edificio?.message} />
-            </div>
-            <div>
-              <label htmlFor="deptoNumero" style={labelBase}>Departamento</label>
+              <label htmlFor="deptoNumero" style={labelBase}>
+                {esSoloCasa ? 'Número de Casa' : 'Departamento'}
+              </label>
               <div style={{ display: 'flex', gap: 8 }}>
                 <div style={{ flex: 1 }}>
-                  <input id="deptoNumero" type="text" inputMode="numeric" maxLength={6} className="auth-inp" placeholder="31" aria-required="true" aria-describedby="depto-preview depto-num-err" aria-invalid={!!perfil.formState.errors.deptoNumero} style={inputBase} {...perfil.register('deptoNumero')} />
+                  <input id="deptoNumero" type="text" inputMode="numeric" maxLength={6} className="auth-inp" placeholder={esSoloCasa ? '42' : '31'} aria-required="true" aria-describedby="depto-preview depto-num-err" aria-invalid={!!perfil.formState.errors.deptoNumero} style={inputBase} {...perfil.register('deptoNumero')} />
                   <FieldError id="depto-num-err" message={perfil.formState.errors.deptoNumero?.message} />
                 </div>
                 <div style={{ width: 60 }}>
-                  <input id="deptoLetra" type="text" maxLength={1} className="auth-inp" placeholder="A" aria-label="Letra del departamento (opcional)" aria-describedby="depto-preview depto-letra-err" aria-invalid={!!perfil.formState.errors.deptoLetra} style={{ ...inputBase, textTransform: 'uppercase', textAlign: 'center', padding: '12px 8px' }} {...perfil.register('deptoLetra', { onChange: e => { (e.target as HTMLInputElement).value = (e.target as HTMLInputElement).value.toUpperCase(); } })} />
+                  <input id="deptoLetra" type="text" maxLength={1} className="auth-inp" placeholder="A" aria-label={esSoloCasa ? 'Letra de casa (opcional)' : 'Letra del departamento (opcional)'} aria-describedby="depto-preview depto-letra-err" aria-invalid={!!perfil.formState.errors.deptoLetra} style={{ ...inputBase, textTransform: 'uppercase', textAlign: 'center', padding: '12px 8px' }} {...perfil.register('deptoLetra', { onChange: e => { (e.target as HTMLInputElement).value = (e.target as HTMLInputElement).value.toUpperCase(); } })} />
                   <FieldError id="depto-letra-err" message={perfil.formState.errors.deptoLetra?.message} />
                 </div>
               </div>
-              <p id="depto-preview" style={{ fontSize: 12, color: C.textWarm, marginTop: 4 }}>Número + letra: <strong aria-live="polite">{deptoNumero || '___'}{deptoLetra}</strong></p>
+              <p id="depto-preview" style={{ fontSize: 12, color: C.textWarm, marginTop: 4 }}>
+                {esSoloCasa ? 'Casa: ' : 'Número + letra: '}
+                <strong aria-live="polite">{deptoNumero || '___'}{deptoLetra}</strong>
+              </p>
             </div>
           </div>
           <div role="note" style={{ borderRadius: 14, border: `1px solid ${C.amberBdr}`, background: C.amberBg, padding: '10px 14px', fontSize: 12.5, lineHeight: 1.45, color: C.amber, fontWeight: 700 }}>

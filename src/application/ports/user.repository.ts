@@ -5,6 +5,7 @@ export type UserData = {
   name:  string;
   email: string;
   role:  UserRole;
+  roles?: string[];
   responsableCargos: boolean;
   fraccionamientoId?: string | null;
   fraccionamientoNombre?: string | null;
@@ -20,6 +21,7 @@ export type CreatePersonalInput = {
   email:    string;
   password: string;
   role:     UserRole;
+  roles?:   string[];
   /** Tenant is mandatory for every non-admin account. */
   fraccionamientoId: string;
 };
@@ -27,18 +29,21 @@ export type CreatePersonalInput = {
 export type UpdatePersonalInput = {
   nombre?: string;
   email?:  string;
+  roles?:  string[];
   fraccionamientoId?: string | null;
 };
 
 export type CambiarRolInput = {
   userId:   string;
   nuevoRol: UserRole;
+  roles?:   string[];
   actorId?: string;
 };
 
 export type CambiarRolEnFraccionamientoInput = {
   userId:     string;
   nuevoRol:   'residente' | 'tesorera' | 'cuadrilla_cortes' | 'operador_pozo';
+  roles?:     string[];
   fraccionamientoId: string;
   actorId?:   string;
 };
@@ -50,6 +55,7 @@ export interface UserRepository {
   update(id: string, data: UpdatePersonalInput): Promise<void>;
   updatePassword(userId: string, hashedPassword: string): Promise<void>;
   updateRole(id: string, role: UserRole): Promise<void>;
+  updateRoles?(id: string, roles: string[]): Promise<void>;
   delete(id: string): Promise<void>;
   hasFinancialRecords(id: string): Promise<boolean>;
 

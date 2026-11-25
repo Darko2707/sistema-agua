@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { calcularDesgloseServicio, calcularMontoBase } from '@/src/domain/pagos/calculator';
 import { generarFolioServicio, FolioVO } from '@/src/domain/pagos/folio.vo';
-import { validateFileSignature } from '@/app/api/upload/route';
+import { validateFileSignature } from '@/lib/file-validation';
 
 describe('SCRUM-42: Pruebas de Aceptación de Flujos Críticos de Negocio', () => {
   // ─── Flujo 1: Ciclo de vida de roles y permisos ─────────────────────────────

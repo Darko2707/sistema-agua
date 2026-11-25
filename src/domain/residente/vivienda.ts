@@ -47,7 +47,18 @@ export function normalizarDepartamento(value: string): string {
   return `${numero}${partes[2] ?? ''}`;
 }
 
-export function normalizarVivienda(edificio: string, departamento: string) {
+export function normalizarVivienda(
+  edificio: string,
+  departamento: string,
+  tipoNomenclatura?: 'edificio_depto' | 'solo_casa',
+) {
+  if (tipoNomenclatura === 'solo_casa') {
+    const dep = departamento.trim() || edificio.trim();
+    return {
+      edificio: '1',
+      departamento: normalizarDepartamento(dep),
+    };
+  }
   return {
     edificio: normalizarEdificio(edificio),
     departamento: normalizarDepartamento(departamento),

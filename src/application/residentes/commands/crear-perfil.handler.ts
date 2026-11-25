@@ -1,6 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import type { ResidenteRepository } from '../../ports/residente.repository';
 import { logger } from '@/lib/logger';
+import { LimiteViviendasAlcanzadoError } from '@/src/domain/residente/limite-viviendas.error';
 import {
   normalizarVivienda,
   ViviendaInvalidaError,
@@ -41,6 +42,8 @@ export type CrearPerfilCommand = {
   telefono: string;
   sexo: 'masculino' | 'femenino' | 'otro';
   tenencia: 'propietario' | 'inquilino';
+  tipoOcupante?: 'propietario' | 'inquilino';
+  tipoNomenclatura?: 'edificio_depto' | 'solo_casa';
   fraccionamientoId: string;
   diaCorte: number;
   edificio: string;
@@ -61,7 +64,7 @@ export class CrearPerfilHandler {
 
     let vivienda: ReturnType<typeof normalizarVivienda>;
     try {
-      vivienda = normalizarVivienda(cmd.edificio, cmd.departamento);
+      vivienda = normalizarVivienda(cmd.edificio, cmd.departamento, cmd.tipoNomenclatura);
     } catch (error) {
       if (error instanceof ViviendaInvalidaError) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: error.message });
@@ -72,6 +75,30 @@ export class CrearPerfilHandler {
     const existente = await residenteRepo.findByUserId(cmd.userId);
     if (existente) {
       throw new TRPCError({ code: 'BAD_REQUEST', message: 'Ya tienes un perfil registrado' });
+    }
+
+    const tipoOcupante = cmd.tipoOcupante ?? (cmd.tenencia === 'inquilino' ? 'inquilino' : 'propietario');
+    let duenoPerfilId: string | null = null;
+
+    if (tipoOcupante === 'inquilino') {
+      const propietario = residenteRepo.findPropietarioByVivienda
+        ? await residenteRepo.findPropietarioByVivienda(cmd.fraccionamientoId, vivienda.edificio, vivienda.departamento)
+        : null;
+
+      if (!propietario) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'No se encontró un propietario registrado para esta vivienda. El propietario debe registrarse primero.',
+        });
+      }
+      duenoPerfilId = propietario.id;
+    } else {
+      const propietarioExistente = residenteRepo.findPropietarioByVivienda
+        ? await residenteRepo.findPropietarioByVivienda(cmd.fraccionamientoId, vivienda.edificio, vivienda.departamento)
+        : null;
+      if (propietarioExistente) {
+        throw new TRPCError({ code: 'CONFLICT', message: VIVIENDA_OCUPADA_MESSAGE });
+      }
     }
 
     // Si el alta ocurre después del corte mensual, el residente ya debe
@@ -89,12 +116,17 @@ export class CrearPerfilHandler {
         telefono:            cmd.telefono,
         sexo:                cmd.sexo,
         tenencia:            cmd.tenencia,
+        tipoOcupante,
+        duenoPerfilId,
         nombrePropietario:   cmd.nombrePropietario ?? null,
         telefonoPropietario: cmd.telefonoPropietario ?? null,
       });
       logger.info('usuario.perfil.creado', { userId: cmd.userId, estadoInicial });
       return perfil;
     } catch (error) {
+      if (error instanceof LimiteViviendasAlcanzadoError) {
+        throw new TRPCError({ code: 'PRECONDITION_FAILED', message: error.message });
+      }
       if (esConflictoDeVivienda(error)) {
         throw new TRPCError({ code: 'CONFLICT', message: VIVIENDA_OCUPADA_MESSAGE });
       }

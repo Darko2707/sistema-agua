@@ -1,4 +1,4 @@
-﻿import { headers } from 'next/headers';
+import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { auth } from '@/lib/auth';
 import { homePathForRole } from '@/lib/role-home';
@@ -31,7 +31,8 @@ export async function requireSession(opts?: { roles?: UserRole[] }) {
     if (!fraccionamiento?.activo) redirect('/login');
   }
 
-  if (opts?.roles && !opts.roles.includes(currentUser.role)) {
+  const userRoles = new Set([currentUser.role, ...(currentUser.roles ?? [])]);
+  if (opts?.roles && !opts.roles.some((r) => userRoles.has(r))) {
     redirect(homePathForRole(currentUser.role));
   }
 
@@ -42,6 +43,7 @@ export async function requireSession(opts?: { roles?: UserRole[] }) {
       name: currentUser.name,
       email: currentUser.email,
       role: currentUser.role,
+      roles: currentUser.roles ?? [],
       fraccionamientoId: currentUser.fraccionamientoId ?? null,
     },
   };

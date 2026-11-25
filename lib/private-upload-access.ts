@@ -4,6 +4,7 @@ import {
   asignacionesFraccionamiento,
   bitacoraCortes,
   comprobantesTransferencia,
+  evidenciasOrdenTrabajo,
   fraccionamientos,
   fraccionamientoServicios,
   perfilesResidente,
@@ -86,6 +87,18 @@ export async function canReadPrivateUpload(userId: string, reference: string): P
     if (photo.ownerId === viewer.id || (photo.tenantId && await canAccessTenant(viewer, photo.tenantId, photo.ownerId ?? ''))) return true;
   }
 
+  const orderEvidence = await db.select({
+    subidoPor: evidenciasOrdenTrabajo.subidoPor,
+    fraccionamientoId: evidenciasOrdenTrabajo.fraccionamientoId,
+  }).from(evidenciasOrdenTrabajo)
+    .where(or(
+      eq(evidenciasOrdenTrabajo.referenciaArchivo, reference),
+      eq(evidenciasOrdenTrabajo.referenciaArchivo, viewUrl),
+    ));
+  for (const ev of orderEvidence) {
+    if (ev.subidoPor === viewer.id) return true;
+    if (await canAccessTenant(viewer, ev.fraccionamientoId, ev.subidoPor)) return true;
+  }
+
   return false;
 }
-

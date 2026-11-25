@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
 import { trpc } from '@/lib/trpc-client';
@@ -32,6 +32,7 @@ export type Personal = {
   name:  string;
   email: string;
   role:  string;
+  roles?: string[];
   responsableCargos: boolean;
   fraccionamientoId?: string | null;
   fraccionamientoNombre?: string | null;
@@ -64,7 +65,7 @@ export type Circuito = {
   representanteId:  string | null;
 };
 
-export type AdminTab = 'resumen' | 'métricas' | 'personal' | 'residentes' | 'pendientes' | 'operacion';
+export type AdminTab = 'resumen' | 'métricas' | 'personal' | 'residentes' | 'pendientes' | 'operacion' | 'notas';
 
 // â”€â”€â”€ Hook â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 

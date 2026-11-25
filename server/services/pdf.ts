@@ -112,7 +112,8 @@ export async function generarTicketPDF(data: {
   y -= 28;
   page.drawText(data.tipoComprobante === 'servicio' ? 'Servicio / periodo' : 'Periodo', { x: 28, y, size: 8, font, color: GRAY });
   y -= 18;
-  page.drawText(`${data.servicioNombre ? `${data.servicioNombre} · ` : ''}${data.esReconexion ? 'Reconexión · ' : ''}${MESES[(data.mes ?? 1) - 1]} ${data.anio}`, {
+  const conceptoNombre = data.servicioNombre ?? (data.tipoComprobante === 'agua' ? 'Mantenimiento de bomba' : '');
+  page.drawText(`${conceptoNombre ? `${conceptoNombre} · ` : ''}${data.esReconexion ? 'Reconexión · ' : ''}${MESES[(data.mes ?? 1) - 1]} ${data.anio}`, {
     x: 28, y, size: 13, font: bold, color: BLACK,
   });
 

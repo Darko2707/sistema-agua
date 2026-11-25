@@ -36,7 +36,7 @@ export function buildTransferReceiptItems(input: {
   for (const pago of input.pagos) {
     if (pago.estado !== 'pagado' || !periodos.has(`${pago.anio}-${pago.mes}`)) continue;
     items.push({
-      descripcion: pago.esReconexion ? 'Agua y reconexión' : 'Agua',
+      descripcion: pago.esReconexion ? 'Mantenimiento de bomba y reconexión' : 'Mantenimiento de bomba',
       mes: pago.mes,
       anio: pago.anio,
       monto: pago.monto,

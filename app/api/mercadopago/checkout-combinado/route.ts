@@ -170,6 +170,9 @@ export async function POST(request: Request) {
   if (!perfil?.fraccionamientoId) {
     return Response.json({ error: 'Perfil sin fraccionamiento asignado', code: 'SISCO-403' }, { status: 403 });
   }
+  if (perfil.tenencia === 'inquilino' || (perfil as { tipoOcupante?: string | null }).tipoOcupante === 'inquilino') {
+    return Response.json({ error: 'Los inquilinos solo pueden consultar recibos; los pagos debe realizarlos el propietario.', code: 'SISCO-403' }, { status: 403 });
+  }
   if (perfil.responsableCargos === false) {
     return Response.json({ error: 'Esta cuenta no tiene cargos de vivienda habilitados', code: 'SISCO-403' }, { status: 403 });
   }
@@ -317,7 +320,7 @@ export async function POST(request: Request) {
   const baseUrl = (process.env.NEXT_PUBLIC_APP_URL ?? new URL(request.url).origin).replace(/\/$/, '');
   const titleParts: string[] = [];
   if (waterPeriods.length > 0) {
-    titleParts.push(`${waterPeriods.length} periodo${waterPeriods.length === 1 ? '' : 's'} de agua`);
+    titleParts.push(`${waterPeriods.length} periodo${waterPeriods.length === 1 ? '' : 's'} de mantenimiento de bomba`);
   }
   if (selectedCharges.length > 0) {
     titleParts.push(`${selectedCharges.length} cargo${selectedCharges.length === 1 ? '' : 's'} de servicios`);

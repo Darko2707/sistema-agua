@@ -46,7 +46,11 @@ const serviceWorkerHeaders = [
 
 const nextConfig: NextConfig = {
   // Keep Playwright's dev server independent from a developer's .next/dev cache and lock.
-  ...(isPlaywrightE2E ? { distDir: '.next-e2e' } : {}),
+  ...(isPlaywrightE2E && isDev ? { distDir: '.next-e2e' } : {}),
+  experimental: {
+    // Evita colisiones de bloqueo EPERM concurrentes en el sistema de archivos de Windows
+    ...(process.platform === 'win32' ? { cpus: 1 } : {}),
+  },
   async headers() {
     return [
       { source: '/(.*)', headers: securityHeaders },

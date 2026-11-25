@@ -2,7 +2,23 @@
 
 import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ArrowLeft, Building2, CheckCircle2, KeyRound, Landmark, Loader2, Plus, Power, Save, Trash2, TriangleAlert, X } from 'lucide-react';
+import {
+  ArrowLeft,
+  BarChart3,
+  Building2,
+  CheckCircle2,
+  Download,
+  KeyRound,
+  Landmark,
+  Loader2,
+  Plus,
+  Power,
+  Save,
+  Sliders,
+  Trash2,
+  TriangleAlert,
+  X,
+} from 'lucide-react';
 
 import { trpcReact } from '@/lib/trpc-react';
 import { Button } from '@/components/ui/button';
@@ -10,16 +26,67 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
+type ModalTab = 'licencia' | 'mercadopago' | 'transferencia';
+
+type FraccionamientoItem = {
+  id: string;
+  nombre: string;
+  slug: string;
+  activo: boolean;
+  representanteId: string | null;
+  tesoreraId: string | null;
+  montoMensual: string;
+  montoReconexion: string;
+  diaCorte: number;
+  limiteViviendas: number;
+  esquemaTarifa: string;
+  tipoNomenclatura?: 'edificio_depto' | 'solo_casa' | string;
+  banco: string | null;
+  clabe: string | null;
+  titularCuenta: string | null;
+  numeroCuenta: string | null;
+  instruccionesTransferencia: string | null;
+  mercadoPagoConfigurado: boolean;
+};
+
+type AuditoriaConsumoItem = {
+  id: string;
+  nombre: string;
+  slug: string;
+  activo: boolean;
+  limiteViviendas: number;
+  esquemaTarifa: string;
+  viviendasActivas: number;
+  personalOperativo: number;
+  volumenPagos: { cantidad: number; monto: number };
+  volumenCargos: { cantidad: number; monto: number };
+  estadoCumplimiento: 'Al corriente' | 'Excedido' | 'Requiere ajuste de tarifa';
+};
+
 export default function FraccionamientosAdminPage() {
   const router = useRouter();
   const [nombre, setNombre] = useState('');
-    const [montoMensual, setMontoMensual] = useState('50');
-    const [montoReconexion, setMontoReconexion] = useState('300');
-    const [diaCorte, setDiaCorte] = useState('5');
+  const [montoMensual, setMontoMensual] = useState('50');
+  const [montoReconexion, setMontoReconexion] = useState('300');
+  const [diaCorte, setDiaCorte] = useState('5');
+  const [limiteViviendas, setLimiteViviendas] = useState('50');
+  const [esquemaTarifa, setEsquemaTarifa] = useState('sencillo');
+  const [tipoNomenclatura, setTipoNomenclatura] = useState<'edificio_depto' | 'solo_casa'>('edificio_depto');
+
   const [error, setError] = useState<string | null>(null);
   const [mensaje, setMensaje] = useState<string | null>(null);
-  const [configurando, setConfigurando] = useState<{ id: string; nombre: string } | null>(null);
-  const [metodoModalTab, setMetodoModalTab] = useState<'mercadopago' | 'transferencia'>('mercadopago');
+
+  const [configurando, setConfigurando] = useState<FraccionamientoItem | null>(null);
+  const [metodoModalTab, setMetodoModalTab] = useState<ModalTab>('licencia');
+
+  // Form states for modal
+  const [modalMontoMensual, setModalMontoMensual] = useState('50');
+  const [modalMontoReconexion, setModalMontoReconexion] = useState('300');
+  const [modalDiaCorte, setModalDiaCorte] = useState('5');
+  const [modalLimiteViviendas, setModalLimiteViviendas] = useState('50');
+  const [modalEsquemaTarifa, setModalEsquemaTarifa] = useState('sencillo');
+  const [modalTipoNomenclatura, setModalTipoNomenclatura] = useState<'edificio_depto' | 'solo_casa'>('edificio_depto');
+
   const [accessToken, setAccessToken] = useState('');
   const [collectorId, setCollectorId] = useState('');
   const [banco, setBanco] = useState('');
@@ -30,7 +97,10 @@ export default function FraccionamientosAdminPage() {
   const [errorConfiguracion, setErrorConfiguracion] = useState<string | null>(null);
 
   const fraccionamientosQuery = trpcReact.fraccionamientos.listar.useQuery();
+  const auditoriaQuery = trpcReact.fraccionamientos.auditoriaConsumoReal.useQuery();
+
   const crearMutation = trpcReact.fraccionamientos.crear.useMutation();
+  const actualizarConfiguracionMutation = trpcReact.fraccionamientos.actualizarConfiguracion.useMutation();
   const mercadoPagoMutation = trpcReact.fraccionamientos.actualizarMercadoPago.useMutation();
   const datosBancariosMutation = trpcReact.fraccionamientos.actualizarDatosBancarios.useMutation();
   const cambiarEstadoMutation = trpcReact.fraccionamientos.cambiarEstado.useMutation();
@@ -53,12 +123,57 @@ export default function FraccionamientosAdminPage() {
         montoMensual: Number(montoMensual),
         montoReconexion: Number(montoReconexion),
         diaCorte: Number(diaCorte),
+        limiteViviendas: Number(limiteViviendas) || 50,
+        esquemaTarifa: esquemaTarifa.trim() || 'sencillo',
+        tipoNomenclatura,
       });
       setNombre('');
       setMensaje(`Fraccionamiento “${creado.nombre}” creado correctamente`);
-      await fraccionamientosQuery.refetch();
+      await Promise.all([fraccionamientosQuery.refetch(), auditoriaQuery.refetch()]);
     } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : 'No se pudo crear el fraccionamiento');
+    }
+  }
+
+  function abrirModalConfiguracion(f: FraccionamientoItem, tab: ModalTab = 'licencia') {
+    setConfigurando(f);
+    setMetodoModalTab(tab);
+    setErrorConfiguracion(null);
+    setModalMontoMensual(f.montoMensual);
+    setModalMontoReconexion(f.montoReconexion);
+    setModalDiaCorte(String(f.diaCorte));
+    setModalLimiteViviendas(String(f.limiteViviendas ?? 50));
+    setModalEsquemaTarifa(f.esquemaTarifa ?? 'sencillo');
+    setModalTipoNomenclatura((f.tipoNomenclatura as 'edificio_depto' | 'solo_casa') ?? 'edificio_depto');
+    setAccessToken('');
+    setCollectorId('');
+    setBanco(f.banco ?? '');
+    setClabe(f.clabe ?? '');
+    setTitularCuenta(f.titularCuenta ?? '');
+    setNumeroCuenta(f.numeroCuenta ?? '');
+    setInstruccionesTransferencia(f.instruccionesTransferencia ?? '');
+  }
+
+  async function guardarLicenciaYTarifa(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!configurando) return;
+    setErrorConfiguracion(null);
+    try {
+      await actualizarConfiguracionMutation.mutateAsync({
+        fraccionamientoId: configurando.id,
+        montoMensual: Number(modalMontoMensual),
+        montoReconexion: Number(modalMontoReconexion),
+        diaCorte: Number(modalDiaCorte),
+        activo: configurando.activo,
+        limiteViviendas: Number(modalLimiteViviendas) || 50,
+        esquemaTarifa: modalEsquemaTarifa.trim() || 'sencillo',
+        tipoNomenclatura: modalTipoNomenclatura,
+      });
+      setMensaje('Capacidad de licenciamiento y cuotas actualizadas correctamente');
+      setConfigurando(null);
+      await Promise.all([fraccionamientosQuery.refetch(), auditoriaQuery.refetch()]);
+    } catch (cause: unknown) {
+      setErrorConfiguracion(cause instanceof Error ? cause.message : 'No se pudo guardar la configuración');
     }
   }
 
@@ -74,8 +189,6 @@ export default function FraccionamientosAdminPage() {
       });
       setMensaje('Mercado Pago configurado correctamente');
       setConfigurando(null);
-      setAccessToken('');
-      setCollectorId('');
       await fraccionamientosQuery.refetch();
     } catch (cause: unknown) {
       setErrorConfiguracion(cause instanceof Error ? cause.message : 'No se pudo guardar Mercado Pago');
@@ -111,7 +224,7 @@ export default function FraccionamientosAdminPage() {
     try {
       await cambiarEstadoMutation.mutateAsync({ fraccionamientoId: fraccionamiento.id, activo: !fraccionamiento.activo });
       setMensaje(`Fraccionamiento ${fraccionamiento.activo ? 'desactivado' : 'activado'} correctamente`);
-      await fraccionamientosQuery.refetch();
+      await Promise.all([fraccionamientosQuery.refetch(), auditoriaQuery.refetch()]);
     } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : 'No se pudo actualizar el fraccionamiento');
     }
@@ -124,13 +237,55 @@ export default function FraccionamientosAdminPage() {
     try {
       await eliminarMutation.mutateAsync({ fraccionamientoId: fraccionamiento.id });
       setMensaje('Fraccionamiento eliminado correctamente');
-      await fraccionamientosQuery.refetch();
+      await Promise.all([fraccionamientosQuery.refetch(), auditoriaQuery.refetch()]);
     } catch (cause: unknown) {
       setError(cause instanceof Error ? cause.message : 'No se pudo eliminar el fraccionamiento');
     }
   }
 
-  const fraccionamientos = fraccionamientosQuery.data ?? [];
+  function exportarAuditoriaCSV(data: AuditoriaConsumoItem[]) {
+    const headers = [
+      'Fraccionamiento',
+      'Slug',
+      'Estado Tenant',
+      'Viviendas Activas',
+      'Límite Contratado',
+      'Esquema Tarifa',
+      'Personal Operativo',
+      'Pagos Aprobados (Cant)',
+      'Pagos Aprobados (Monto)',
+      'Cargos Generados (Cant)',
+      'Cargos Generados (Monto)',
+      'Estado Cumplimiento',
+    ];
+    const rows = data.map(d => [
+      `"${d.nombre.replace(/"/g, '""')}"`,
+      `"${d.slug}"`,
+      d.activo ? 'Activo' : 'Inactivo',
+      d.viviendasActivas,
+      d.limiteViviendas,
+      `"${d.esquemaTarifa}"`,
+      d.personalOperativo,
+      d.volumenPagos.cantidad,
+      d.volumenPagos.monto.toFixed(2),
+      d.volumenCargos.cantidad,
+      d.volumenCargos.monto.toFixed(2),
+      `"${d.estadoCumplimiento}"`,
+    ]);
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `auditoria_consumo_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  }
+
+  const fraccionamientos = (fraccionamientosQuery.data ?? []) as FraccionamientoItem[];
+  const auditoriaItems = (auditoriaQuery.data ?? []) as AuditoriaConsumoItem[];
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8">
@@ -140,8 +295,8 @@ export default function FraccionamientosAdminPage() {
             <div className="flex items-center gap-3">
               <Building2 className="h-8 w-8" />
               <div>
-                <h1 className="text-3xl font-bold">Fraccionamientos</h1>
-                <p className="mt-1 text-sky-100">Alta de nuevos tenants y consulta del catálogo activo</p>
+                <h1 className="text-3xl font-bold">Fraccionamientos y Licenciamiento</h1>
+                <p className="mt-1 text-sky-100">Control de tenants, límites de capacidad y conciliación de consumo</p>
               </div>
             </div>
             <Button
@@ -170,13 +325,14 @@ export default function FraccionamientosAdminPage() {
           </div>
         )}
 
+        {/* Formulario de Creación */}
         <Card>
           <CardHeader>
             <CardTitle>Crear nuevo fraccionamiento</CardTitle>
           </CardHeader>
           <CardContent>
-            <form className="grid gap-3 md:grid-cols-5 md:items-end" onSubmit={crearFraccionamiento}>
-              <div className="flex-1 space-y-2">
+            <form className="grid gap-3 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 md:items-end" onSubmit={crearFraccionamiento}>
+              <div className="space-y-2 lg:col-span-2">
                 <Label htmlFor="nombre-fraccionamiento">Nombre</Label>
                 <Input
                   id="nombre-fraccionamiento"
@@ -193,27 +349,50 @@ export default function FraccionamientosAdminPage() {
                 <Input id="monto-mensual" type="number" min="0" step="0.01" value={montoMensual} onChange={(event) => setMontoMensual(event.target.value)} required />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="monto-reconexion">Monto de reconexión</Label>
+                <Label htmlFor="monto-reconexion">Monto reconexión</Label>
                 <Input id="monto-reconexion" type="number" min="0" step="0.01" value={montoReconexion} onChange={(event) => setMontoReconexion(event.target.value)} required />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="dia-corte">Día de corte</Label>
                 <Input id="dia-corte" type="number" min="1" max="28" step="1" value={diaCorte} onChange={(event) => setDiaCorte(event.target.value)} required />
               </div>
-              <Button type="submit" disabled={crearMutation.isPending}>
-                {crearMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
-                Crear fraccionamiento
-              </Button>
+              <div className="space-y-2">
+                <Label htmlFor="limite-viviendas">Límite viviendas</Label>
+                <Input id="limite-viviendas" type="number" min="1" step="1" value={limiteViviendas} onChange={(event) => setLimiteViviendas(event.target.value)} required />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="esquema-tarifa">Esquema tarifa</Label>
+                <Input id="esquema-tarifa" type="text" value={esquemaTarifa} onChange={(event) => setEsquemaTarifa(event.target.value)} required />
+              </div>
+              <div className="space-y-2 lg:col-span-2">
+                <Label htmlFor="tipo-nomenclatura">Nomenclatura</Label>
+                <select
+                  id="tipo-nomenclatura"
+                  className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  value={tipoNomenclatura}
+                  onChange={(event) => setTipoNomenclatura(event.target.value as 'edificio_depto' | 'solo_casa')}
+                >
+                  <option value="edificio_depto">Edificio y Departamento</option>
+                  <option value="solo_casa">Solo Número de Casa</option>
+                </select>
+              </div>
+              <div className="lg:col-span-6 flex justify-end">
+                <Button type="submit" disabled={crearMutation.isPending}>
+                  {crearMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
+                  Crear fraccionamiento
+                </Button>
+              </div>
             </form>
             <p className="mt-3 text-sm text-muted-foreground">
-              Después de crearlo deberás configurar su suscripción anual y sus servicios.
+              Define el límite contratado de viviendas y el esquema de cobro para controlar el licenciamiento multi-tenant.
             </p>
           </CardContent>
         </Card>
 
+        {/* Catálogo de Fraccionamientos */}
         <Card>
           <CardHeader>
-            <CardTitle>Fraccionamientos</CardTitle>
+            <CardTitle>Fraccionamientos Activos</CardTitle>
           </CardHeader>
           <CardContent>
             {fraccionamientosQuery.isLoading ? (
@@ -228,43 +407,35 @@ export default function FraccionamientosAdminPage() {
                       <p className="font-medium">{fraccionamiento.nombre}</p>
                       <p className="text-sm text-muted-foreground">/{fraccionamiento.slug}</p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${fraccionamiento.activo ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-700'}`}>
                         {fraccionamiento.activo ? 'Activo' : 'Inactivo'}
+                      </span>
+                      <span className="rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-medium text-indigo-700">
+                        Capacidad: {fraccionamiento.limiteViviendas ?? 50} viv. ({fraccionamiento.esquemaTarifa ?? 'sencillo'})
                       </span>
                       <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${
                         fraccionamiento.mercadoPagoConfigurado
                           ? 'bg-sky-100 text-sky-700'
                           : 'bg-amber-100 text-amber-800'
                       }`}>
-                        Mercado Pago: {fraccionamiento.mercadoPagoConfigurado ? 'configurado' : 'pendiente'}
+                        MP: {fraccionamiento.mercadoPagoConfigurado ? 'configurado' : 'pendiente'}
                       </span>
                       <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${
                         fraccionamiento.clabe || fraccionamiento.numeroCuenta
                           ? 'bg-emerald-100 text-emerald-700'
                           : 'bg-slate-100 text-slate-600'
                       }`}>
-                        Transferencia: {fraccionamiento.clabe || fraccionamiento.numeroCuenta ? 'configurada' : 'pendiente'}
+                        SPEI: {fraccionamiento.clabe || fraccionamiento.numeroCuenta ? 'configurado' : 'pendiente'}
                       </span>
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
                         disabled={!fraccionamiento.activo}
-                        onClick={() => {
-                          setConfigurando({ id: fraccionamiento.id, nombre: fraccionamiento.nombre });
-                          setAccessToken('');
-                          setCollectorId('');
-                          setBanco(fraccionamiento.banco ?? '');
-                          setClabe(fraccionamiento.clabe ?? '');
-                          setTitularCuenta(fraccionamiento.titularCuenta ?? '');
-                          setNumeroCuenta(fraccionamiento.numeroCuenta ?? '');
-                          setInstruccionesTransferencia(fraccionamiento.instruccionesTransferencia ?? '');
-                          setMetodoModalTab('mercadopago');
-                          setErrorConfiguracion(null);
-                        }}
+                        onClick={() => abrirModalConfiguracion(fraccionamiento, 'licencia')}
                       >
-                        <KeyRound className="mr-2 h-4 w-4" />Configurar pago
+                        <Sliders className="mr-2 h-4 w-4" />Configurar
                       </Button>
                       <Button
                         type="button"
@@ -291,8 +462,86 @@ export default function FraccionamientosAdminPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* Auditoría de Consumo Real y Conciliación por Tenant (HU-S4-03) */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div className="flex items-center gap-2">
+              <BarChart3 className="h-5 w-5 text-sky-600" />
+              <CardTitle>Auditoría de Consumo Real y Conciliación</CardTitle>
+            </div>
+            {auditoriaItems.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => exportarAuditoriaCSV(auditoriaItems)}
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Exportar CSV
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent>
+            {auditoriaQuery.isLoading ? (
+              <div className="flex justify-center p-6">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+              </div>
+            ) : auditoriaItems.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No hay datos de consumo para mostrar.</p>
+            ) : (
+              <div className="overflow-x-auto rounded-lg border">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-slate-100 text-xs font-semibold text-slate-700 uppercase">
+                    <tr>
+                      <th className="px-4 py-3">Fraccionamiento</th>
+                      <th className="px-4 py-3">Viviendas / Límite</th>
+                      <th className="px-4 py-3">Plan / Tarifa</th>
+                      <th className="px-4 py-3">Personal</th>
+                      <th className="px-4 py-3">Pagos Aprobados</th>
+                      <th className="px-4 py-3">Cargos Generados</th>
+                      <th className="px-4 py-3">Cumplimiento</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y text-slate-700">
+                    {auditoriaItems.map((item) => (
+                      <tr key={item.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-3 font-medium text-slate-900">
+                          {item.nombre}
+                          <span className="block text-xs text-muted-foreground">/{item.slug}</span>
+                        </td>
+                        <td className="px-4 py-3 font-semibold">
+                          {item.viviendasActivas} / {item.limiteViviendas}
+                        </td>
+                        <td className="px-4 py-3 capitalize">{item.esquemaTarifa}</td>
+                        <td className="px-4 py-3">{item.personalOperativo}</td>
+                        <td className="px-4 py-3">
+                          {item.volumenPagos.cantidad} (${item.volumenPagos.monto.toLocaleString('es-MX', { minimumFractionDigits: 2 })})
+                        </td>
+                        <td className="px-4 py-3">
+                          {item.volumenCargos.cantidad} (${item.volumenCargos.monto.toLocaleString('es-MX', { minimumFractionDigits: 2 })})
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                            item.estadoCumplimiento === 'Al corriente'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : item.estadoCumplimiento === 'Requiere ajuste de tarifa'
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'bg-red-100 text-red-800'
+                          }`}>
+                            {item.estadoCumplimiento}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
+      {/* Modal de Configuración */}
       {configurando && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div
@@ -303,7 +552,7 @@ export default function FraccionamientosAdminPage() {
           >
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h2 id="metodo-pago-title" className="text-lg font-semibold">Configuración de Pagos</h2>
+                <h2 id="metodo-pago-title" className="text-lg font-semibold">Configuración de Fraccionamiento</h2>
                 <p className="mt-1 text-sm text-muted-foreground">{configurando.nombre}</p>
               </div>
               <Button type="button" size="icon" variant="ghost" aria-label="Cerrar" onClick={() => setConfigurando(null)}>
@@ -314,7 +563,19 @@ export default function FraccionamientosAdminPage() {
             <div className="mt-4 flex border-b border-border">
               <button
                 type="button"
-                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                className={`flex items-center gap-2 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                  metodoModalTab === 'licencia'
+                    ? 'border-primary text-primary font-semibold'
+                    : 'border-transparent text-muted-foreground hover:text-foreground'
+                }`}
+                onClick={() => { setMetodoModalTab('licencia'); setErrorConfiguracion(null); }}
+              >
+                <Sliders className="h-4 w-4" />
+                Capacidad y Plan
+              </button>
+              <button
+                type="button"
+                className={`flex items-center gap-2 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
                   metodoModalTab === 'mercadopago'
                     ? 'border-primary text-primary font-semibold'
                     : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -326,7 +587,7 @@ export default function FraccionamientosAdminPage() {
               </button>
               <button
                 type="button"
-                className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+                className={`flex items-center gap-2 px-3 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
                   metodoModalTab === 'transferencia'
                     ? 'border-primary text-primary font-semibold'
                     : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -334,11 +595,98 @@ export default function FraccionamientosAdminPage() {
                 onClick={() => { setMetodoModalTab('transferencia'); setErrorConfiguracion(null); }}
               >
                 <Landmark className="h-4 w-4" />
-                Transferencia Bancaria
+                Transferencia SPEI
               </button>
             </div>
 
-            {metodoModalTab === 'mercadopago' ? (
+            {metodoModalTab === 'licencia' ? (
+              <form onSubmit={guardarLicenciaYTarifa} className="mt-4 space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  Ajusta el límite máximo de viviendas contratadas y las cuotas de operación de este fraccionamiento.
+                </p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="modal-limite-viviendas">Límite de viviendas contratadas</Label>
+                    <Input
+                      id="modal-limite-viviendas"
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={modalLimiteViviendas}
+                      onChange={(e) => setModalLimiteViviendas(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="modal-esquema-tarifa">Esquema de tarifa</Label>
+                    <Input
+                      id="modal-esquema-tarifa"
+                      value={modalEsquemaTarifa}
+                      onChange={(e) => setModalEsquemaTarifa(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2 sm:col-span-2">
+                    <Label htmlFor="modal-tipo-nomenclatura">Nomenclatura de Unidades</Label>
+                    <select
+                      id="modal-tipo-nomenclatura"
+                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                      value={modalTipoNomenclatura}
+                      onChange={(e) => setModalTipoNomenclatura(e.target.value as 'edificio_depto' | 'solo_casa')}
+                    >
+                      <option value="edificio_depto">Edificio y Departamento</option>
+                      <option value="solo_casa">Solo Número de Casa</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="space-y-2">
+                    <Label htmlFor="modal-monto-mensual">Monto mensual</Label>
+                    <Input
+                      id="modal-monto-mensual"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={modalMontoMensual}
+                      onChange={(e) => setModalMontoMensual(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="modal-monto-reconexion">Reconexión</Label>
+                    <Input
+                      id="modal-monto-reconexion"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={modalMontoReconexion}
+                      onChange={(e) => setModalMontoReconexion(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="modal-dia-corte">Día corte</Label>
+                    <Input
+                      id="modal-dia-corte"
+                      type="number"
+                      min="1"
+                      max="28"
+                      value={modalDiaCorte}
+                      onChange={(e) => setModalDiaCorte(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+                {errorConfiguracion && <p role="alert" className="text-sm text-red-700">{errorConfiguracion}</p>}
+                <div className="mt-6 flex justify-end gap-2">
+                  <Button type="button" variant="outline" onClick={() => setConfigurando(null)}>Cancelar</Button>
+                  <Button type="submit" disabled={actualizarConfiguracionMutation.isPending}>
+                    {actualizarConfiguracionMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                    Guardar Capacidad
+                  </Button>
+                </div>
+              </form>
+            ) : metodoModalTab === 'mercadopago' ? (
               <form onSubmit={guardarMercadoPago} className="mt-4 space-y-4">
                 <p className="text-sm text-muted-foreground">
                   La configuración de Mercado Pago pertenece al fraccionamiento. El token se cifra y no volverá a mostrarse.

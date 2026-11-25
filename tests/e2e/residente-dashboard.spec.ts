@@ -111,12 +111,12 @@ test.describe('Dashboard de residente', () => {
       test.skip(); // already paid this month — skip fee breakdown test
     }
     await toggleBtn.click();
-    await expect(page.getByText(/Cuota mensual/i)).toBeVisible();
+    await expect(page.getByText(/Mantenimiento de bomba|Cuota mensual/i).first()).toBeVisible();
     await expect(page.getByText(/Comisión Mercado Pago/i)).toBeVisible();
     await expect(page.getByText(/Total a pagar/i)).toBeVisible();
     // Collapse
     await toggleBtn.click();
-    await expect(page.getByText(/Cuota mensual/i)).not.toBeVisible();
+    await expect(page.getByText(/Comisión Mercado Pago/i)).not.toBeVisible();
   });
 
   test('botón de pago redirige a Mercado Pago', async ({ page }) => {

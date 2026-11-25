@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 // Assignment lookup is kept inline until the operational repository exposes tenant-scoped methods.
 // eslint-disable-next-line no-restricted-imports
-import { and, eq, isNotNull } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
 
 import { schedulePushDispatch } from '@/lib/push-dispatcher';
 import { ConfirmarCorteHandler } from '@/src/application/cortes/commands/confirmar-corte.handler';
@@ -14,7 +14,16 @@ import { DrizzleCorteOperacionDatabase } from '@/src/infrastructure/db/services/
 // eslint-disable-next-line no-restricted-imports
 import { db } from '@/db';
 // eslint-disable-next-line no-restricted-imports
-import { asignacionesFraccionamiento, fraccionamientoServicios, servicios, user } from '@/db/schema';
+import {
+  asignacionesFraccionamiento,
+  bitacoraCortes,
+  evidenciasOrdenTrabajo,
+  fraccionamientoServicios,
+  ordenesTrabajo,
+  perfilesResidente,
+  servicios,
+  user,
+} from '@/db/schema';
 
 import { router, roleProcedure, operationalRoleProcedure } from '../trpc';
 
@@ -150,5 +159,188 @@ export const cortesRouter = router({
 
       schedulePushDispatch();
       return result;
+    }),
+
+  evidenciasFotograficas: roleProcedure('admin', 'representante', 'cuadrilla_cortes')
+    .input(z.object({
+      perfilId: z.string().uuid().optional(),
+      ordenId: z.string().uuid().optional(),
+      corteId: z.string().uuid().optional(),
+      tipo: z.enum(['corte', 'reconexion']).optional(),
+      limit: z.number().int().min(1).max(100).default(50),
+    }).optional())
+    .query(async ({ ctx, input }) => {
+      const viewerRole = ctx.user.role;
+      const tenantId = ctx.user.fraccionamientoId;
+
+      // 1. Aislamiento multi-tenant estricto
+      if (viewerRole === 'representante') {
+        if (!tenantId) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'No tienes un fraccionamiento asignado' });
+        }
+        if (input?.perfilId) {
+          const [p] = await db.select({ id: perfilesResidente.id, fraccionamientoId: perfilesResidente.fraccionamientoId })
+            .from(perfilesResidente)
+            .where(eq(perfilesResidente.id, input.perfilId))
+            .limit(1);
+          if (!p || p.fraccionamientoId !== tenantId) {
+            throw new TRPCError({ code: 'NOT_FOUND' });
+          }
+        }
+        if (input?.ordenId) {
+          const [o] = await db.select({ id: ordenesTrabajo.id, fraccionamientoId: ordenesTrabajo.fraccionamientoId })
+            .from(ordenesTrabajo)
+            .where(eq(ordenesTrabajo.id, input.ordenId))
+            .limit(1);
+          if (!o || o.fraccionamientoId !== tenantId) {
+            throw new TRPCError({ code: 'NOT_FOUND' });
+          }
+        }
+      } else if (viewerRole === 'cuadrilla_cortes') {
+        const fraccsAsignados = await findFraccionamientosAsignados(ctx.user.id);
+        if (fraccsAsignados.length === 0) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Sin asignaciones operativas' });
+        }
+        if (input?.perfilId) {
+          const [p] = await db.select({ id: perfilesResidente.id, fraccionamientoId: perfilesResidente.fraccionamientoId })
+            .from(perfilesResidente)
+            .where(eq(perfilesResidente.id, input.perfilId))
+            .limit(1);
+          if (!p || !p.fraccionamientoId || !fraccsAsignados.includes(p.fraccionamientoId)) {
+            throw new TRPCError({ code: 'NOT_FOUND' });
+          }
+        }
+        if (input?.ordenId) {
+          const [o] = await db.select({ id: ordenesTrabajo.id, fraccionamientoId: ordenesTrabajo.fraccionamientoId })
+            .from(ordenesTrabajo)
+            .where(eq(ordenesTrabajo.id, input.ordenId))
+            .limit(1);
+          if (!o || !fraccsAsignados.includes(o.fraccionamientoId)) {
+            throw new TRPCError({ code: 'NOT_FOUND' });
+          }
+        }
+      }
+
+      // 2. Consulta de bitacoraCortes con foto
+      const bitacoraConditions = [isNotNull(bitacoraCortes.fotoUrl)];
+      if (viewerRole === 'representante') {
+        bitacoraConditions.push(eq(perfilesResidente.fraccionamientoId, tenantId!));
+      } else if (viewerRole === 'cuadrilla_cortes') {
+        const fraccsAsignados = await findFraccionamientosAsignados(ctx.user.id);
+        bitacoraConditions.push(inArray(perfilesResidente.fraccionamientoId, fraccsAsignados));
+      }
+      if (input?.perfilId) {
+        bitacoraConditions.push(eq(bitacoraCortes.perfilId, input.perfilId));
+      }
+      if (input?.corteId) {
+        bitacoraConditions.push(eq(bitacoraCortes.corteId, input.corteId));
+      }
+
+      const bitacoraRows = await db.select({
+        id: bitacoraCortes.id,
+        corteId: bitacoraCortes.corteId,
+        perfilId: bitacoraCortes.perfilId,
+        actorId: bitacoraCortes.actorId,
+        accion: bitacoraCortes.accion,
+        nota: bitacoraCortes.nota,
+        fotoUrl: bitacoraCortes.fotoUrl,
+        creadoEn: bitacoraCortes.creadoEn,
+        trabajadorNombre: user.name,
+        edificio: perfilesResidente.edificio,
+        departamento: perfilesResidente.departamento,
+        fraccionamientoId: perfilesResidente.fraccionamientoId,
+      })
+        .from(bitacoraCortes)
+        .innerJoin(perfilesResidente, eq(perfilesResidente.id, bitacoraCortes.perfilId))
+        .leftJoin(user, eq(user.id, bitacoraCortes.actorId))
+        .where(and(...bitacoraConditions))
+        .orderBy(desc(bitacoraCortes.creadoEn))
+        .limit(input?.limit ?? 50);
+
+      // 3. Consulta de evidenciasOrdenTrabajo
+      const ordenConditions = [];
+      if (viewerRole === 'representante') {
+        ordenConditions.push(eq(evidenciasOrdenTrabajo.fraccionamientoId, tenantId!));
+      } else if (viewerRole === 'cuadrilla_cortes') {
+        const fraccsAsignados = await findFraccionamientosAsignados(ctx.user.id);
+        ordenConditions.push(inArray(evidenciasOrdenTrabajo.fraccionamientoId, fraccsAsignados));
+      }
+      if (input?.ordenId) {
+        ordenConditions.push(eq(evidenciasOrdenTrabajo.ordenTrabajoId, input.ordenId));
+      }
+      if (input?.perfilId) {
+        ordenConditions.push(eq(ordenesTrabajo.perfilId, input.perfilId));
+      }
+
+      const ordenRows = await db.select({
+        id: evidenciasOrdenTrabajo.id,
+        ordenTrabajoId: evidenciasOrdenTrabajo.ordenTrabajoId,
+        fraccionamientoId: evidenciasOrdenTrabajo.fraccionamientoId,
+        subidoPor: evidenciasOrdenTrabajo.subidoPor,
+        referenciaArchivo: evidenciasOrdenTrabajo.referenciaArchivo,
+        creadoEn: evidenciasOrdenTrabajo.creadoEn,
+        ordenTipo: ordenesTrabajo.tipo,
+        perfilId: ordenesTrabajo.perfilId,
+        trabajadorNombre: user.name,
+        edificio: perfilesResidente.edificio,
+        departamento: perfilesResidente.departamento,
+      })
+        .from(evidenciasOrdenTrabajo)
+        .innerJoin(ordenesTrabajo, eq(ordenesTrabajo.id, evidenciasOrdenTrabajo.ordenTrabajoId))
+        .innerJoin(perfilesResidente, eq(perfilesResidente.id, ordenesTrabajo.perfilId))
+        .leftJoin(user, eq(user.id, evidenciasOrdenTrabajo.subidoPor))
+        .where(ordenConditions.length > 0 ? and(...ordenConditions) : undefined)
+        .orderBy(desc(evidenciasOrdenTrabajo.creadoEn))
+        .limit(input?.limit ?? 50);
+
+      // 4. Combinar y normalizar resultados
+      const items = [
+        ...bitacoraRows.map((b) => {
+          const tipoOrden: 'corte' | 'reconexion' = b.accion.includes('reconexion') ? 'reconexion' : 'corte';
+          const ref = b.fotoUrl!;
+          return {
+            id: b.id,
+            tipo: tipoOrden,
+            url: `/api/upload?ref=${encodeURIComponent(ref)}`,
+            referencia: ref,
+            fechaCaptura: b.creadoEn,
+            trabajador: {
+              id: b.actorId,
+              nombre: b.trabajadorNombre ?? 'Cuadrilla operativa',
+            },
+            vivienda: {
+              perfilId: b.perfilId,
+              edificio: b.edificio,
+              departamento: b.departamento,
+            },
+            accion: b.accion,
+            nota: b.nota,
+            fraccionamientoId: b.fraccionamientoId,
+          };
+        }),
+        ...ordenRows.map((o) => ({
+          id: o.id,
+          tipo: o.ordenTipo as 'corte' | 'reconexion',
+          url: `/api/upload?ref=${encodeURIComponent(o.referenciaArchivo)}`,
+          referencia: o.referenciaArchivo,
+          fechaCaptura: o.creadoEn,
+          trabajador: {
+            id: o.subidoPor,
+            nombre: o.trabajadorNombre ?? 'Cuadrilla operativa',
+          },
+          vivienda: {
+            perfilId: o.perfilId,
+            edificio: o.edificio,
+            departamento: o.departamento,
+          },
+          accion: `orden_${o.ordenTipo}`,
+          nota: null,
+          fraccionamientoId: o.fraccionamientoId,
+        })),
+      ];
+
+      const filtrados = input?.tipo ? items.filter((it) => it.tipo === input.tipo) : items;
+      filtrados.sort((a, b) => new Date(b.fechaCaptura).getTime() - new Date(a.fechaCaptura).getTime());
+      return filtrados.slice(0, input?.limit ?? 50);
     }),
 });

@@ -8,8 +8,10 @@ import { trpcReact } from '@/lib/trpc-react';
 import { PagosTesorera } from '@/components/tesorera/PagosTesorera';
 import { ReporteResidentes } from '@/components/representante/ReporteResidentes';
 import { ReporteFinanciero } from '@/components/representante/ReporteFinanciero';
+import { NotasOperativasPanel } from '@/components/shared/NotasOperativasPanel';
+import { MultiRoleSwitcher } from '@/components/shared/MultiRoleSwitcher';
 
-type TabId = 'pagos' | 'residentes' | 'financiero';
+type TabId = 'pagos' | 'residentes' | 'financiero' | 'notas';
 
 const C = {
   bgHeader:   '#15493A',
@@ -25,6 +27,7 @@ const TABS: { id: TabId; label: string }[] = [
   { id: 'pagos',      label: 'Registrar Pagos' },
   { id: 'residentes', label: 'Residentes'       },
   { id: 'financiero', label: 'Financiero'        },
+  { id: 'notas',      label: 'Notas Operativas'  },
 ];
 
 export default function TesoreraReportesPage() {
@@ -79,7 +82,9 @@ export default function TesoreraReportesPage() {
             </div>
           </div>
 
-          <div ref={menuRef} style={{ position: 'relative' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <MultiRoleSwitcher theme="dark" />
+            <div ref={menuRef} style={{ position: 'relative' }}>
             <button
               onClick={() => setMenuOpen(v => !v)}
               aria-expanded={menuOpen}
@@ -125,6 +130,7 @@ export default function TesoreraReportesPage() {
             )}
           </div>
         </div>
+        </div>
 
         {/* Tab bar */}
         <div style={{ maxWidth: 1240, margin: '0 auto', padding: '0 20px', display: 'flex', gap: 0, overflowX: 'auto' }}>
@@ -153,6 +159,7 @@ export default function TesoreraReportesPage() {
         {tab === 'pagos'      && <PagosTesorera />}
         {tab === 'residentes' && <ReporteResidentes />}
         {tab === 'financiero' && <ReporteFinanciero />}
+        {tab === 'notas'      && <NotasOperativasPanel fraccionamientoId={fraccionamientoQuery.data?.id} />}
       </div>
     </div>
   );

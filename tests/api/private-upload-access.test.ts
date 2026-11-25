@@ -1,10 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({
-  getSession: vi.fn(),
-  canRead: vi.fn(),
-  blobGet: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+  process.env.VERCEL = '1';
+  return {
+    getSession: vi.fn(),
+    canRead: vi.fn(),
+    blobGet: vi.fn(),
+  };
+});
 
 vi.mock('next/headers', () => ({ headers: vi.fn(async () => new Headers()) }));
 vi.mock('@/lib/auth', () => ({ auth: { api: { getSession: mocks.getSession } } }));
@@ -49,5 +52,61 @@ describe('aislamiento de archivos privados', () => {
     expect(response.status).toBe(401);
     expect(mocks.canRead).not.toHaveBeenCalled();
     expect(mocks.blobGet).not.toHaveBeenCalled();
+  });
+
+  it('representante de fraccionamiento A recibe 404 al intentar acceder a evidencia de fraccionamiento B', async () => {
+    mocks.getSession.mockResolvedValueOnce({ user: { id: 'rep-fracc-a', role: 'representante' } });
+    mocks.canRead.mockResolvedValueOnce(false);
+
+    const refEvidenciaB = 'uploads/cuadrilla-b/22222222-2222-4222-8222-222222222222.jpg';
+    const response = await getUpload(new Request(`https://sisco.example/api/upload?ref=${encodeURIComponent(refEvidenciaB)}`));
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: 'Archivo no encontrado' });
+    expect(mocks.canRead).toHaveBeenCalledWith('rep-fracc-a', refEvidenciaB);
+    expect(mocks.blobGet).not.toHaveBeenCalled();
+  });
+
+  it('representante de fraccionamiento A recibe 200 al acceder a evidencia de su propio fraccionamiento', async () => {
+    process.env.VERCEL = '1';
+    mocks.getSession.mockResolvedValueOnce({ user: { id: 'rep-fracc-a', role: 'representante' } });
+    mocks.canRead.mockResolvedValueOnce(true);
+    mocks.blobGet.mockResolvedValueOnce({
+      statusCode: 200,
+      stream: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array([0xFF, 0xD8, 0xFF, 0xE0]));
+          controller.close();
+        },
+      }),
+    });
+
+    const refEvidenciaA = 'uploads/cuadrilla-a/33333333-3333-4333-8333-333333333333.jpg';
+    const response = await getUpload(new Request(`https://sisco.example/api/upload?ref=${encodeURIComponent(refEvidenciaA)}`));
+
+    expect(response.status).toBe(200);
+    expect(mocks.canRead).toHaveBeenCalledWith('rep-fracc-a', refEvidenciaA);
+    expect(mocks.blobGet).toHaveBeenCalled();
+  });
+
+  it('admin recibe 200 al acceder a evidencia de cualquier fraccionamiento', async () => {
+    mocks.getSession.mockResolvedValueOnce({ user: { id: 'admin-global', role: 'admin' } });
+    mocks.canRead.mockResolvedValueOnce(true);
+    mocks.blobGet.mockResolvedValueOnce({
+      statusCode: 200,
+      stream: new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array([0xFF, 0xD8, 0xFF, 0xE0]));
+          controller.close();
+        },
+      }),
+    });
+
+    const refCualquiera = 'uploads/cuadrilla-x/44444444-4444-4444-8444-444444444444.jpg';
+    const response = await getUpload(new Request(`https://sisco.example/api/upload?ref=${encodeURIComponent(refCualquiera)}`));
+
+    expect(response.status).toBe(200);
+    expect(mocks.canRead).toHaveBeenCalledWith('admin-global', refCualquiera);
+    expect(mocks.blobGet).toHaveBeenCalled();
   });
 });

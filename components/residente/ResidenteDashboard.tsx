@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, startTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { authClient } from '@/lib/auth-client';
@@ -266,9 +266,9 @@ function ServiceCard({
             style={{ width: 18, height: 18, accentColor: C.greenDark, cursor: deshabilitado ? 'not-allowed' : 'pointer', flexShrink: 0 }}
           />
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontFamily: FB, fontSize: 16, fontWeight: 700, color: C.textMain, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <h3 style={{ fontFamily: FB, fontSize: 16, margin: 0, fontWeight: 700, color: C.textMain, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {nombre}
-            </div>
+            </h3>
             <div style={{ fontSize: 12, color: C.textWarm, fontWeight: 600, marginTop: 1 }}>
               ${montoMensual.toFixed(2)} MXN / mes
             </div>
@@ -496,9 +496,11 @@ export function ResidenteDashboard() {
     if (!requestedCargo) return;
 
     cargoDeepLinkApplied.current = requestedCargoId;
-    setIncluirAgua(false);
-    setServiciosSeleccionados(Object.fromEntries(servicios.map(service => [service.id, false])));
-    setDonativosSeleccionados(Object.fromEntries(cargosDonativoDisponibles.map(cargo => [cargo.id, cargo.id === requestedCargoId])));
+    startTransition(() => {
+      setIncluirAgua(false);
+      setServiciosSeleccionados(Object.fromEntries(servicios.map(service => [service.id, false])));
+      setDonativosSeleccionados(Object.fromEntries(cargosDonativoDisponibles.map(cargo => [cargo.id, cargo.id === requestedCargoId])));
+    });
   }, [requestedCargoId, servicios, cargosDonativoDisponibles]);
 
   function estaDonativoSeleccionado(cargoId: string) {
@@ -577,6 +579,7 @@ export function ResidenteDashboard() {
   }
 
   const { perfil, esMoroso, diasVencido, desgloseVigente, corteActivo } = historial;
+  const esInquilino = perfil.tenencia === 'inquilino' || (perfil as { tipoOcupante?: string | null }).tipoOcupante === 'inquilino';
 
   const yaPagoEsteMes   = pagos.some(p => p.mes === mesActual && p.anio === anioActual && p.estado === 'pagado');
   const montoMensualAgua = Number(perfil.fraccionamiento?.montoMensual ?? 50);
@@ -657,7 +660,7 @@ export function ResidenteDashboard() {
 
   const breakdown = desgloseCheckout ? [
     ...(incluirAgua ? [{
-      label: mesesAgua === 1 ? 'Cuota mensual de agua' : `Agua (${mesesAgua} meses)`,
+      label: mesesAgua === 1 ? 'Mantenimiento de bomba' : `Mantenimiento de bomba (${mesesAgua} meses)`,
       value: `$${montoBaseAgua.toFixed(2)}`,
     }] : []),
     ...serviciosActivos
@@ -729,12 +732,12 @@ export function ResidenteDashboard() {
       periodosCargoExistentes.has(`${c.fraccionamientoServicioId}:${c.anio}-${c.mes}`));
     const periodosTransferencia = incluirAgua ? periodosDisponiblesAgua.slice(0, mesesAgua) : [];
     if (incluirAgua && periodosTransferencia.length !== mesesAgua) {
-      setErrorTransferencia('No hay periodos de agua disponibles para todos los meses seleccionados. Actualiza el estado de cuenta e intenta de nuevo.');
+      setErrorTransferencia('No hay periodos de mantenimiento de bomba disponibles para todos los meses seleccionados. Actualiza el estado de cuenta e intenta de nuevo.');
       return;
     }
     const cargosDonativoParaTransferencia = cargosDonativoDisponibles.filter(c => estaDonativoSeleccionado(c.id));
     if (periodosTransferencia.length === 0 && periodosPorServicio.length === 0 && cargosDonativoParaTransferencia.length === 0) {
-      setErrorTransferencia('Selecciona al menos un periodo de agua o un servicio con cargos pendientes antes de enviar el comprobante.');
+      setErrorTransferencia('Selecciona al menos un periodo de mantenimiento de bomba o un servicio con cargos pendientes antes de enviar el comprobante.');
       return;
     }
     setSubiendoComprobante(true);
@@ -781,7 +784,7 @@ export function ResidenteDashboard() {
 
       const conceptosList: string[] = [];
       if (incluirAgua) {
-        conceptosList.push(`Agua ${mesesAgua} mes${mesesAgua > 1 ? 'es' : ''} ($${(montoMensualAgua * mesesAgua).toFixed(2)})`);
+        conceptosList.push(`Mantenimiento de bomba ${mesesAgua} mes${mesesAgua > 1 ? 'es' : ''} ($${(montoMensualAgua * mesesAgua).toFixed(2)})`);
       }
       if (esReconexion) {
         conceptosList.push(`Reconexión ($${montoReconexion.toFixed(2)})`);
@@ -1125,9 +1128,9 @@ export function ResidenteDashboard() {
               </div>
             </div>
 
-            {/* Agua Card */}
+            {/* Agua / Mantenimiento de bomba Card */}
             <ServiceCard
-              nombre="Agua potable"
+              nombre="Mantenimiento de bomba"
               montoMensual={montoMensualAgua}
               estadoBadge={badgeAguaText}
               badgeBg={badgeAguaBg}
@@ -1248,7 +1251,7 @@ export function ResidenteDashboard() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 13, color: C.textMain }}>
                 {incluirAgua && (
                   <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span>Agua ({mesesAgua} {mesesAgua === 1 ? 'mes' : 'meses'})</span>
+                    <span>Mantenimiento de bomba ({mesesAgua} {mesesAgua === 1 ? 'mes' : 'meses'})</span>
                     <span style={{ fontWeight: 700 }}>${montoBaseAgua.toFixed(2)}</span>
                   </div>
                 )}
@@ -1313,61 +1316,97 @@ export function ResidenteDashboard() {
                 </>
               )}
 
-              {/* MP button */}
-              <button
-                type="button"
-                onClick={handleCheckout}
-                disabled={pagando || !puedePagarConTarjeta}
-                aria-busy={pagando}
-                style={{
-                  width: '100%', marginTop: 16,
-                  background: pagando ? '#D4A017' : C.gold,
-                  color: '#5A3D06', border: 'none', borderRadius: 18,
-                  padding: 17, cursor: pagando || !puedePagarConTarjeta ? 'not-allowed' : 'pointer',
-                  fontFamily: FB, fontSize: 15, fontWeight: 700,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-                  boxShadow: '0 10px 22px rgba(244,178,35,.34)',
-                  opacity: pagando || !puedePagarConTarjeta ? 0.8 : 1,
-                  transition: 'opacity .15s',
-                }}
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5A3D06" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19"/>
-                </svg>
-                {pagando ? 'Redirigiendo a Mercado Pago...' : `Pagar $${totalCheckout.toFixed(2)} con Mercado Pago`}
-              </button>
-
-              {(perfil.fraccionamiento?.clabe || perfil.fraccionamiento?.numeroCuenta) && (
-                <button
-                  type="button"
-                  onClick={() => { setModalTransferencia(true); setErrorTransferencia(null); setMensajeTransferencia(null); }}
+              {esInquilino ? (
+                <div
+                  role="note"
                   style={{
-                    width: '100%', marginTop: 10,
-                    background: '#E8F5E9',
-                    color: '#2E7D32',
-                    border: '1.5px solid #A5D6A7',
+                    marginTop: 16,
+                    background: '#EFF6FF',
+                    border: '1.5px solid #BFDBFE',
                     borderRadius: 18,
-                    padding: 14,
-                    cursor: 'pointer',
-                    fontFamily: FB, fontSize: 14.5, fontWeight: 700,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
-                    transition: 'all .15s',
+                    padding: '16px 20px',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 12,
+                    color: '#1E40AF',
                   }}
                 >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2E7D32" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="13" rx="2"/><path d="M16 8V6a4 4 0 00-8 0v2"/><path d="M12 13v4"/></svg>
-                  Pagar ${totalBaseCheckout.toFixed(2)} por transferencia
-                </button>
-              )}
-
-              {error && (
-                <div role="alert" aria-live="assertive" style={{ marginTop: 10, background: C.pendingBg, borderRadius: 12, padding: '10px 14px', fontSize: 13, color: C.pendingText, fontWeight: 600 }}>
-                  {error}
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2563EB" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}>
+                    <circle cx="12" cy="12" r="10" />
+                    <line x1="12" y1="16" x2="12" y2="12" />
+                    <line x1="12" y1="8" x2="12.01" y2="8" />
+                  </svg>
+                  <div>
+                    <div style={{ fontWeight: 800, fontSize: 14 }}>Modo solo lectura para inquilinos</div>
+                    <div style={{ fontSize: 12.5, marginTop: 4, lineHeight: 1.45, color: '#1E3A8A' }}>
+                      Como inquilino de esta vivienda, tus pagos y cuotas son gestionados por el propietario. Puedes consultar los estados de cuenta, adeudos y comprobantes históricos en la sección inferior.
+                    </div>
+                    {perfil.nombrePropietario && (
+                      <div style={{ marginTop: 8, fontSize: 12, fontWeight: 700, color: '#1D4ED8' }}>
+                        Propietario: {perfil.nombrePropietario} {perfil.telefonoPropietario ? `(${perfil.telefonoPropietario})` : ''}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              )}
+              ) : (
+                <>
+                  {/* MP button */}
+                  <button
+                    type="button"
+                    onClick={handleCheckout}
+                    disabled={pagando || !puedePagarConTarjeta}
+                    aria-busy={pagando}
+                    style={{
+                      width: '100%', marginTop: 16,
+                      background: pagando ? '#D4A017' : C.gold,
+                      color: '#5A3D06', border: 'none', borderRadius: 18,
+                      padding: 17, cursor: pagando || !puedePagarConTarjeta ? 'not-allowed' : 'pointer',
+                      fontFamily: FB, fontSize: 15, fontWeight: 700,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                      boxShadow: '0 10px 22px rgba(244,178,35,.34)',
+                      opacity: pagando || !puedePagarConTarjeta ? 0.8 : 1,
+                      transition: 'opacity .15s',
+                    }}
+                  >
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#5A3D06" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19"/>
+                    </svg>
+                    {pagando ? 'Redirigiendo a Mercado Pago...' : `Pagar $${totalCheckout.toFixed(2)} con Mercado Pago`}
+                  </button>
 
-              <div style={{ textAlign: 'center', fontSize: 11.5, color: C.textWarm3, marginTop: 9 }}>
-                Pago seguro procesado por Mercado Pago
-              </div>
+                  {(perfil.fraccionamiento?.clabe || perfil.fraccionamiento?.numeroCuenta) && (
+                    <button
+                      type="button"
+                      onClick={() => { setModalTransferencia(true); setErrorTransferencia(null); setMensajeTransferencia(null); }}
+                      style={{
+                        width: '100%', marginTop: 10,
+                        background: '#E8F5E9',
+                        color: '#2E7D32',
+                        border: '1.5px solid #A5D6A7',
+                        borderRadius: 18,
+                        padding: 14,
+                        cursor: 'pointer',
+                        fontFamily: FB, fontSize: 14.5, fontWeight: 700,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                        transition: 'all .15s',
+                      }}
+                    >
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2E7D32" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="13" rx="2"/><path d="M16 8V6a4 4 0 00-8 0v2"/><path d="M12 13v4"/></svg>
+                      Pagar ${totalBaseCheckout.toFixed(2)} por transferencia
+                    </button>
+                  )}
+
+                  {error && (
+                    <div role="alert" aria-live="assertive" style={{ marginTop: 10, background: C.pendingBg, borderRadius: 12, padding: '10px 14px', fontSize: 13, color: C.pendingText, fontWeight: 600 }}>
+                      {error}
+                    </div>
+                  )}
+
+                  <div style={{ textAlign: 'center', fontSize: 11.5, color: C.textWarm3, marginTop: 9 }}>
+                    Pago seguro procesado por Mercado Pago
+                  </div>
+                </>
+              )}
             </div>
           )}
 
@@ -1456,7 +1495,7 @@ export function ResidenteDashboard() {
       </div>
 
       {/* ── Modal: datos bancarios + subir comprobante ── */}
-      {modalTransferencia && perfil.fraccionamiento && (
+      {modalTransferencia && !esInquilino && perfil.fraccionamiento && (
         <div
           style={{ position: 'fixed', inset: 0, zIndex: 50, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
           onClick={(e) => { if (e.target === e.currentTarget) setModalTransferencia(false); }}
@@ -1516,7 +1555,7 @@ export function ResidenteDashboard() {
               <div style={{ fontFamily: FB, fontWeight: 700, fontSize: 13.5, color: C.green, marginBottom: 8 }}>Monto a transferir</div>
               {incluirAgua && (
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                  <span style={{ color: '#666' }}>Agua ({mesesAgua} mes{mesesAgua > 1 ? 'es' : ''})</span>
+                  <span style={{ color: '#666' }}>Mantenimiento de bomba ({mesesAgua} mes{mesesAgua > 1 ? 'es' : ''})</span>
                   <span style={{ fontWeight: 700 }}>${(montoMensualAgua * mesesAgua).toFixed(2)}</span>
                 </div>
               )}
@@ -1594,7 +1633,7 @@ export function ResidenteDashboard() {
 
             {totalBaseCheckout <= 0 && (
               <div role="alert" style={{ background: '#FFF9C4', borderRadius: 12, padding: '10px 14px', fontSize: 13, color: '#6D4C00', fontWeight: 600, marginBottom: 12 }}>
-                Selecciona al menos un periodo de agua o servicio en el panel antes de enviar tu comprobante.
+                Selecciona al menos un periodo de mantenimiento de bomba o servicio en el panel antes de enviar tu comprobante.
               </div>
             )}
 

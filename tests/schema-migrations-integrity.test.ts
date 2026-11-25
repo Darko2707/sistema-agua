@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { user, session, pagos, cargosServicios, ordenesTrabajo, perfilesResidente, mercadoPagoPaymentIntents } from '@/db/schema';
+import { user, session, pagos, cargosServicios, ordenesTrabajo, perfilesResidente, mercadoPagoPaymentIntents, fraccionamientos, servicios, asignacionesFraccionamiento, notasOperativas, categoriaGastoEnum } from '@/db/schema';
 import { getTableColumns } from 'drizzle-orm';
 import { z } from 'zod';
 
@@ -80,6 +82,74 @@ describe('SCRUM-43: Integridad de Esquema, Restricciones y Migraciones', () => {
     expect(intentCols.tipo).toBeDefined();
     expect(intentCols.cargoServicioId).toBeDefined();
     expect(intentCols.periodos).toBeDefined();
+  });
+
+  // ─── 7. HU-S4-02: Licenciamiento por capacidad y esquema de tarifa ─────────
+  it('7. La tabla fraccionamientos contiene limite_viviendas y esquema_tarifa no nulos con defaults seguros', () => {
+    const fraccCols = getTableColumns(fraccionamientos);
+
+    expect(fraccCols.limiteViviendas).toBeDefined();
+    expect(fraccCols.limiteViviendas.notNull).toBe(true);
+    expect(fraccCols.limiteViviendas.default).toBe(50);
+
+    expect(fraccCols.esquemaTarifa).toBeDefined();
+    expect(fraccCols.esquemaTarifa.notNull).toBe(true);
+    expect(fraccCols.esquemaTarifa.default).toBe('sencillo');
+  });
+
+  // ─── 8. HU-S4-05: Renombramiento de concepto Agua a Mantenimiento de bomba ─
+  it('8. La migración 0061 actualiza el nombre visible de agua a Mantenimiento de bomba sin alterar claves', () => {
+    const sql0061 = readFileSync(resolve(process.cwd(), 'db/migrations/0061_licenciamiento_y_mantenimiento_bomba.sql'), 'utf8');
+
+    expect(sql0061).toContain("UPDATE \"servicios\"");
+    expect(sql0061).toContain("\"nombre\" = 'Mantenimiento de bomba'");
+    expect(sql0061).toContain("\"clave\" = 'agua'");
+    expect(sql0061).not.toContain("DROP");
+  });
+
+  // ─── 9. HU-S4-07 a HU-S4-12 (Etapa A): Esquema y Migración SQL 0062 ─────────
+  it('9. La migración 0062 y el esquema soportan nomenclatura, periodicidad, inquilinos, multi-rol, notas operativas e insumos', () => {
+    const fraccCols = getTableColumns(fraccionamientos);
+    expect(fraccCols.tipoNomenclatura).toBeDefined();
+    expect(fraccCols.tipoNomenclatura.default).toBe('edificio_depto');
+
+    const servCols = getTableColumns(servicios);
+    expect(servCols.fraccionamientoId).toBeDefined();
+    expect(servCols.frecuenciaTipo).toBeDefined();
+    expect(servCols.frecuenciaTipo.default).toBe('mensual');
+    expect(servCols.intervaloPeriodicidad).toBeDefined();
+    expect(servCols.intervaloPeriodicidad.default).toBe(1);
+    expect(servCols.diaCobro).toBeDefined();
+    expect(servCols.diaCobro.default).toBe(1);
+
+    const perfCols = getTableColumns(perfilesResidente);
+    expect(perfCols.tipoOcupante).toBeDefined();
+    expect(perfCols.tipoOcupante.default).toBe('propietario');
+    expect(perfCols.duenoPerfilId).toBeDefined();
+
+    const userCols = getTableColumns(user);
+    expect(userCols.roles).toBeDefined();
+
+    const asigCols = getTableColumns(asignacionesFraccionamiento);
+    expect(asigCols.roles).toBeDefined();
+
+    const notasCols = getTableColumns(notasOperativas);
+    expect(notasCols.id).toBeDefined();
+    expect(notasCols.fraccionamientoId).toBeDefined();
+    expect(notasCols.autorId).toBeDefined();
+    expect(notasCols.rolAutor).toBeDefined();
+    expect(notasCols.contenido).toBeDefined();
+    expect(notasCols.createdAt).toBeDefined();
+
+    expect(categoriaGastoEnum.enumValues).toContain('insumos');
+
+    const sql0062 = readFileSync(resolve(process.cwd(), 'db/migrations/0062_sprint4_extension.sql'), 'utf8');
+    expect(sql0062).toContain('tipo_nomenclatura');
+    expect(sql0062).toContain('frecuencia_tipo');
+    expect(sql0062).toContain('tipo_ocupante');
+    expect(sql0062).toContain('dueno_perfil_id');
+    expect(sql0062).toContain('notas_operativas');
+    expect(sql0062).toContain('insumos');
   });
 });
 

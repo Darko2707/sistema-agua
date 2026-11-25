@@ -20,6 +20,8 @@ import { ResidentesTab } from './ResidentesTab';
 import { PendientesTab } from './PendientesTab';
 import { MetricasTab }   from './MetricasTab';
 import { OperacionTab }  from './OperacionTab';
+import { NotasOperativasPanel } from '@/components/shared/NotasOperativasPanel';
+import { MultiRoleSwitcher } from '@/components/shared/MultiRoleSwitcher';
 
 const ahora = new Date();
 
@@ -71,10 +73,13 @@ export function AdminDashboard() {
                 {MESES[ahora.getMonth()]} {ahora.getFullYear()} · {session?.user?.name}
               </p>
             </div>
-            <Button variant="secondary" onClick={salir}>
-              <LogOut className="mr-2 h-4 w-4" />
-              Salir
-            </Button>
+            <div className="flex items-center gap-3">
+              <MultiRoleSwitcher theme="dark" />
+              <Button variant="secondary" onClick={salir}>
+                <LogOut className="mr-2 h-4 w-4" />
+                Salir
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -158,6 +163,12 @@ export function AdminDashboard() {
           >
             Operacion
           </Button>
+          <Button
+            variant={tab === 'notas' ? 'default' : 'outline'}
+            onClick={() => setTab('notas')}
+          >
+            Notas operativas
+          </Button>
         </div>
 
         {/* Paneles */}
@@ -201,6 +212,7 @@ export function AdminDashboard() {
           />
         )}
         {tab === 'operacion' && <OperacionTab />}
+        {tab === 'notas' && <NotasOperativasPanel />}
       </div>
     </div>
   );

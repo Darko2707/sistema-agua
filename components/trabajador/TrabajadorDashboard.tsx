@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import { useSession } from '@/hooks/useAuth';
 import { useActualizarEstadoAgua } from '@/hooks/useResidente';
 import { trpcReact } from '@/lib/trpc-react';
+import { MultiRoleSwitcher } from '@/components/shared/MultiRoleSwitcher';
+import { NotasOperativasPanel } from '@/components/shared/NotasOperativasPanel';
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const C = {
@@ -131,6 +133,7 @@ export function TrabajadorDashboard() {
   const [procesando, setProcesando] = useState<string | null>(null);
   const [error, setError]         = useState<string | null>(null);
   const [menuOpen, setMenuOpen]   = useState(false);
+  const [mostrarNotas, setMostrarNotas] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // ── Modal evidencia corte ──
@@ -284,7 +287,9 @@ export function TrabajadorDashboard() {
               <div style={{ fontFamily: FS, fontSize: 16, fontWeight: 700, color: '#fff', letterSpacing: '.02em' }}>Cuadrilla SISCO</div>
             </div>
 
-            <div ref={menuRef} style={{ position: 'relative' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <MultiRoleSwitcher theme="dark" />
+              <div ref={menuRef} style={{ position: 'relative' }}>
               <button
                 onClick={() => setMenuOpen(v => !v)}
                 aria-expanded={menuOpen}
@@ -328,6 +333,7 @@ export function TrabajadorDashboard() {
               )}
             </div>
           </div>
+          </div>
 
           {/* Shift label + stat cards */}
           <div style={{ marginTop: 18, fontSize: 12, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: '#B9D6C4' }}>
@@ -351,10 +357,17 @@ export function TrabajadorDashboard() {
 
           {/* Filter tabs */}
           <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 2 }}>
-            <FilterBtn active={filter === 'todos'}     onClick={() => setFilter('todos')}     label={`Todos (${total})`} />
-            <FilterBtn active={filter === 'corte'}     onClick={() => setFilter('corte')}     label={`Corte (${pendientesCorte.length})`} />
-            <FilterBtn active={filter === 'reconexion'} onClick={() => setFilter('reconexion')} label={`Reconexión (${pendientesReconexion.length})`} />
+            <FilterBtn active={!mostrarNotas && filter === 'todos'}     onClick={() => { setMostrarNotas(false); setFilter('todos'); }}     label={`Todos (${total})`} />
+            <FilterBtn active={!mostrarNotas && filter === 'corte'}     onClick={() => { setMostrarNotas(false); setFilter('corte'); }}     label={`Corte (${pendientesCorte.length})`} />
+            <FilterBtn active={!mostrarNotas && filter === 'reconexion'} onClick={() => { setMostrarNotas(false); setFilter('reconexion'); }} label={`Reconexión (${pendientesReconexion.length})`} />
+            <FilterBtn active={mostrarNotas} onClick={() => setMostrarNotas(v => !v)} label="Notas operativas" />
           </div>
+
+          {mostrarNotas && (
+            <div style={{ marginTop: 10 }}>
+              <NotasOperativasPanel />
+            </div>
+          )}
 
           {/* Job list */}
           {visibleJobs.length === 0 ? (

@@ -468,7 +468,7 @@ describe('Comprobantes de transferencia para Tesorería', () => {
     }).misTickets();
     const transferReceipt = residentTickets.find(ticket => 'transferencia' in ticket && ticket.transferencia.id === receipt.id);
     expect(transferReceipt && 'transferencia' in transferReceipt ? transferReceipt.transferencia.conceptos : null).toEqual([
-      expect.objectContaining({ descripcion: 'Agua', mes, anio }),
+      expect.objectContaining({ descripcion: 'Mantenimiento de bomba', mes, anio }),
     ]);
     expect(transferReceipt && 'transferencia' in transferReceipt ? transferReceipt.transferencia.monto : null).toBe(savedPayment?.monto);
     expect(auditRow).toBeDefined();

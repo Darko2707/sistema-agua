@@ -1,4 +1,14 @@
 import { defineConfig, devices } from '@playwright/test';
+import dotenv from 'dotenv';
+import path from 'path';
+
+dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
+dotenv.config({ path: path.resolve(process.cwd(), '.env.test') });
+
+// If E2E_DATABASE_URL is not set directly, fallback to TEST_DATABASE_URL from .env.test
+if (!process.env.E2E_DATABASE_URL && process.env.TEST_DATABASE_URL) {
+  process.env.E2E_DATABASE_URL = process.env.TEST_DATABASE_URL;
+}
 
 const e2eBaseURL = process.env.PLAYWRIGHT_BASE_URL
   ?? (process.env.CI ? 'http://localhost:3000' : 'http://localhost:3100');
@@ -26,10 +36,11 @@ export default defineConfig({
   webServer: process.env.CI
     ? undefined
     : {
-        command: 'npm run dev -- --port 3100',
+        command: 'npm run start -- -p 3100',
         url:     e2eBaseURL,
         env: {
           ...process.env,
+          NODE_ENV: 'production',
           E2E_PLAYWRIGHT: '1',
           BETTER_AUTH_URL: e2eBaseURL,
           NEXT_PUBLIC_APP_URL: e2eBaseURL,
@@ -38,7 +49,7 @@ export default defineConfig({
           SENTRY_DEBUG: 'false',
           ...(process.env.E2E_DATABASE_URL ? { DATABASE_URL: process.env.E2E_DATABASE_URL } : {}),
         },
-        reuseExistingServer: false,
+        reuseExistingServer: true,
         timeout: 120_000,
       },
 });

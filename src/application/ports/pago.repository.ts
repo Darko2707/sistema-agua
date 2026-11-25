@@ -130,6 +130,144 @@ export type MetricasAdmin = {
   }>;
 };
 
+// ── Types for new query methods ───────────────────────────────────────────
+
+export type ComprobanteEnriquecido = {
+  id: string;
+  pagoId: string | null;
+  monto: string;
+  concepto: string;
+  comprobanteUrl: string;
+  estado: string;
+};
+
+export type FraccionamientoParaCobro = {
+  montoMensual: string;
+  montoReconexion: string;
+  representanteId: string | null;
+};
+
+export type FraccionamientoParaCobroRepresentante = {
+  montoMensual: string;
+  montoReconexion: string;
+};
+
+export type MetodoPagoMercadoPago = {
+  collectorId: string | null;
+};
+
+export type FolioRow = {
+  id: string;
+  folio: string | null;
+  mes: number;
+  anio: number;
+  monto: string;
+  estado: string | null;
+  esReconexion: boolean | null;
+  fechaPago: Date | null;
+  fraccionamiento: string;
+  residente: string;
+};
+
+export type ComprobantePendienteRow = {
+  id: string;
+  estado: string;
+  monto: string;
+  concepto: string;
+  fechaEmision: Date;
+  motivoRechazo: string | null;
+  metadatos: unknown;
+};
+
+export type ComprobanteConResidente = {
+  id: string;
+  estado: string;
+  monto: string;
+  concepto: string;
+  comprobanteUrl: string;
+  fechaEmision: Date;
+  motivoRechazo: string | null;
+  metadatos: unknown;
+  perfilId: string;
+  residenteNombre: string | null;
+  residenteEmail: string | null;
+  edificio: string;
+  departamento: string;
+};
+
+export type ComprobanteConResidenteCompleto = ComprobanteConResidente & {
+  fechaRevision: Date | null;
+  pagoId: string | null;
+};
+
+export type CargoServicioPendiente = {
+  id: string;
+  perfilId: string;
+  mes: number;
+  anio: number;
+  monto: string;
+  servicio: string;
+};
+
+export type ResidentesParaPagoTesorera = {
+  fraccionamiento: {
+    id: string;
+    nombre: string;
+    montoMensual: string;
+    montoReconexion: string;
+  } | null;
+  perfiles: Array<{
+    id: string;
+    fraccionamientoId: string | null;
+    edificio: string;
+    departamento: string;
+    estadoAgua: string;
+    creadoEn: Date | null;
+    userId: string;
+    usuario: { id: string; name: string | null; email: string } | null;
+    pagos: Array<{ mes: number; anio: number }>;
+  }>;
+  cargosPendientes: CargoServicioPendiente[];
+};
+
+export type RechazarComprobanteInput = {
+  comprobanteId: string;
+  fraccionamientoId: string;
+  motivoRechazo: string;
+  revisadoPor: string;
+  perfilId: string;
+};
+
+export type RegistrarCargosObligatoriosManualesInput = {
+  perfilId: string;
+  fraccionamientoId: string;
+  cargoIds: string[];
+  metodo: 'efectivo' | 'transferencia';
+  actorId: string;
+  comprobanteId?: string;
+};
+
+export type CrearComprobanteTransferenciaInput = {
+  perfilId: string;
+  fraccionamientoId: string;
+  monto: string;
+  concepto: string;
+  comprobanteUrl: string;
+  metadatos: {
+    meses?: Array<{ mes: number; anio: number }>;
+    cargosServicioIds?: string[];
+    servicios?: Array<{ fraccionamientoServicioId: string; periodos: Array<{ mes: number; anio: number }> }>;
+    [key: string]: unknown;
+  } | null;
+  periodosSolicitados: Array<{ mes: number; anio: number }>;
+  cargosSolicitados: string[];
+  serviciosSolicitados: Array<{
+    fraccionamientoServicioId: string;
+    periodos: Array<{ mes: number; anio: number }>;
+  }>;
+  cargosEnRevision?: Set<string>;
+};
+
 export interface PagoRepository {
   findByPerfilYMes(perfilId: string, mes: number, anio: number): Promise<PagoData | null>;
   findByPerfilId(perfilId: string, limit?: number): Promise<PagoData[]>;
@@ -153,4 +291,58 @@ export interface PagoRepository {
   crearTicket(pagoId: string, folio: string): Promise<void>;
   marcarPendientesVencidos(antes: Date): Promise<number>;
   getMetricasAdmin(mes: number, anio: number): Promise<MetricasAdmin>;
+
+  // ── New query methods moved from router ─────────────────────────────────
+  enrichComprobantesByPagoIds?(pagoIds: string[]): Promise<ComprobanteEnriquecido[]>;
+  findFraccionamientoForCobroRepresentante?(
+    fraccionamientoId: string,
+    representanteId: string,
+  ): Promise<FraccionamientoParaCobroRepresentante | null>;
+  findMetodoPagoMercadoPago?(fraccionamientoId: string): Promise<MetodoPagoMercadoPago | null>;
+  findFoliosByPerfilUserId?(userId: string): Promise<FolioRow[]>;
+  findPagosForReporteRepresentante?(fraccionamientoId: string): Promise<unknown[]>;
+  findPagosByFraccionamientoAndPeriodo?(
+    fraccionamientoId: string,
+    mes: number,
+    anio: number,
+  ): Promise<unknown[]>;
+  findResidentesParaPagoTesorera?(
+    fraccionamientoId: string,
+    tesoreraId: string,
+  ): Promise<ResidentesParaPagoTesorera>;
+  findFraccionamientoForCobro?(fraccionamientoId: string): Promise<FraccionamientoParaCobro | null>;
+  findFraccionamientoForCobroTesorera?(
+    fraccionamientoId: string,
+    tesoreraId: string,
+  ): Promise<FraccionamientoParaCobro | null>;
+  findComprobantePendiente?(
+    perfilId: string,
+    fraccionamientoId: string,
+  ): Promise<ComprobantePendienteRow | null>;
+  findComprobantesPendientesDeResidente?(
+    perfilId: string,
+    fraccionamientoId: string,
+  ): Promise<ComprobantePendienteRow[]>;
+  findComprobantesPendientesDeFraccionamiento?(
+    fraccionamientoId: string,
+  ): Promise<ComprobanteConResidente[]>;
+  findTodosComprobantesDeFraccionamiento?(
+    fraccionamientoId: string,
+    estado?: string,
+  ): Promise<ComprobanteConResidenteCompleto[]>;
+  findComprobanteForAprobacion?(
+    comprobanteId: string,
+    fraccionamientoId: string,
+  ): Promise<Record<string, unknown> | null>;
+  findComprobanteForRechazo?(
+    comprobanteId: string,
+    fraccionamientoId: string,
+  ): Promise<{ id: string; perfilId: string } | null>;
+  rechazarComprobante?(input: RechazarComprobanteInput): Promise<void>;
+  registrarCargosObligatoriosManuales?(
+    input: RegistrarCargosObligatoriosManualesInput,
+  ): Promise<{ cargos: number; monto: number }>;
+  crearComprobanteTransferencia?(
+    input: CrearComprobanteTransferenciaInput,
+  ): Promise<{ id: string }>;
 }

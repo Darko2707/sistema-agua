@@ -1,10 +1,10 @@
-﻿'use client';
+'use client';
 
 import { signIn, authClient } from '@/lib/auth-client';
 import { homePathForRole } from '@/lib/role-home';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useState } from 'react';
 import {
   readRememberedLoginEmail,
   writeRememberedLoginEmail,
@@ -12,8 +12,10 @@ import {
 import { userFacingError } from '@/lib/user-facing-error';
 import { AuthCard, C, inputBase, labelBase, buttonGold, linkButton, FM } from '../auth-styles';
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const motivo = searchParams.get('motivo');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPwd, setShowPwd] = useState(false);
@@ -183,6 +185,32 @@ export default function LoginPage() {
             </p>
           </div>
 
+          {motivo === 'otro_dispositivo' && (
+            <div
+              role="alert"
+              style={{
+                background: '#FEF3C7',
+                border: '1px solid #FCD34D',
+                borderRadius: 14,
+                padding: '12px 14px',
+                fontSize: 13,
+                color: '#92400E',
+                fontWeight: 700,
+                fontFamily: FM,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="8" x2="12" y2="12" />
+                <line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              <span>Tu sesión se cerró porque se inició sesión en otro dispositivo.</span>
+            </div>
+          )}
+
           {error && (
             <div role="alert" style={{ background: C.dangerBg, border: '1px solid #F3BFBF', borderRadius: 14, padding: '10px 14px', fontSize: 13, color: C.danger, fontWeight: 700, fontFamily: FM }}>
               {error}
@@ -203,6 +231,22 @@ export default function LoginPage() {
           </div>
         </form>
     </AuthCard>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <AuthCard title="Iniciar sesión" subtitle="Comprobando tu sesión">
+          <p role="status" aria-live="polite" style={{ padding: '24px 0', textAlign: 'center', color: C.textWarm, fontWeight: 700 }}>
+            Preparando el acceso...
+          </p>
+        </AuthCard>
+      }
+    >
+      <LoginForm />
+    </Suspense>
   );
 }
 

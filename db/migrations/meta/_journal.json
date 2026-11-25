@@ -428,6 +428,20 @@
       "when": 1792800000000,
       "tag": "0060_gastos_audit_idempotency",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1792886400000,
+      "tag": "0061_licenciamiento_y_mantenimiento_bomba",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1792972800000,
+      "tag": "0062_sprint4_extension",
+      "breakpoints": true
     }
   ]
 }

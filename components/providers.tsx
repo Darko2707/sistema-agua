@@ -26,8 +26,15 @@ export function Providers({ children }: Props) {
         httpBatchLink({
           url: '/api/trpc',
           maxItems: TRPC_MAX_BATCH_SIZE,
-          fetch(url, options) {
-            return fetch(url, { ...options, credentials: 'include' });
+          async fetch(url, options) {
+            const res = await fetch(url, { ...options, credentials: 'include' });
+            if (res.status === 401 && typeof window !== 'undefined') {
+              const pathname = window.location.pathname;
+              if (!pathname.startsWith('/login') && !pathname.startsWith('/registro')) {
+                window.location.href = '/login?motivo=otro_dispositivo';
+              }
+            }
+            return res;
           },
         }),
       ],

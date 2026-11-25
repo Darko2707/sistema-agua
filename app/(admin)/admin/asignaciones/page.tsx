@@ -21,7 +21,6 @@ export default function AsignacionesPage() {
   const [fraccionamientoId, setFraccionamientoId] = useState('');
   const [servicioId, setServicioId] = useState('');
   const [usuarioId, setUsuarioId] = useState('');
-  const rol: RolOperativo = 'cuadrilla_cortes';
   const [mensaje, setMensaje] = useState<string | null>(null);
 
   const tenantsQuery = trpcReact.fraccionamientos.listar.useQuery();

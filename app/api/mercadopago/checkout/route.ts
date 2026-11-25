@@ -44,7 +44,7 @@ function periodoKey(periodo: { mes: number; anio: number }) {
   return `${periodo.anio}${String(periodo.mes).padStart(2, '0')}`;
 }
 
-export function mercadoPagoIntentReference(input: {
+function mercadoPagoIntentReference(input: {
   perfilId: string;
   fraccionamientoId: string;
   periodos: MercadoPagoPaymentIntentPeriod[];
@@ -104,7 +104,7 @@ async function nextUnpaidPeriods(perfilId: string, tenantId: string, count: numb
   return result;
 }
 
-export function mercadoPagoCheckoutMetadata(input: {
+function mercadoPagoCheckoutMetadata(input: {
   perfilId: string;
   fraccionamientoId: string;
   externalReference: string;
@@ -171,6 +171,9 @@ export async function POST(request: Request) {
 
   const perfil = await residenteRepo.findByUserIdWithPaymentConfig(session.user.id);
   if (!perfil) return Response.json({ error: 'Completa tu perfil primero' }, { status: 400 });
+  if (perfil.tenencia === 'inquilino' || (perfil as { tipoOcupante?: string | null }).tipoOcupante === 'inquilino') {
+    return Response.json({ error: 'Los inquilinos solo pueden consultar recibos; los pagos debe realizarlos el propietario.' }, { status: 403 });
+  }
   if (perfil.responsableCargos === false) return Response.json({ error: 'Esta cuenta no tiene cargos de vivienda habilitados' }, { status: 403 });
   if (!perfil.fraccionamientoId) return Response.json({ error: 'Tu perfil no tiene fraccionamiento asignado' }, { status: 403 });
   try {
@@ -264,7 +267,7 @@ export async function POST(request: Request) {
       body: {
         items: [{
           id:          externalReference,
-          title:       esReconexion ? 'Pago de agua, reconexion y meses adelantados' : 'Pago de agua adelantado',
+          title:       esReconexion ? 'Mantenimiento de bomba, reconexión y meses adelantados' : 'Mantenimiento de bomba adelantado',
           description: `${mesesLabel} desde ${primerPeriodo.mes}/${primerPeriodo.anio}`,
           quantity:    1,
           currency_id: 'MXN',

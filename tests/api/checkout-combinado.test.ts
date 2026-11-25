@@ -324,7 +324,7 @@ describe('POST /api/mercadopago/checkout-combinado - Adelanto de todos los servi
           items: [
             expect.objectContaining({
               unit_price: Number(data.total),
-              title: expect.stringMatching(/2 periodos de agua y 3 cargos de servicios/i),
+              title: expect.stringMatching(/2 periodos de mantenimiento de bomba y 3 cargos de servicios/i),
             }),
           ],
         }),

@@ -1,7 +1,6 @@
 import { getDiaCorte } from '@/src/domain/pagos/constants';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
 import { fechaNegocio } from '@/src/domain/shared/fecha-negocio';
-import { TRPCError } from '@trpc/server';
 import type { ResidenteRepository, ResidenteConRelaciones } from '../../ports/residente.repository';
 
 export type ListarResidentesQuery = {

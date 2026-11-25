@@ -1,4 +1,5 @@
 /* eslint-disable no-restricted-imports -- legacy router boundary; migrate queries to repositories incrementally. */
+import { randomUUID } from 'node:crypto';
 import { and, eq, ne } from 'drizzle-orm';
 import { z } from 'zod';
 
@@ -16,6 +17,198 @@ const tenantInput = z.object({ fraccionamientoId: z.string().uuid() });
 export const serviciosRouter = router({
   catalogo: roleProcedure('admin', 'representante', 'tesorera', 'cuadrilla_cortes', 'operador_pozo', 'residente')
     .query(async () => db.query.servicios.findMany({ where: (s, { eq }) => eq(s.activo, true) })),
+
+  listarPersonalizados: roleProcedure('admin', 'representante')
+    .input(z.object({ fraccionamientoId: z.string().uuid().optional() }).optional())
+    .query(async ({ ctx, input }) => {
+      if (ctx.user.role === 'representante' && input?.fraccionamientoId && input.fraccionamientoId !== ctx.user.fraccionamientoId) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'No puedes consultar servicios de otro fraccionamiento' });
+      }
+      const tenantId = ctx.user.role === 'admin'
+        ? (input?.fraccionamientoId ?? ctx.user.fraccionamientoId)
+        : ctx.user.fraccionamientoId;
+      if (!tenantId) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Fraccionamiento requerido' });
+
+      return db.select({
+        id: fraccionamientoServicios.id,
+        servicioId: servicios.id,
+        clave: servicios.clave,
+        nombre: servicios.nombre,
+        fraccionamientoId: servicios.fraccionamientoId,
+        frecuenciaTipo: servicios.frecuenciaTipo,
+        intervaloPeriodicidad: servicios.intervaloPeriodicidad,
+        diaCobro: servicios.diaCobro,
+        conCorteFisico: servicios.conCorteFisico,
+        estado: fraccionamientoServicios.estado,
+        montoMensual: fraccionamientoServicios.montoMensual,
+        montoReconexion: fraccionamientoServicios.montoReconexion,
+        activo: servicios.activo,
+      })
+      .from(fraccionamientoServicios)
+      .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
+      .where(and(
+        eq(fraccionamientoServicios.fraccionamientoId, tenantId),
+        eq(servicios.activo, true),
+      ));
+    }),
+
+  crearServicioPersonalizado: roleProcedure('admin', 'representante')
+    .input(z.object({
+      fraccionamientoId: z.string().uuid().optional(),
+      nombre: z.string().trim().min(1).max(100),
+      monto: z.number().min(0),
+      montoReconexion: z.number().min(0).default(0),
+      frecuenciaTipo: z.enum(['mensual', 'bimestral', 'trimestral', 'semestral', 'anual', 'personalizado_dias']).default('mensual'),
+      intervaloPeriodicidad: z.number().int().min(1).default(1),
+      diaCobro: z.number().int().min(1).max(31).default(1),
+      conCorteFisico: z.boolean().default(false),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role === 'representante' && input.fraccionamientoId && input.fraccionamientoId !== ctx.user.fraccionamientoId) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'No puedes crear servicios para otro fraccionamiento' });
+      }
+      const tenantId = ctx.user.role === 'admin'
+        ? (input.fraccionamientoId ?? ctx.user.fraccionamientoId)
+        : ctx.user.fraccionamientoId;
+      if (!tenantId) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Fraccionamiento requerido' });
+      await subscriptionService.requireOperational(tenantId);
+
+      const baseSlug = input.nombre.toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 20);
+      const uniqueSuffix = randomUUID().slice(0, 8);
+      const clave = `${baseSlug}_${uniqueSuffix}`;
+
+      return db.transaction(async (tx) => {
+        const [nuevoServicio] = await tx.insert(servicios).values({
+          clave,
+          nombre: input.nombre,
+          fraccionamientoId: tenantId,
+          frecuenciaTipo: input.frecuenciaTipo,
+          intervaloPeriodicidad: input.intervaloPeriodicidad,
+          diaCobro: input.diaCobro,
+          cobroMensual: input.frecuenciaTipo === 'mensual',
+          conCorteFisico: input.conCorteFisico,
+          activo: true,
+        }).returning();
+
+        const [activacion] = await tx.insert(fraccionamientoServicios).values({
+          fraccionamientoId: tenantId,
+          servicioId: nuevoServicio.id,
+          estado: 'activo',
+          montoMensual: input.monto.toFixed(2),
+          montoReconexion: input.montoReconexion.toFixed(2),
+        }).returning();
+
+        const perfiles = await tx.select({ id: perfilesResidente.id, estadoAgua: perfilesResidente.estadoAgua })
+          .from(perfilesResidente)
+          .where(eq(perfilesResidente.fraccionamientoId, tenantId));
+
+        if (perfiles.length > 0) {
+          await tx.insert(perfilesServicios).values(perfiles.map(p => ({
+            perfilId: p.id,
+            fraccionamientoId: tenantId,
+            fraccionamientoServicioId: activacion.id,
+            estadoAgua: p.estadoAgua,
+            activo: true,
+          }))).onConflictDoUpdate({
+            target: [perfilesServicios.perfilId, perfilesServicios.fraccionamientoServicioId],
+            set: { activo: true, actualizadoEn: new Date() },
+          });
+        }
+
+        await tx.insert(auditoria).values({
+          actorId: ctx.user.id,
+          accion: 'servicio.personalizado.creado',
+          entidad: 'servicios',
+          entidadId: nuevoServicio.id,
+          detalle: {
+            fraccionamientoId: tenantId,
+            nombre: input.nombre,
+            monto: input.monto,
+            frecuenciaTipo: input.frecuenciaTipo,
+            diaCobro: input.diaCobro,
+          },
+        });
+
+        return {
+          ok: true,
+          servicio: nuevoServicio,
+          fraccionamientoServicio: activacion,
+        };
+      });
+    }),
+
+  editarServicioPersonalizado: roleProcedure('admin', 'representante')
+    .input(z.object({
+      servicioId: z.string().uuid(),
+      fraccionamientoId: z.string().uuid().optional(),
+      nombre: z.string().trim().min(1).max(100).optional(),
+      monto: z.number().min(0).optional(),
+      montoReconexion: z.number().min(0).optional(),
+      frecuenciaTipo: z.enum(['mensual', 'bimestral', 'trimestral', 'semestral', 'anual', 'personalizado_dias']).optional(),
+      intervaloPeriodicidad: z.number().int().min(1).optional(),
+      diaCobro: z.number().int().min(1).max(31).optional(),
+      estado: z.enum(['activo', 'inactivo']).optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      if (ctx.user.role === 'representante' && input.fraccionamientoId && input.fraccionamientoId !== ctx.user.fraccionamientoId) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'No puedes crear servicios para otro fraccionamiento' });
+      }
+      const tenantId = ctx.user.role === 'admin'
+        ? (input.fraccionamientoId ?? ctx.user.fraccionamientoId)
+        : ctx.user.fraccionamientoId;
+      if (!tenantId) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Fraccionamiento requerido' });
+      await subscriptionService.requireOperational(tenantId);
+
+      const [servicioExistente] = await db.select({
+        id: servicios.id,
+        fraccionamientoId: servicios.fraccionamientoId,
+      })
+      .from(servicios)
+      .where(and(eq(servicios.id, input.servicioId), eq(servicios.activo, true)))
+      .limit(1);
+
+      if (!servicioExistente) throw new TRPCError({ code: 'NOT_FOUND', message: 'Servicio no encontrado' });
+      if (ctx.user.role === 'representante' && servicioExistente.fraccionamientoId !== tenantId) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'No tienes permiso para editar este servicio' });
+      }
+
+      return db.transaction(async (tx) => {
+        const updateServicio: Partial<typeof servicios.$inferInsert> = {};
+        if (input.nombre !== undefined) updateServicio.nombre = input.nombre;
+        if (input.frecuenciaTipo !== undefined) {
+          updateServicio.frecuenciaTipo = input.frecuenciaTipo;
+          updateServicio.cobroMensual = input.frecuenciaTipo === 'mensual';
+        }
+        if (input.intervaloPeriodicidad !== undefined) updateServicio.intervaloPeriodicidad = input.intervaloPeriodicidad;
+        if (input.diaCobro !== undefined) updateServicio.diaCobro = input.diaCobro;
+
+        if (Object.keys(updateServicio).length > 0) {
+          await tx.update(servicios).set(updateServicio).where(eq(servicios.id, input.servicioId));
+        }
+
+        const updateFs: Partial<typeof fraccionamientoServicios.$inferInsert> = { actualizadoEn: new Date() };
+        if (input.monto !== undefined) updateFs.montoMensual = input.monto.toFixed(2);
+        if (input.montoReconexion !== undefined) updateFs.montoReconexion = input.montoReconexion.toFixed(2);
+        if (input.estado !== undefined) updateFs.estado = input.estado;
+
+        await tx.update(fraccionamientoServicios)
+          .set(updateFs)
+          .where(and(
+            eq(fraccionamientoServicios.servicioId, input.servicioId),
+            eq(fraccionamientoServicios.fraccionamientoId, tenantId),
+          ));
+
+        await tx.insert(auditoria).values({
+          actorId: ctx.user.id,
+          accion: 'servicio.personalizado.editado',
+          entidad: 'servicios',
+          entidadId: input.servicioId,
+          detalle: { fraccionamientoId: tenantId, ...input },
+        });
+
+        return { ok: true };
+      });
+    }),
 
   // Un integrante del personal puede conservar su propio perfil de residente.
   // La consulta se limita siempre al perfil y fraccionamiento de la sesión.

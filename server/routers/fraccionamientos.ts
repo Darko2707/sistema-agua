@@ -62,14 +62,32 @@ export const fraccionamientosRouter = router({
         titularCuenta: fraccionamientos.titularCuenta,
         numeroCuenta: fraccionamientos.numeroCuenta,
         instruccionesTransferencia: fraccionamientos.instruccionesTransferencia,
+        limiteViviendas: fraccionamientos.limiteViviendas,
+        esquemaTarifa: fraccionamientos.esquemaTarifa,
+        tipoNomenclatura: fraccionamientos.tipoNomenclatura,
       })
         .from(fraccionamientos).where(eq(fraccionamientos.id, ctx.user.fraccionamientoId)).limit(1);
       if (!fraccionamiento?.activo) throw new TRPCError({ code: 'FORBIDDEN', message: 'El fraccionamiento no está activo' });
-      return fraccionamiento;
+
+      const [{ total: viviendasRegistradas }] = await db
+        .select({ total: count() })
+        .from(perfilesResidente)
+        .where(eq(perfilesResidente.fraccionamientoId, fraccionamiento.id));
+
+      const totalViviendas = Number(viviendasRegistradas ?? 0);
+      return {
+        ...fraccionamiento,
+        viviendasRegistradas: totalViviendas,
+        limiteAlcanzado: totalViviendas >= fraccionamiento.limiteViviendas,
+      };
     }),
 
   listarPublicos: publicProcedure.query(async () => db
-    .select({ id: fraccionamientos.id, nombre: fraccionamientos.nombre })
+    .select({
+      id: fraccionamientos.id,
+      nombre: fraccionamientos.nombre,
+      tipoNomenclatura: fraccionamientos.tipoNomenclatura,
+    })
     .from(fraccionamientos)
     .where(eq(fraccionamientos.activo, true))
     .orderBy(fraccionamientos.nombre)),
@@ -85,6 +103,9 @@ export const fraccionamientosRouter = router({
       montoMensual: fraccionamientos.montoMensual,
       montoReconexion: fraccionamientos.montoReconexion,
       diaCorte: fraccionamientos.diaCorte,
+      limiteViviendas: fraccionamientos.limiteViviendas,
+      esquemaTarifa: fraccionamientos.esquemaTarifa,
+      tipoNomenclatura: fraccionamientos.tipoNomenclatura,
       banco: fraccionamientos.banco,
       clabe: fraccionamientos.clabe,
       titularCuenta: fraccionamientos.titularCuenta,
@@ -106,6 +127,9 @@ export const fraccionamientosRouter = router({
       montoMensual: z.number().min(0).default(50),
       montoReconexion: z.number().min(0).default(300),
       diaCorte: z.number().int().min(1).max(28).default(5),
+      limiteViviendas: z.number().int().min(1).default(50),
+      esquemaTarifa: z.string().trim().min(1).default('sencillo'),
+      tipoNomenclatura: z.enum(['edificio_depto', 'solo_casa']).default('edificio_depto'),
     }))
     .mutation(async ({ ctx, input }) => {
       const slug = slugifyFraccionamiento(input.nombre);
@@ -134,6 +158,9 @@ export const fraccionamientosRouter = router({
               montoMensual: input.montoMensual.toFixed(2),
               montoReconexion: input.montoReconexion.toFixed(2),
               diaCorte: input.diaCorte,
+              limiteViviendas: input.limiteViviendas,
+              esquemaTarifa: input.esquemaTarifa,
+              tipoNomenclatura: input.tipoNomenclatura,
             })
             .returning({
               id: fraccionamientos.id,
@@ -151,7 +178,12 @@ export const fraccionamientosRouter = router({
             accion: 'fraccionamiento.creado',
             entidad: 'fraccionamientos',
             entidadId: created.id,
-            detalle: { nombre: created.nombre, slug: created.slug },
+            detalle: {
+              nombre: created.nombre,
+              slug: created.slug,
+              limiteViviendas: input.limiteViviendas,
+              esquemaTarifa: input.esquemaTarifa,
+            },
           });
 
           return created;
@@ -176,6 +208,9 @@ export const fraccionamientosRouter = router({
       montoReconexion: z.number().min(0),
       diaCorte: z.number().int().min(1).max(28),
       activo: z.boolean(),
+      limiteViviendas: z.number().int().min(1).optional(),
+      esquemaTarifa: z.string().trim().min(1).optional(),
+      tipoNomenclatura: z.enum(['edificio_depto', 'solo_casa']).optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const [updated] = await db.update(fraccionamientos).set({
@@ -183,6 +218,9 @@ export const fraccionamientosRouter = router({
         montoReconexion: input.montoReconexion.toFixed(2),
         diaCorte: input.diaCorte,
         activo: input.activo,
+        ...(input.limiteViviendas !== undefined ? { limiteViviendas: input.limiteViviendas } : {}),
+        ...(input.esquemaTarifa !== undefined ? { esquemaTarifa: input.esquemaTarifa } : {}),
+        ...(input.tipoNomenclatura !== undefined ? { tipoNomenclatura: input.tipoNomenclatura } : {}),
         updatedAt: new Date(),
       }).where(eq(fraccionamientos.id, input.fraccionamientoId)).returning({ id: fraccionamientos.id });
       if (!updated) throw new TRPCError({ code: 'NOT_FOUND', message: 'Fraccionamiento no encontrado' });
@@ -196,6 +234,8 @@ export const fraccionamientosRouter = router({
           montoReconexion: input.montoReconexion,
           diaCorte: input.diaCorte,
           activo: input.activo,
+          limiteViviendas: input.limiteViviendas,
+          esquemaTarifa: input.esquemaTarifa,
         },
       });
       return { ok: true };
@@ -370,5 +410,88 @@ export const fraccionamientosRouter = router({
       });
 
       return { ok: true };
+    }),
+
+  auditoriaConsumoReal: roleProcedure('admin')
+    .query(async () => {
+      const todos = await db
+        .select({
+          id: fraccionamientos.id,
+          nombre: fraccionamientos.nombre,
+          slug: fraccionamientos.slug,
+          activo: fraccionamientos.activo,
+          limiteViviendas: fraccionamientos.limiteViviendas,
+          esquemaTarifa: fraccionamientos.esquemaTarifa,
+        })
+        .from(fraccionamientos)
+        .orderBy(fraccionamientos.nombre);
+
+      const resultados = await Promise.all(
+        todos.map(async (f) => {
+          const [
+            [{ total: viviendasActivas }],
+            [{ total: personalOperativo }],
+            [{ total: totalPagos, montoTotal: montoPagos }],
+            [{ total: totalCargos, montoTotal: montoCargos }],
+          ] = await Promise.all([
+            db.select({ total: count() })
+              .from(perfilesResidente)
+              .where(eq(perfilesResidente.fraccionamientoId, f.id)),
+            db.select({ total: count() })
+              .from(user)
+              .where(and(
+                eq(user.fraccionamientoId, f.id),
+                inArray(user.role, ['representante', 'tesorera']),
+              )),
+            db.select({
+              total: count(),
+              montoTotal: sql<string>`coalesce(sum(${pagos.monto}), 0)::text`,
+            })
+              .from(pagos)
+              .where(and(
+                eq(pagos.fraccionamientoId, f.id),
+                eq(pagos.estado, 'pagado'),
+              )),
+            db.select({
+              total: count(),
+              montoTotal: sql<string>`coalesce(sum(${cargosServicios.monto}), 0)::text`,
+            })
+              .from(cargosServicios)
+              .where(eq(cargosServicios.fraccionamientoId, f.id)),
+          ]);
+
+          const countViviendas = Number(viviendasActivas ?? 0);
+          let estadoCumplimiento: 'Al corriente' | 'Excedido' | 'Requiere ajuste de tarifa';
+          if (countViviendas > f.limiteViviendas) {
+            estadoCumplimiento = 'Excedido';
+          } else if (countViviendas >= Math.floor(f.limiteViviendas * 0.9)) {
+            estadoCumplimiento = 'Requiere ajuste de tarifa';
+          } else {
+            estadoCumplimiento = 'Al corriente';
+          }
+
+          return {
+            id: f.id,
+            nombre: f.nombre,
+            slug: f.slug,
+            activo: f.activo,
+            limiteViviendas: f.limiteViviendas,
+            esquemaTarifa: f.esquemaTarifa,
+            viviendasActivas: countViviendas,
+            personalOperativo: Number(personalOperativo ?? 0),
+            volumenPagos: {
+              cantidad: Number(totalPagos ?? 0),
+              monto: Number(montoPagos ?? 0),
+            },
+            volumenCargos: {
+              cantidad: Number(totalCargos ?? 0),
+              monto: Number(montoCargos ?? 0),
+            },
+            estadoCumplimiento,
+          };
+        }),
+      );
+
+      return resultados;
     }),
 });

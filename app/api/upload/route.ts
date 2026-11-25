@@ -8,6 +8,8 @@ import { auth } from '@/lib/auth';
 import { buildComprobanteViewUrl, inlineComprobanteHeaders } from '@/lib/comprobante-file';
 import { logger } from '@/lib/logger';
 import { canReadPrivateUpload } from '@/lib/private-upload-access';
+import { validateFileSignature } from '@/lib/file-validation';
+import { residenteRepo } from '@/src/infrastructure/db/repositories';
 
 // Dar más tiempo a la función en Vercel para procesar uploads grandes
 export const maxDuration = 30; // segundos
@@ -38,46 +40,22 @@ const PLACEHOLDER_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="400" hei
   <text x="200" y="195" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" fill="#6c757d" text-anchor="middle">El archivo no se encuentra en el almacenamiento</text>
 </svg>`;
 
-/**
- * Valida la firma binaria (magic bytes) para prevenir que archivos ejecutables o maliciosos
- * se enmascaren con extensiones o cabeceras MIME falsificadas.
- */
-export function validateFileSignature(buffer: Buffer, claimedMime: string): boolean {
-  if (buffer.length < 4) return false;
-
-  // PDF: %PDF-
-  if (claimedMime === 'application/pdf') {
-    return buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46;
-  }
-
-  // PNG: \x89PNG\r\n\x1a\n
-  if (claimedMime === 'image/png') {
-    return buffer.length >= 8 &&
-      buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47 &&
-      buffer[4] === 0x0D && buffer[5] === 0x0A && buffer[6] === 0x1A && buffer[7] === 0x0A;
-  }
-
-  // JPEG: \xFF\xD8\xFF
-  if (claimedMime === 'image/jpeg') {
-    return buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF;
-  }
-
-  // WEBP: RIFF....WEBP
-  if (claimedMime === 'image/webp') {
-    if (buffer.length < 12) return false;
-    const isRiff = buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46;
-    const isWebp = buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50;
-    return isRiff && isWebp;
-  }
-
-  return false;
-}
-
 export async function POST(req: Request) {
   // 1. Verificación de autenticación
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session?.user) {
     return Response.json({ error: 'No autorizado' }, { status: 401 });
+  }
+
+  // Los inquilinos solo pueden consultar recibos; no pueden subir comprobantes ni realizar pagos
+  if (session.user.role === 'residente') {
+    const perfil = await residenteRepo.findByUserId(session.user.id);
+    if (perfil && (perfil.tenencia === 'inquilino' || (perfil as { tipoOcupante?: string | null }).tipoOcupante === 'inquilino')) {
+      return Response.json(
+        { error: 'Los inquilinos solo pueden consultar recibos; los pagos debe realizarlos el propietario.' },
+        { status: 403 },
+      );
+    }
   }
 
   // 2. Extracción del formulario multipart

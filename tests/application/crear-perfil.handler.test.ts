@@ -55,6 +55,7 @@ function makeResidenteRepo(): ResidenteRepository {
   return {
     findById: vi.fn(),
     findByUserId: vi.fn().mockResolvedValue(null),
+    findPropietarioByVivienda: vi.fn().mockResolvedValue(null),
     findAll: vi.fn(),
     findAllPaginated: vi.fn(),
     findByEstado: vi.fn(),
@@ -111,6 +112,8 @@ describe('CrearPerfilHandler', () => {
       tenencia: 'propietario',
       nombrePropietario: null,
       telefonoPropietario: null,
+      tipoOcupante: 'propietario',
+      duenoPerfilId: null,
     });
     expect(loggerMocks.info).toHaveBeenCalledOnce();
     expect(loggerMocks.info).toHaveBeenCalledWith('usuario.perfil.creado', {
@@ -211,5 +214,69 @@ describe('CrearPerfilHandler', () => {
 
     await expect(handler.execute(command)).rejects.toBe(databaseError);
     expect(loggerMocks.info).not.toHaveBeenCalled();
+  });
+
+  it('normaliza a solo_casa fijando edificio en 1 y departamento con el numero de casa', async () => {
+    const { handler, residenteRepo } = makeHandler();
+    await handler.execute({
+      ...command,
+      tipoNomenclatura: 'solo_casa',
+      edificio: '',
+      departamento: ' 42 ',
+    });
+
+    expect(residenteRepo.create).toHaveBeenCalledWith(expect.objectContaining({
+      edificio: '1',
+      departamento: '42',
+    }));
+  });
+
+  it('vincula inquilino con propietario existente en la vivienda', async () => {
+    const { handler, residenteRepo } = makeHandler();
+    vi.mocked(residenteRepo.findPropietarioByVivienda!).mockResolvedValue({
+      id: 'prop-uuid-1234',
+    } as ResidenteData);
+
+    await handler.execute({
+      ...command,
+      tipoOcupante: 'inquilino',
+      tenencia: 'inquilino',
+    });
+
+    expect(residenteRepo.create).toHaveBeenCalledWith(expect.objectContaining({
+      tipoOcupante: 'inquilino',
+      duenoPerfilId: 'prop-uuid-1234',
+    }));
+  });
+
+  it('rechaza inquilino si no existe propietario registrado para esa vivienda', async () => {
+    const { handler, residenteRepo } = makeHandler();
+    vi.mocked(residenteRepo.findPropietarioByVivienda!).mockResolvedValue(null);
+
+    const error = await capturarError(handler.execute({
+      ...command,
+      tipoOcupante: 'inquilino',
+      tenencia: 'inquilino',
+    }));
+
+    expect(error).toBeInstanceOf(TRPCError);
+    expect((error as TRPCError).code).toBe('NOT_FOUND');
+    expect((error as TRPCError).message).toContain('No se encontró un propietario registrado');
+  });
+
+  it('rechaza segundo propietario en la misma vivienda', async () => {
+    const { handler, residenteRepo } = makeHandler();
+    vi.mocked(residenteRepo.findPropietarioByVivienda!).mockResolvedValue({
+      id: 'existing-prop',
+    } as ResidenteData);
+
+    const error = await capturarError(handler.execute({
+      ...command,
+      tipoOcupante: 'propietario',
+    }));
+
+    expect(error).toBeInstanceOf(TRPCError);
+    expect((error as TRPCError).code).toBe('CONFLICT');
+    expect((error as TRPCError).message).toContain('ya tienen una cuenta registrada en este fraccionamiento');
   });
 });

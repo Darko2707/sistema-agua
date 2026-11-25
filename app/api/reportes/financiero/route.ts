@@ -108,8 +108,8 @@ function mapearPagosReporte(
   const pagosAgua: PagoReporteItem[] = pagos.map((p) => {
     const mesNombre = MESES_ES[p.mes - 1] ?? `Mes ${p.mes}`;
     const concepto = p.esReconexion
-      ? `Reconexión de agua — ${mesNombre} ${p.anio}`
-      : `Cuota de agua — ${mesNombre} ${p.anio}`;
+      ? `Reconexión de bomba — ${mesNombre} ${p.anio}`
+      : `Cuota de mantenimiento de bomba — ${mesNombre} ${p.anio}`;
     return {
       id: p.id,
       fecha: p.fechaPago ?? p.creadoEn ?? new Date(),
@@ -118,7 +118,7 @@ function mapearPagosReporte(
       edificio: p.perfil?.edificio ?? '',
       departamento: p.perfil?.departamento ?? '',
       fraccionamiento: fraccionamientoNombre,
-      servicio: 'Agua',
+      servicio: 'Mantenimiento de bomba',
       concepto,
       monto: montoDisponibleFraccionamiento(p),
       estado: p.estado ?? 'pagado',
@@ -304,13 +304,12 @@ export async function GET(req: Request) {
       const pagosM   = pagosConfirmados.filter(p => p.mes === mes && p.anio === anio);
       const cargosM  = cargosPagados.filter(cargo => cargo.mes === mes && cargo.anio === anio && cargo.fraccionamientoServicio?.servicio?.clave !== 'agua');
       const gastosM  = gastosTodos.filter(g => g.mes === mes && g.anio === anio);
-      const ingresosM = ingresosTodos.filter(i => i.mes === mes && i.anio === anio);
       const estadosM = estadoServicios.filter(row => row.mes === mes && row.anio === anio);
       const totalEsperadoCargos = estadosM.reduce((sum, row) => sum + row.monto, 0);
       const saldoPendiente = estadosM.reduce((sum, row) => sum + (row.estado === 'pendiente' ? row.monto : 0), 0);
       const totalPagos               = pagosM.reduce((s, p) => s + montoDisponibleFraccionamiento(p), 0) + cargosM.reduce((s, cargo) => s + Number(cargo.monto), 0);
-      const totalIngresosAdicionales = ingresosM.reduce((s, i) => s + Number(i.monto), 0);
-      const totalRecaudado           = totalPagos + totalIngresosAdicionales;
+      const totalIngresosAdicionales = 0;
+      const totalRecaudado           = totalPagos;
       const totalGastos              = gastosM.reduce((s, g) => s + Number(g.monto), 0);
       return { mes, anio, totalPagos, totalIngresosAdicionales, totalRecaudado, totalGastos, saldo: totalRecaudado - totalGastos, cantidadPagos: pagosM.length + cargosM.length, totalEsperadoCargos, saldoPendiente };
     });
@@ -360,6 +359,14 @@ export async function GET(req: Request) {
       cargosPagados,
     );
 
+    const serviciosActivos = Array.from(new Set([
+      'Mantenimiento de bomba',
+      ...serviciosTenant
+        .filter(st => st.servicio?.clave !== 'agua' && st.servicio?.activo !== false && st.estado !== 'inactivo')
+        .map(st => st.servicio?.nombre)
+        .filter((n): n is string => Boolean(n)),
+    ]));
+
     const xlsxBuffer = await generarReporteFinancieroRangoExcel({
       fraccionamiento: fraccionamiento.nombre,
       mesDesde, anioDesde, mesHasta, anioHasta,
@@ -375,6 +382,7 @@ export async function GET(req: Request) {
       pagos:    pagosReporte,
       estadoServicios,
       totalesPorServicio,
+      serviciosActivos,
     });
 
     const label = desdeNum === hastaNum
@@ -435,8 +443,8 @@ export async function GET(req: Request) {
   const saldoPendiente = estadoServicios.reduce((sum, row) => sum + (row.estado === 'pendiente' ? row.monto : 0), 0);
   const cargosAdicionales = cargosPagados.filter((cargo) => cargo.fraccionamientoServicio?.servicio?.clave !== 'agua');
   const totalPagos               = pagosConfirmados.reduce((s, p) => s + montoDisponibleFraccionamiento(p), 0) + cargosAdicionales.reduce((s, cargo) => s + Number(cargo.monto), 0);
-  const totalIngresosAdicionales = ingresosPeriodo.reduce((s, i) => s + Number(i.monto), 0);
-  const totalRecaudado           = totalPagos + totalIngresosAdicionales;
+  const totalIngresosAdicionales = 0;
+  const totalRecaudado           = totalPagos;
   const totalGastos              = gastosPeriodo.reduce((s, g) => s + Number(g.monto), 0);
   const perfilesPagados = new Set([...pagosConfirmados.map((p) => p.perfilId), ...cargosAdicionales.map((cargo) => cargo.perfilId)]);
   const totalPagaron = perfilesPagados.size;
@@ -464,6 +472,14 @@ export async function GET(req: Request) {
     pagosConfirmados,
     cargosPagados,
   );
+
+  const serviciosActivos = Array.from(new Set([
+    'Mantenimiento de bomba',
+    ...serviciosTenant
+      .filter(st => st.servicio?.clave !== 'agua' && st.servicio?.activo !== false && st.estado !== 'inactivo')
+      .map(st => st.servicio?.nombre)
+      .filter((n): n is string => Boolean(n)),
+  ]));
 
   const xlsxBuffer = await generarReporteFinancieroExcel({
     fraccionamiento:    fraccionamiento.nombre,
@@ -495,6 +511,7 @@ export async function GET(req: Request) {
     pagos:    pagosReporte,
     estadoServicios,
     totalesPorServicio,
+    serviciosActivos,
   });
 
   return new Response(new Uint8Array(xlsxBuffer), {

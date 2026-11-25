@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { encryptToken, decryptToken } from '@/lib/crypto';
-import { validateFileSignature, POST as uploadRoute } from '@/app/api/upload/route';
+import { POST as uploadRoute } from '@/app/api/upload/route';
+import { validateFileSignature } from '@/lib/file-validation';
 import { TRPCError } from '@trpc/server';
 import { z } from 'zod';
 

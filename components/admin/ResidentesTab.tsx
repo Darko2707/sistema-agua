@@ -9,6 +9,7 @@ import { EstadoAguaBadge } from '@/components/domain/EstadoAguaBadge';
 import { ROLES_ASIGNABLES, type ResidenteCompleto } from '@/hooks/useAdmin';
 import { Input } from '@/components/ui/input';
 import { trpcReact } from '@/lib/trpc-react';
+import { BitacoraFotos } from '@/components/shared/BitacoraFotos';
 
 const MESES_NOMBRE = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 const MESES_CORTO  = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
@@ -75,19 +76,22 @@ export function ResidentesTab({
   const [registrando,    setRegistrando]    = useState(false);
   const [resultado,      setResultado]      = useState<{ registrados: number; omitidos: string[] } | null>(null);
   const [errorModal,     setErrorModal]     = useState<string | null>(null);
-  const [expedienteResidente, setExpedienteResidente] = useState<ResidenteCompleto | null>(null);
-  const [visorComprobante,    setVisorComprobante]    = useState<string | null>(null);
 
   const todosComprobantesQuery = trpcReact.pagos.obtenerTodosComprobantes.useQuery(
     { estado: 'todos' },
-    { enabled: !!expedienteResidente || !!modalResidente },
+    { enabled: !!modalResidente },
+  );
+
+  const bitacoraQuery = trpcReact.operacion.bitacoraCorte.useQuery(
+    { perfilId: modalResidente?.id ?? '' },
+    { enabled: !!modalResidente },
   );
 
   const comprobantesDelResidente = useMemo(() => {
-    const targetId = expedienteResidente?.id ?? modalResidente?.id;
+    const targetId = modalResidente?.id;
     if (!targetId || !todosComprobantesQuery.data) return [];
     return todosComprobantesQuery.data.filter(c => c.perfilId === targetId);
-  }, [expedienteResidente?.id, modalResidente?.id, todosComprobantesQuery.data]);
+  }, [modalResidente?.id, todosComprobantesQuery.data]);
 
   function abrirModal(r: ResidenteCompleto, metodo: 'efectivo' | 'transferencia') {
     setModalResidente(r);
@@ -433,7 +437,7 @@ export function ResidentesTab({
                               variant="outline"
                               size="sm"
                               className="h-7 text-xs ml-2 flex-shrink-0"
-                              onClick={() => setVisorComprobante(comp.comprobanteUrl)}
+                              onClick={() => window.open(comp.comprobanteUrl, '_blank', 'noopener,noreferrer')}
                             >
                               Ver voucher
                             </Button>
@@ -442,6 +446,12 @@ export function ResidentesTab({
                       );
                     })}
                   </div>
+                </div>
+              )}
+
+              {bitacoraQuery.data && bitacoraQuery.data.length > 0 && (
+                <div className="mt-4 pt-4 border-t">
+                  <BitacoraFotos entradas={bitacoraQuery.data} />
                 </div>
               )}
 

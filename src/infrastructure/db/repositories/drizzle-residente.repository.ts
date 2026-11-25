@@ -2,6 +2,7 @@ import { and, count, eq, sql } from 'drizzle-orm';
 import { db } from '@/db';
 import { fraccionamientoServicios, fraccionamientos, perfilesResidente, perfilesServicios, servicios, user } from '@/db/schema';
 import type { EstadoAgua } from '@/src/domain/agua/state-machine';
+import { LimiteViviendasAlcanzadoError } from '@/src/domain/residente/limite-viviendas.error';
 import type {
   ResidenteRepository,
   ResidenteData,
@@ -45,6 +46,8 @@ function toData(row: typeof perfilesResidente.$inferSelect): ResidenteData {
     telefono:            row.telefono ?? null,
     sexo:                row.sexo ?? null,
     tenencia:            row.tenencia ?? null,
+    tipoOcupante:        row.tipoOcupante ?? null,
+    duenoPerfilId:       row.duenoPerfilId ?? null,
     nombrePropietario:   row.nombrePropietario ?? null,
     telefonoPropietario: row.telefonoPropietario ?? null,
     creadoEn:            row.creadoEn ?? null,
@@ -101,6 +104,18 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
       ))
       .limit(1);
     return row ?? null;
+  }
+
+  async findPropietarioByVivienda(fraccionamientoId: string, edificio: string, departamento: string): Promise<ResidenteData | null> {
+    const row = await db.query.perfilesResidente.findFirst({
+      where: (p, { and, eq }) => and(
+        eq(p.fraccionamientoId, fraccionamientoId),
+        eq(p.edificio, edificio),
+        eq(p.departamento, departamento),
+        eq(p.tipoOcupante, 'propietario'),
+      ),
+    });
+    return row ? toData(row) : null;
   }
 
   async findByUserIdWithPaymentConfig(userId: string): Promise<ResidenteData | null> {
@@ -188,12 +203,31 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
         throw new Error('El fraccionamiento es obligatorio');
       }
       const [fraccionamiento] = await tx
-        .select({ id: fraccionamientos.id, activo: fraccionamientos.activo })
+        .select({
+          id: fraccionamientos.id,
+          activo: fraccionamientos.activo,
+          limiteViviendas: fraccionamientos.limiteViviendas,
+        })
         .from(fraccionamientos)
         .where(eq(fraccionamientos.id, data.fraccionamientoId))
+        .for('update')
         .limit(1);
       if (!fraccionamiento?.activo) {
         throw new Error('El fraccionamiento no esta disponible');
+      }
+
+      if ((data.tipoOcupante ?? data.tenencia) !== 'inquilino') {
+        const [{ total: totalViviendas }] = await tx
+          .select({ total: count() })
+          .from(perfilesResidente)
+          .where(and(
+            eq(perfilesResidente.fraccionamientoId, fraccionamiento.id),
+            eq(perfilesResidente.tipoOcupante, 'propietario'),
+          ));
+
+        if (Number(totalViviendas) >= fraccionamiento.limiteViviendas) {
+          throw new LimiteViviendasAlcanzadoError(fraccionamiento.limiteViviendas);
+        }
       }
 
       const [inserted] = await tx.insert(perfilesResidente).values({
@@ -205,6 +239,8 @@ export class DrizzleResidenteRepository implements ResidenteRepository {
         telefono:            data.telefono ?? null,
         sexo:                data.sexo ?? null,
         tenencia:            data.tenencia ?? null,
+        tipoOcupante:        data.tipoOcupante ?? (data.tenencia === 'inquilino' ? 'inquilino' : 'propietario'),
+        duenoPerfilId:       data.duenoPerfilId ?? null,
         nombrePropietario:   data.nombrePropietario ?? null,
         telefonoPropietario: data.telefonoPropietario ?? null,
       } as typeof perfilesResidente.$inferInsert).returning();

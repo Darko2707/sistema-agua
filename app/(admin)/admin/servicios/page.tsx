@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { ServiciosPersonalizadosManager } from '@/components/shared/ServiciosPersonalizadosManager';
 
 export default function ServiciosAdminPage() {
   const router = useRouter();
@@ -90,6 +91,16 @@ export default function ServiciosAdminPage() {
             {serviciosQuery.isLoading ? <Loader2 className="h-6 w-6 animate-spin" /> : <div className="space-y-3">{(serviciosQuery.data ?? []).map(service => <div key={service.id} className="flex items-center justify-between rounded-lg border p-3"><div><p className="font-medium">{service.nombre}</p><p className="text-sm text-muted-foreground">${service.montoMensual} mensuales · ${service.montoReconexion} reconexión</p></div><Badge variant={service.estado === 'activo' ? 'default' : 'secondary'}>{service.estado}</Badge></div>)}{(serviciosQuery.data ?? []).length === 0 && <p className="text-sm text-muted-foreground">No hay servicios configurados.</p>}</div>}
           </CardContent></Card>
         </div>
+
+        {tenantSeleccionado && (
+          <ServiciosPersonalizadosManager
+            fraccionamientoId={tenantSeleccionado}
+            rol="admin"
+            onUpdated={() => {
+              void serviciosQuery.refetch();
+            }}
+          />
+        )}
       </div>
     </div>
   );

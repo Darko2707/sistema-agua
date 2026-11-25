@@ -122,7 +122,11 @@ export const usuariosRouter = router({
       if (!account?.responsableCargos) {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Esta cuenta no está marcada como responsable de cargos. Solicita al administrador que active esa opción.' });
       }
-      const [fraccionamiento] = await db.select({ id: fraccionamientos.id, diaCorte: fraccionamientos.diaCorte })
+      const [fraccionamiento] = await db.select({
+        id: fraccionamientos.id,
+        diaCorte: fraccionamientos.diaCorte,
+        tipoNomenclatura: fraccionamientos.tipoNomenclatura,
+      })
         .from(fraccionamientos)
         .where(and(
           eq(fraccionamientos.id, input.fraccionamientoId),
@@ -136,11 +140,30 @@ export const usuariosRouter = router({
         throw new TRPCError({ code: 'FORBIDDEN', message: 'El fraccionamiento pertenece a otra cuenta' });
       }
       await subscriptionService.requireOperational(input.fraccionamientoId);
-      return crearPerfilHandler.execute({ userId: ctx.user.id, ...input, diaCorte: fraccionamiento.diaCorte });
+      return crearPerfilHandler.execute({
+        userId: ctx.user.id,
+        ...input,
+        diaCorte: fraccionamiento.diaCorte,
+        tipoNomenclatura: (fraccionamiento.tipoNomenclatura ?? 'edificio_depto') as 'edificio_depto' | 'solo_casa',
+        tipoOcupante: input.tenencia,
+      });
     }),
 
   miPerfil: authenticatedProcedure.query(async ({ ctx }) => {
     return residenteRepo.findByUserId(ctx.user.id);
+  }),
+
+  misRoles: authenticatedProcedure.query(async ({ ctx }) => {
+    const usuario = await userRepo.findById(ctx.user.id);
+    const rolesSet = new Set<string>();
+    if (usuario?.role) rolesSet.add(usuario.role);
+    if (Array.isArray(usuario?.roles)) {
+      usuario.roles.forEach((r) => rolesSet.add(r));
+    }
+    return {
+      rolPrincipal: usuario?.role ?? ctx.user.role,
+      roles: Array.from(rolesSet),
+    };
   }),
 
   miResponsabilidadCargos: authenticatedProcedure.query(async ({ ctx }) => {
@@ -379,6 +402,57 @@ export const usuariosRouter = router({
       }
       await userRepo.cambiarRolEnFraccionamiento({ userId: input.userId, nuevoRol: input.rol, fraccionamientoId: fraccionamiento.id, actorId: ctx.user.id });
       return { ok: true };
+    }),
+
+  asignarMultiplesRoles: roleProcedure('admin', 'representante')
+    .input(z.object({
+      userId: z.string().min(1),
+      roles: z.array(z.enum(['representante', 'tesorera', 'cuadrilla_cortes', 'operador_pozo', 'residente'])).min(1),
+      fraccionamientoId: z.string().uuid().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const tenantId = ctx.user.role === 'admin'
+        ? (input.fraccionamientoId ?? ctx.user.fraccionamientoId)
+        : ctx.user.fraccionamientoId;
+      if (!tenantId) throw new TRPCError({ code: 'BAD_REQUEST', message: 'Fraccionamiento requerido' });
+
+      await subscriptionService.requireOperational(tenantId);
+      const usuario = await userRepo.findById(input.userId);
+      if (!usuario) throw new TRPCError({ code: 'NOT_FOUND', message: 'Usuario no encontrado' });
+      if (usuario.fraccionamientoId && usuario.fraccionamientoId !== tenantId) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'El usuario pertenece a otro fraccionamiento' });
+      }
+
+      await db.transaction(async (tx) => {
+        const primaryRole = input.roles[0];
+        await tx.update(user).set({
+          role: primaryRole,
+          roles: input.roles,
+          fraccionamientoId: tenantId,
+          updatedAt: new Date(),
+        }).where(eq(user.id, input.userId));
+
+        const updatesFracc: { representanteId?: string; tesoreraId?: string; updatedAt: Date } = {
+          updatedAt: new Date(),
+        };
+        if (input.roles.includes('representante')) {
+          updatesFracc.representanteId = input.userId;
+        }
+        if (input.roles.includes('tesorera')) {
+          updatesFracc.tesoreraId = input.userId;
+        }
+        await tx.update(fraccionamientos).set(updatesFracc).where(eq(fraccionamientos.id, tenantId));
+
+        await tx.insert(auditoria).values({
+          actorId: ctx.user.id,
+          accion: 'usuario.roles.asignados',
+          entidad: 'user',
+          entidadId: input.userId,
+          detalle: { roles: input.roles, fraccionamientoId: tenantId },
+        });
+      });
+
+      return { ok: true, roles: input.roles };
     }),
 
   asignarRepresentante: roleProcedure('admin')

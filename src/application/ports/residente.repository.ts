@@ -10,6 +10,8 @@ export type ResidenteData = {
   telefono?: string | null;
   sexo?: string | null;
   tenencia?: string | null;
+  tipoOcupante?: string | null;
+  duenoPerfilId?: string | null;
   nombrePropietario?: string | null;
   telefonoPropietario?: string | null;
   creadoEn: Date | null;
@@ -71,6 +73,7 @@ export interface ResidenteRepository {
     fraccionamiento?: FraccionamientoCobroRef | null;
   }) | null>;
   findWaterServiceConfig?(perfilId: string): Promise<ServicioCobroRef | null>;
+  findPropietarioByVivienda?(fraccionamientoId: string, edificio: string, departamento: string): Promise<ResidenteData | null>;
   findAll(): Promise<ResidenteConRelaciones[]>;
   findAllPaginated(page: number, pageSize: number): Promise<PaginatedResult<ResidenteConRelaciones>>;
   findByTenantPaginated?(fraccionamientoId: string, page: number, pageSize: number): Promise<PaginatedResult<ResidenteConRelaciones>>;

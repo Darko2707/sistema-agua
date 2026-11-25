@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 
 import { LegalPage, legalStyles as s } from '../legal-styles';
 
+export const dynamic = 'force-dynamic';
 export const metadata: Metadata = { title: 'Política de privacidad' };
 
 export default function PrivacidadPage() {

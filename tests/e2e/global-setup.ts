@@ -1,12 +1,11 @@
-import type { FullConfig } from '@playwright/test';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNull, ne } from 'drizzle-orm';
 
 /**
  * Seed isolated E2E identities before starting the application. Requiring a
  * dedicated URL prevents this setup from ever writing test records to the
  * developer or production database by accident.
  */
-export default async function globalSetup(_config: FullConfig) {
+export default async function globalSetup() {
   const databaseUrl = process.env.E2E_DATABASE_URL;
   if (!databaseUrl) {
     throw new Error('E2E_DATABASE_URL es obligatorio y debe apuntar a una base de datos aislada para ejecutar Playwright.');
@@ -23,6 +22,7 @@ export default async function globalSetup(_config: FullConfig) {
   const residentEmail = (process.env.E2E_RESIDENTE_EMAIL ?? 'residente@test.local').trim().toLowerCase();
   const credentials = [
     { email: residentEmail, role: 'residente' as const, name: 'Residente E2E' },
+    { email: 'representante@test.local', role: 'representante' as const, name: 'Representante E2E' },
     { email: 'cuadrilla@test.local', role: 'cuadrilla_cortes' as const, name: 'Cuadrilla E2E' },
     { email: 'tesoreria@test.local', role: 'tesorera' as const, name: 'Tesorería E2E' },
     { email: 'admin@test.local', role: 'admin' as const, name: 'Admin E2E' },
@@ -32,7 +32,17 @@ export default async function globalSetup(_config: FullConfig) {
       id: tenantId,
       nombre: 'Fraccionamiento E2E',
       slug: 'sisco-e2e',
-    }).onConflictDoNothing();
+      representanteId: 'e2e-representante',
+      limiteViviendas: 50,
+      esquemaTarifa: 'sencillo',
+    }).onConflictDoUpdate({
+      target: schema.fraccionamientos.id,
+      set: {
+        representanteId: 'e2e-representante',
+        limiteViviendas: 50,
+        esquemaTarifa: 'sencillo',
+      },
+    });
 
     const now = new Date();
     const vigenciaHasta = new Date(now);
@@ -61,12 +71,12 @@ export default async function globalSetup(_config: FullConfig) {
 
     const [waterService] = await db.insert(schema.servicios).values({
       clave: 'agua',
-      nombre: 'Agua',
+      nombre: 'Mantenimiento de bomba',
       activo: true,
       conCorteFisico: true,
     }).onConflictDoUpdate({
       target: schema.servicios.clave,
-      set: { nombre: 'Agua', activo: true, conCorteFisico: true },
+      set: { nombre: 'Mantenimiento de bomba', activo: true, conCorteFisico: true },
     }).returning({ id: schema.servicios.id });
     if (!waterService) throw new Error('No se pudo preparar el servicio global de agua para E2E.');
 
@@ -99,6 +109,22 @@ export default async function globalSetup(_config: FullConfig) {
     const users: Array<{ id: string; email: string; role: typeof credentials[number]['role'] }> = [];
     for (const fixture of credentials) {
       const id = `e2e-${fixture.role}`;
+
+      // The partial unique index uq_user_single_global_admin allows only ONE
+      // non-deleted admin. Soft-delete any stale admin that is NOT this fixture's
+      // row so the index slot is free before we upsert.
+      if (fixture.role === 'admin') {
+        await db.update(schema.user)
+          .set({ deletedAt: new Date() })
+          .where(and(
+            eq(schema.user.role, 'admin'),
+            isNull(schema.user.deletedAt),
+            ne(schema.user.id, id),
+          ));
+      }
+
+      // Use the PK (id) as the conflict target so that the partial unique index
+      // uq_user_single_global_admin (role='admin') never triggers on re-runs.
       const [created] = await db.insert(schema.user).values({
         id,
         name: fixture.name,
@@ -108,9 +134,10 @@ export default async function globalSetup(_config: FullConfig) {
         fraccionamientoId: fixture.role === 'admin' ? null : tenantId,
         responsableCargos: fixture.role === 'residente',
       }).onConflictDoUpdate({
-        target: schema.user.email,
+        target: schema.user.id,
         set: {
           name: fixture.name,
+          email: fixture.email,
           role: fixture.role,
           fraccionamientoId: fixture.role === 'admin' ? null : tenantId,
           responsableCargos: fixture.role === 'residente',

@@ -13,13 +13,16 @@ import {
   consentimientosLegales,
   cargosServicios,
   cortes,
+  evidenciasOrdenTrabajo,
   fraccionamientos,
   notificaciones,
+  ordenesTrabajo,
   pagos,
   perfilesResidente,
   asignacionesFraccionamiento,
   fraccionamientoServicios,
   servicios,
+  user,
 } from '@/db/schema';
 import { residenteRepo } from '@/src/infrastructure/db/repositories';
 import { PeriodoVO } from '@/src/domain/pagos/periodo.vo';
@@ -614,4 +617,64 @@ export const operacionRouter = router({
       }); }),
     };
   }),
+
+  evidenciasFotograficas: roleProcedure('admin', 'representante', 'cuadrilla_cortes')
+    .input(z.object({ ordenTrabajoId: z.string().uuid() }))
+    .query(async ({ ctx, input }) => {
+      const [orden] = await db.select({
+        id: ordenesTrabajo.id,
+        fraccionamientoId: ordenesTrabajo.fraccionamientoId,
+        tipo: ordenesTrabajo.tipo,
+      }).from(ordenesTrabajo)
+        .where(eq(ordenesTrabajo.id, input.ordenTrabajoId))
+        .limit(1);
+
+      if (!orden) throw new TRPCError({ code: 'NOT_FOUND' });
+
+      if (ctx.user.role === 'representante') {
+        if (ctx.user.fraccionamientoId !== orden.fraccionamientoId) {
+          throw new TRPCError({ code: 'NOT_FOUND' });
+        }
+      } else if (ctx.user.role === 'cuadrilla_cortes') {
+        const [asig] = await db.select({ id: asignacionesFraccionamiento.id })
+          .from(asignacionesFraccionamiento)
+          .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, asignacionesFraccionamiento.fraccionamientoServicioId))
+          .innerJoin(servicios, eq(servicios.id, fraccionamientoServicios.servicioId))
+          .where(and(
+            eq(asignacionesFraccionamiento.usuarioId, ctx.user.id),
+            eq(asignacionesFraccionamiento.fraccionamientoId, orden.fraccionamientoId),
+            eq(asignacionesFraccionamiento.rol, 'cuadrilla_cortes'),
+            eq(asignacionesFraccionamiento.activo, true),
+            eq(fraccionamientoServicios.fraccionamientoId, orden.fraccionamientoId),
+            eq(fraccionamientoServicios.estado, 'activo'),
+            eq(servicios.clave, 'agua'),
+          )).limit(1);
+        if (!asig) throw new TRPCError({ code: 'NOT_FOUND' });
+      }
+
+      const evidencias = await db.select({
+        id: evidenciasOrdenTrabajo.id,
+        referenciaArchivo: evidenciasOrdenTrabajo.referenciaArchivo,
+        contentType: evidenciasOrdenTrabajo.contentType,
+        tamanoBytes: evidenciasOrdenTrabajo.tamanoBytes,
+        creadoEn: evidenciasOrdenTrabajo.creadoEn,
+        subidoPorId: evidenciasOrdenTrabajo.subidoPor,
+        nombreSubidoPor: user.name,
+      }).from(evidenciasOrdenTrabajo)
+        .leftJoin(user, eq(user.id, evidenciasOrdenTrabajo.subidoPor))
+        .where(eq(evidenciasOrdenTrabajo.ordenTrabajoId, input.ordenTrabajoId))
+        .orderBy(desc(evidenciasOrdenTrabajo.creadoEn));
+
+      return {
+        orden: { id: orden.id, tipo: orden.tipo, fraccionamientoId: orden.fraccionamientoId },
+        evidencias: evidencias.map((e) => ({
+          id: e.id,
+          viewUrl: `/api/upload?ref=${encodeURIComponent(e.referenciaArchivo)}`,
+          contentType: e.contentType,
+          tamanoBytes: e.tamanoBytes,
+          creadoEn: e.creadoEn,
+          subidoPor: { id: e.subidoPorId, nombre: e.nombreSubidoPor ?? 'Desconocido' },
+        })),
+      };
+    }),
 });

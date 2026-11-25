@@ -7,6 +7,9 @@ import { useSession } from '@/hooks/useAuth';
 import { trpcReact } from '@/lib/trpc-react';
 import { EstadoAguaBadge } from '@/components/domain/EstadoAguaBadge';
 import { MESES_CORTO as MESES } from '@/lib/meses';
+import { ServiciosPersonalizadosManager } from '@/components/shared/ServiciosPersonalizadosManager';
+import { NotasOperativasPanel } from '@/components/shared/NotasOperativasPanel';
+import { MultiRoleSwitcher } from '@/components/shared/MultiRoleSwitcher';
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const C = {
@@ -28,7 +31,7 @@ const C = {
 const FM = "var(--font-manrope), 'Manrope', sans-serif";
 const FS = "var(--font-space-grotesk), 'Space Grotesk', sans-serif";
 
-type TabId = 'residentes' | 'morosos' | 'personal';
+type TabId = 'residentes' | 'morosos' | 'personal' | 'evidencias' | 'servicios' | 'notas';
 
 const ROL_LABEL: Record<string, string> = {
   tesorera:         'Tesorería',
@@ -143,6 +146,19 @@ export function RepresentanteDashboard() {
   const miPerfilQuery = trpcReact.usuarios.miPerfil.useQuery(undefined, {
     refetchOnWindowFocus: true,
   });
+
+  const [filtroTipoEvidencia, setFiltroTipoEvidencia] = useState<'todos' | 'corte' | 'reconexion'>('todos');
+  const [fotoAmpliada, setFotoAmpliada] = useState<{ url: string; titulo: string; trabajador: string; fecha: string; vivienda: string } | null>(null);
+
+  const evidenciasQuery = trpcReact.cortes.evidenciasFotograficas.useQuery(
+    filtroTipoEvidencia === 'todos' ? undefined : { tipo: filtroTipoEvidencia },
+    { enabled: tab === 'evidencias' },
+  );
+
+  const evidenciasResidenteQuery = trpcReact.cortes.evidenciasFotograficas.useQuery(
+    { perfilId: residenteDetalleId ?? undefined },
+    { enabled: Boolean(residenteDetalleId) },
+  );
   const tienePerfilResidente = Boolean(miPerfilQuery.data);
 
   const irAResidente = () => {
@@ -225,7 +241,9 @@ export function RepresentanteDashboard() {
         expiresAt: result.expiresAt,
         nombre:    result.residente.nombre,
         email:     result.residente.email,
-        vivienda:  `Edif. ${result.residente.edificio} · Depto ${result.residente.departamento}`,
+        vivienda:  fraccionamiento?.tipoNomenclatura === 'solo_casa'
+          ? `Casa ${result.residente.departamento}`
+          : `Edif. ${result.residente.edificio} · Depto ${result.residente.departamento}`,
       });
       mostrar('Código de recuperación generado');
     } catch (e: unknown) {
@@ -306,7 +324,9 @@ export function RepresentanteDashboard() {
             </div>
           </div>
 
-          <div ref={menuRef} style={{ position: 'relative' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <MultiRoleSwitcher theme="dark" />
+            <div ref={menuRef} style={{ position: 'relative' }}>
             <button
               onClick={() => setMenuOpen(v => !v)}
               aria-expanded={menuOpen}
@@ -351,6 +371,7 @@ export function RepresentanteDashboard() {
               </div>
             )}
           </div>
+          </div>
         </div>
 
         {/* Tab bar */}
@@ -358,6 +379,9 @@ export function RepresentanteDashboard() {
           <TabBtn active={tab === 'residentes'} onClick={() => setTab('residentes')} label={`Residentes (${residentes.length})`} />
           <TabBtn active={tab === 'morosos'}    onClick={() => setTab('morosos')}    label={`Morosos (${morosos})`} />
           <TabBtn active={tab === 'personal'}   onClick={() => setTab('personal')}   label={`Personal (${personal.length})`} />
+          <TabBtn active={tab === 'evidencias'} onClick={() => setTab('evidencias')} label="Evidencias cuadrilla" />
+          <TabBtn active={tab === 'servicios'}  onClick={() => setTab('servicios')}  label="Servicios" />
+          <TabBtn active={tab === 'notas'}      onClick={() => setTab('notas')}      label="Notas operativas" />
         </div>
       </div>
 
@@ -416,7 +440,40 @@ export function RepresentanteDashboard() {
             </div>
           </div>
         )}
+        {fraccionamiento?.limiteAlcanzado && (
+          <div
+            role="alert"
+            style={{
+              background: '#FEE2E2',
+              border: '1px solid #FCA5A5',
+              borderRadius: 14,
+              padding: '12px 16px',
+              color: '#991B1B',
+              fontSize: 13,
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+            }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+              <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+            <span>
+              Has alcanzado el límite máximo de viviendas contratadas ({fraccionamiento.limiteViviendas} viviendas). Para dar de alta más residentes, contacta a la administración para ampliar tu plan de licenciamiento.
+            </span>
+          </div>
+        )}
+
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          {fraccionamiento && (
+            <StatCard
+              value={`${fraccionamiento.viviendasRegistradas ?? 0} de ${fraccionamiento.limiteViviendas ?? 50}`}
+              label="Viviendas contratadas"
+              color={fraccionamiento.limiteAlcanzado ? C.danger : C.green}
+            />
+          )}
           <StatCard value={resumen?.totalDeptos ?? 0} label="Departamentos" />
           <StatCard value={resumen?.pagados ?? 0}     label="Pagados este mes" color={C.green} />
           <StatCard value={morosos}                   label="Morosos"          color={morosos > 0 ? C.danger : C.green} />
@@ -550,7 +607,9 @@ export function RepresentanteDashboard() {
                         {r.usuario?.name}
                       </div>
                       <div style={{ fontSize: 12, color: C.textMuted, marginTop: 1 }}>
-                        Edif. {r.edificio} · Depto {r.departamento}
+                        {fraccionamiento?.tipoNomenclatura === 'solo_casa'
+                          ? `Casa ${r.departamento}`
+                          : `Edif. ${r.edificio} · Depto ${r.departamento}`}
                       </div>
                       {r.tenencia === 'inquilino' && r.nombrePropietario && (
                         <div style={{ fontSize: 11, color: '#92660A', marginTop: 2 }}>
@@ -597,6 +656,130 @@ export function RepresentanteDashboard() {
               ))
             )}
           </div>
+        )}
+
+        {/* ── Tab: Evidencias cuadrilla ── */}
+        {tab === 'evidencias' && (
+          <div style={{ background: C.card, borderRadius: 18, border: `1px solid ${C.border}`, overflow: 'hidden' }}>
+            <div style={{ padding: '16px 20px', borderBottom: `1px solid ${C.border}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+              <div>
+                <div style={{ fontFamily: FS, fontSize: 16, fontWeight: 700, color: C.textMain }}>
+                  Evidencias fotográficas de la cuadrilla
+                </div>
+                <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2 }}>
+                  Fotografías operativas capturadas durante órdenes de corte y reconexión
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {(['todos', 'corte', 'reconexion'] as const).map((tipo) => (
+                  <button
+                    key={tipo}
+                    onClick={() => setFiltroTipoEvidencia(tipo)}
+                    style={{
+                      padding: '6px 14px',
+                      borderRadius: 20,
+                      fontSize: 12,
+                      fontWeight: 700,
+                      border: 'none',
+                      cursor: 'pointer',
+                      background: filtroTipoEvidencia === tipo ? C.bgHeader : C.bg,
+                      color: filtroTipoEvidencia === tipo ? '#fff' : C.textMain,
+                      textTransform: 'capitalize',
+                    }}
+                  >
+                    {tipo === 'todos' ? 'Todas' : tipo === 'corte' ? 'Cortes' : 'Reconexiones'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {evidenciasQuery.isLoading ? (
+              <div style={{ padding: '48px 20px', textAlign: 'center', color: C.textMuted, fontSize: 13 }}>
+                Cargando evidencias fotográficas...
+              </div>
+            ) : evidenciasQuery.isError ? (
+              <div style={{ padding: '32px 20px', textAlign: 'center', color: C.danger, fontSize: 13 }}>
+                No se pudieron cargar las evidencias fotográficas.
+              </div>
+            ) : !evidenciasQuery.data || evidenciasQuery.data.length === 0 ? (
+              <div style={{ padding: '48px 20px', textAlign: 'center', color: C.textMuted, fontSize: 13 }}>
+                No hay evidencias fotográficas registradas para este filtro.
+              </div>
+            ) : (
+              <div style={{ padding: 20, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16 }}>
+                {evidenciasQuery.data.map((ev) => (
+                  <div
+                    key={ev.id}
+                    onClick={() => setFotoAmpliada({
+                      url: ev.url,
+                      titulo: `Orden de ${ev.tipo}`,
+                      trabajador: ev.trabajador.nombre,
+                      fecha: new Date(ev.fechaCaptura).toLocaleString('es-MX'),
+                      vivienda: `Edif. ${ev.vivienda.edificio} · Depto ${ev.vivienda.departamento}`,
+                    })}
+                    style={{
+                      borderRadius: 14,
+                      border: `1px solid ${C.border}`,
+                      overflow: 'hidden',
+                      background: C.bg,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div style={{ height: 180, position: 'relative', background: '#e2e8f0' }}>
+                      <img
+                        src={ev.url}
+                        alt={`Evidencia ${ev.tipo}`}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        loading="lazy"
+                      />
+                      <span
+                        style={{
+                          position: 'absolute',
+                          top: 10,
+                          left: 10,
+                          padding: '4px 10px',
+                          borderRadius: 12,
+                          fontSize: 11,
+                          fontWeight: 800,
+                          textTransform: 'uppercase',
+                          background: ev.tipo === 'corte' ? 'rgba(192, 69, 63, 0.9)' : 'rgba(46, 122, 90, 0.9)',
+                          color: '#fff',
+                        }}
+                      >
+                        {ev.tipo}
+                      </span>
+                    </div>
+                    <div style={{ padding: 12, fontSize: 12 }}>
+                      <div style={{ fontWeight: 800, color: C.textMain, fontSize: 13 }}>
+                        Edif. {ev.vivienda.edificio} · Depto {ev.vivienda.departamento}
+                      </div>
+                      <div style={{ color: C.textMuted, marginTop: 4 }}>
+                        Subido por: <strong style={{ color: C.textMain }}>{ev.trabajador.nombre}</strong>
+                      </div>
+                      <div style={{ color: C.textMuted, marginTop: 2, fontSize: 11 }}>
+                        {new Date(ev.fechaCaptura).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' })}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Tab: Servicios Dinámicos ── */}
+        {tab === 'servicios' && (
+          <ServiciosPersonalizadosManager
+            rol="representante"
+            fraccionamientoId={fraccionamiento?.id}
+          />
+        )}
+
+        {/* ── Tab: Notas Operativas ── */}
+        {tab === 'notas' && (
+          <NotasOperativasPanel
+            fraccionamientoId={fraccionamiento?.id}
+          />
         )}
       </div>
 
@@ -650,6 +833,34 @@ export function RepresentanteDashboard() {
                 </div>
               )}
             </dl>
+
+            {evidenciasResidenteQuery.data && evidenciasResidenteQuery.data.length > 0 && (
+              <div style={{ marginTop: 20, paddingTop: 16, borderTop: `1px solid ${C.border}` }}>
+                <div style={{ fontWeight: 700, fontSize: 13, color: C.textMain, marginBottom: 10 }}>
+                  Evidencias de la cuadrilla ({evidenciasResidenteQuery.data.length})
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))', gap: 8 }}>
+                  {evidenciasResidenteQuery.data.map((ev) => (
+                    <div
+                      key={ev.id}
+                      onClick={() => setFotoAmpliada({
+                        url: ev.url,
+                        titulo: `Orden de ${ev.tipo}`,
+                        trabajador: ev.trabajador.nombre,
+                        fecha: new Date(ev.fechaCaptura).toLocaleString('es-MX'),
+                        vivienda: `Edif. ${ev.vivienda.edificio} · Depto ${ev.vivienda.departamento}`,
+                      })}
+                      style={{ cursor: 'pointer', borderRadius: 8, overflow: 'hidden', border: `1px solid ${C.border}`, height: 80, position: 'relative' }}
+                    >
+                      <img src={ev.url} alt={ev.tipo} style={{ width: '100%', height: '100%', objectFit: 'cover' }} loading="lazy" />
+                      <span style={{ position: 'absolute', bottom: 2, right: 2, fontSize: 9, background: 'rgba(0,0,0,0.7)', color: '#fff', padding: '1px 4px', borderRadius: 4 }}>
+                        {ev.tipo}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 22 }}>
               <Btn onClick={() => setResidenteDetalleId(null)}>Cerrar</Btn>
@@ -751,6 +962,37 @@ export function RepresentanteDashboard() {
                 )}
                 {guardandoPersonal ? 'Guardando...' : 'Asignar rol'}
               </Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {fotoAmpliada && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.85)', padding: 16 }}
+          onClick={() => setFotoAmpliada(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            style={{ background: '#fff', borderRadius: 20, overflow: 'hidden', width: '100%', maxWidth: 640, boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ position: 'relative', maxHeight: '65vh', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <img src={fotoAmpliada.url} alt={fotoAmpliada.titulo} style={{ maxWidth: '100%', maxHeight: '65vh', objectFit: 'contain' }} />
+            </div>
+            <div style={{ padding: '18px 22px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                <div>
+                  <h4 style={{ margin: 0, fontFamily: FS, fontSize: 16, fontWeight: 800, color: C.textMain }}>
+                    {fotoAmpliada.titulo} — {fotoAmpliada.vivienda}
+                  </h4>
+                  <p style={{ margin: '4px 0 0', fontSize: 12.5, color: C.textMuted }}>
+                    Capturada por {fotoAmpliada.trabajador} · {fotoAmpliada.fecha}
+                  </p>
+                </div>
+                <Btn onClick={() => setFotoAmpliada(null)}>Cerrar</Btn>
+              </div>
             </div>
           </div>
         </div>

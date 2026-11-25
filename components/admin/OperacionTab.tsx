@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Download, RefreshCw } from 'lucide-react';
+import { Download, ImageIcon, RefreshCw } from 'lucide-react';
 import { trpc } from '@/lib/trpc-client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -45,22 +45,38 @@ type NotificacionRow = {
   creadoEn: string | Date;
 };
 
+type EvidenciaRow = {
+  id: string;
+  tipo: 'corte' | 'reconexion';
+  url: string;
+  referencia: string;
+  fechaCaptura: string | Date;
+  trabajador: { id: string | null; nombre: string };
+  vivienda: { perfilId: string; edificio: string; departamento: string };
+  accion?: string;
+  nota?: string | null;
+  fraccionamientoId?: string | null;
+};
+
 async function obtenerOperacion() {
-  const [dashboard, auditoria, notificaciones] = await Promise.all([
+  const [dashboard, auditoria, notificaciones, evidencias] = await Promise.all([
     trpc.operacion.dashboardEjecutivo.query(),
     trpc.operacion.auditoria.query({ limit: 10 }),
     trpc.operacion.notificaciones.query({ limit: 10 }),
+    trpc.cortes.evidenciasFotograficas.query({ limit: 24 }),
   ]);
-  return { dashboard, auditoria, notificaciones };
+  return { dashboard, auditoria, notificaciones, evidencias };
 }
 
 export function OperacionTab() {
   const [dashboard, setDashboard] = useState<Ejecutivo | null>(null);
   const [auditoria, setAuditoria] = useState<AuditoriaRow[]>([]);
   const [notificaciones, setNotificaciones] = useState<NotificacionRow[]>([]);
+  const [evidencias, setEvidencias] = useState<EvidenciaRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [auditoriaSeleccionada, setAuditoriaSeleccionada] = useState<AuditoriaRow | null>(null);
+  const [evidenciaSeleccionada, setEvidenciaSeleccionada] = useState<EvidenciaRow | null>(null);
 
   async function cargar() {
     setLoading(true);
@@ -70,6 +86,7 @@ export function OperacionTab() {
       setDashboard(data.dashboard as Ejecutivo);
       setAuditoria(data.auditoria as AuditoriaRow[]);
       setNotificaciones(data.notificaciones as NotificacionRow[]);
+      setEvidencias(data.evidencias as EvidenciaRow[]);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'No se pudo cargar operacion');
     } finally {
@@ -96,6 +113,7 @@ export function OperacionTab() {
         setDashboard(data.dashboard as Ejecutivo);
         setAuditoria(data.auditoria as AuditoriaRow[]);
         setNotificaciones(data.notificaciones as NotificacionRow[]);
+        setEvidencias(data.evidencias as EvidenciaRow[]);
       })
       .catch((err: unknown) => {
         if (active) setError(err instanceof Error ? err.message : 'No se pudo cargar operacion');
@@ -180,6 +198,56 @@ export function OperacionTab() {
         </Card>
       )}
 
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ImageIcon className="h-5 w-5 text-sky-600" />
+            Evidencias fotográficas de cuadrilla (Cortes y Reconexiones)
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {evidencias.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">Sin evidencias fotográficas registradas.</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+              {evidencias.map((ev) => (
+                <button
+                  key={ev.id}
+                  type="button"
+                  onClick={() => setEvidenciaSeleccionada(ev)}
+                  className="group relative overflow-hidden rounded-xl border bg-muted text-left transition-all hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <div className="relative h-32 w-full overflow-hidden bg-slate-100">
+                    <img
+                      src={ev.url}
+                      alt={ev.tipo}
+                      className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                      loading="lazy"
+                    />
+                    <span
+                      className={`absolute left-2 top-2 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase text-white ${
+                        ev.tipo === 'corte' ? 'bg-red-600/90' : 'bg-emerald-600/90'
+                      }`}
+                    >
+                      {ev.tipo}
+                    </span>
+                  </div>
+                  <div className="p-2 text-xs">
+                    <p className="font-semibold text-slate-800 line-clamp-1">
+                      Edif. {ev.vivienda.edificio} · Depto {ev.vivienda.departamento}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground truncate">{ev.trabajador.nombre}</p>
+                    <p className="text-[10px] text-slate-400">
+                      {new Date(ev.fechaCaptura).toLocaleDateString('es-MX')}
+                    </p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader><CardTitle>Auditoria reciente</CardTitle></CardHeader>
@@ -255,6 +323,53 @@ export function OperacionTab() {
               <pre className="max-h-96 overflow-auto rounded-lg bg-muted p-3 text-xs">
                 {JSON.stringify(auditoriaSeleccionada.detalle ?? {}, null, 2)}
               </pre>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {evidenciaSeleccionada && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setEvidenciaSeleccionada(null);
+          }}
+        >
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-hidden rounded-2xl bg-background shadow-2xl">
+            <div className="flex max-h-[60vh] items-center justify-center bg-black">
+              <img
+                src={evidenciaSeleccionada.url}
+                alt={evidenciaSeleccionada.tipo}
+                className="max-h-[60vh] w-auto object-contain"
+              />
+            </div>
+            <div className="p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`rounded px-2 py-0.5 text-xs font-bold uppercase text-white ${
+                        evidenciaSeleccionada.tipo === 'corte' ? 'bg-red-600' : 'bg-emerald-600'
+                      }`}
+                    >
+                      {evidenciaSeleccionada.tipo}
+                    </span>
+                    <h3 className="text-lg font-semibold">
+                      Edif. {evidenciaSeleccionada.vivienda.edificio} · Depto {evidenciaSeleccionada.vivienda.departamento}
+                    </h3>
+                  </div>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Subido por <strong className="text-foreground">{evidenciaSeleccionada.trabajador.nombre}</strong> el{' '}
+                    {new Date(evidenciaSeleccionada.fechaCaptura).toLocaleString('es-MX')}
+                  </p>
+                  {evidenciaSeleccionada.nota && (
+                    <p className="mt-2 text-xs italic text-muted-foreground">Nota: {evidenciaSeleccionada.nota}</p>
+                  )}
+                </div>
+                <Button variant="outline" size="sm" onClick={() => setEvidenciaSeleccionada(null)}>
+                  Cerrar
+                </Button>
+              </div>
             </div>
           </div>
         </div>
