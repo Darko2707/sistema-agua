@@ -21,7 +21,6 @@ import { PendientesTab } from './PendientesTab';
 import { MetricasTab }   from './MetricasTab';
 import { OperacionTab }  from './OperacionTab';
 import { NotasOperativasPanel } from '@/components/shared/NotasOperativasPanel';
-import { MultiRoleSwitcher } from '@/components/shared/MultiRoleSwitcher';
 
 const ahora = new Date();
 
@@ -74,7 +73,6 @@ export function AdminDashboard() {
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-              <MultiRoleSwitcher theme="dark" />
               <Button variant="secondary" onClick={salir}>
                 <LogOut className="mr-2 h-4 w-4" />
                 Salir

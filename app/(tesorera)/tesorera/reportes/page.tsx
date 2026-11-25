@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
 import { useSession } from '@/hooks/useAuth';
@@ -9,7 +9,6 @@ import { PagosTesorera } from '@/components/tesorera/PagosTesorera';
 import { ReporteResidentes } from '@/components/representante/ReporteResidentes';
 import { ReporteFinanciero } from '@/components/representante/ReporteFinanciero';
 import { NotasOperativasPanel } from '@/components/shared/NotasOperativasPanel';
-import { MultiRoleSwitcher } from '@/components/shared/MultiRoleSwitcher';
 
 type TabId = 'pagos' | 'residentes' | 'financiero' | 'notas';
 
@@ -38,7 +37,41 @@ export default function TesoreraReportesPage() {
   const menuRef = useRef<HTMLDivElement>(null);
   const fraccionamientoQuery = trpcReact.fraccionamientos.miFraccionamiento.useQuery();
   const miPerfilQuery = trpcReact.usuarios.miPerfil.useQuery(undefined, { refetchOnWindowFocus: true });
+  const misRolesQ = trpcReact.usuarios.misRoles.useQuery(undefined, {
+    enabled: !!session?.user,
+  });
   const tienePerfilResidente = Boolean(miPerfilQuery.data);
+
+  const rolesDisponibles = misRolesQ.data?.roles ?? (session?.user as { roles?: string[] } | undefined)?.roles ?? [];
+  const otrosRolesNav = useMemo(() => {
+    const items: Array<{ label: string; onClick: () => void }> = [];
+    const rolesSet = new Set(rolesDisponibles);
+    if (rolesSet.has('representante')) {
+      items.push({
+        label: 'Panel Representante',
+        onClick: () => { setMenuOpen(false); router.push('/representante'); },
+      });
+    }
+    if (rolesSet.has('cuadrilla_cortes')) {
+      items.push({
+        label: 'Panel Cuadrilla',
+        onClick: () => { setMenuOpen(false); router.push('/trabajador'); },
+      });
+    }
+    if (rolesSet.has('residente')) {
+      items.push({
+        label: 'Mi residencia',
+        onClick: () => { setMenuOpen(false); router.push('/residente'); },
+      });
+    }
+    if (rolesSet.has('admin')) {
+      items.push({
+        label: 'Panel Administrador',
+        onClick: () => { setMenuOpen(false); router.push('/admin'); },
+      });
+    }
+    return items;
+  }, [rolesDisponibles, router]);
 
   useEffect(() => {
     function handler(e: MouseEvent) {
@@ -82,9 +115,7 @@ export default function TesoreraReportesPage() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <MultiRoleSwitcher theme="dark" />
-            <div ref={menuRef} style={{ position: 'relative' }}>
+          <div ref={menuRef} style={{ position: 'relative' }}>
             <button
               onClick={() => setMenuOpen(v => !v)}
               aria-expanded={menuOpen}
@@ -108,16 +139,17 @@ export default function TesoreraReportesPage() {
                     {fraccionamientoQuery.data?.nombre ? `Fraccionamiento ${fraccionamientoQuery.data.nombre}` : 'Tesorería — SISCo'}
                   </div>
                 </div>
-                <button role="menuitem" onClick={() => { setMenuOpen(false); router.push('/tesorera'); }}
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: 'none', border: 'none', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#1F2A22', fontFamily: FM, textAlign: 'left' }}>
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-                  Mi panel
-                </button>
-                <button role="menuitem" onClick={() => { setMenuOpen(false); router.push('/residente'); }}
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: 'none', border: 'none', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#1F2A22', fontFamily: FM, textAlign: 'left' }}>
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-                  Mi residencia
-                </button>
+                {otrosRolesNav.map(nav => (
+                  <button
+                    key={nav.label}
+                    role="menuitem"
+                    onClick={nav.onClick}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: 'none', border: 'none', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#1F2A22', fontFamily: FM, textAlign: 'left' }}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                    {nav.label}
+                  </button>
+                ))}
                 <div style={{ height: 1, background: '#E4E1D5', margin: '4px 9px' }} />
                 <button role="menuitem" onClick={() => { setMenuOpen(false); void salir(); }}
                   style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: 'none', border: 'none', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#C0453F', fontFamily: FM, textAlign: 'left' }}>
@@ -127,7 +159,6 @@ export default function TesoreraReportesPage() {
               </div>
             )}
           </div>
-        </div>
         </div>
 
         {/* Tab bar */}

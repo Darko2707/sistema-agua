@@ -9,7 +9,6 @@ import { EstadoAguaBadge } from '@/components/domain/EstadoAguaBadge';
 import { MESES_CORTO as MESES } from '@/lib/meses';
 import { ServiciosPersonalizadosManager } from '@/components/shared/ServiciosPersonalizadosManager';
 import { NotasOperativasPanel } from '@/components/shared/NotasOperativasPanel';
-import { MultiRoleSwitcher } from '@/components/shared/MultiRoleSwitcher';
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const C = {
@@ -146,6 +145,9 @@ export function RepresentanteDashboard() {
   const miPerfilQuery = trpcReact.usuarios.miPerfil.useQuery(undefined, {
     refetchOnWindowFocus: true,
   });
+  const misRolesQ = trpcReact.usuarios.misRoles.useQuery(undefined, {
+    enabled: !!session?.user,
+  });
 
   const [filtroTipoEvidencia, setFiltroTipoEvidencia] = useState<'todos' | 'corte' | 'reconexion'>('todos');
   const [fotoAmpliada, setFotoAmpliada] = useState<{ url: string; titulo: string; trabajador: string; fecha: string; vivienda: string } | null>(null);
@@ -167,6 +169,37 @@ export function RepresentanteDashboard() {
     void utils.usuarios.miPerfil.invalidate();
     router.push('/residente');
   };
+
+  const rolesDisponibles = misRolesQ.data?.roles ?? (session?.user as { roles?: string[] } | undefined)?.roles ?? [];
+  const otrosRolesNav = useMemo(() => {
+    const items: Array<{ label: string; onClick: () => void }> = [];
+    const rolesSet = new Set(rolesDisponibles);
+    if (rolesSet.has('tesorera')) {
+      items.push({
+        label: 'Panel Tesorería',
+        onClick: () => { setMenuOpen(false); router.push('/tesorera/reportes'); },
+      });
+    }
+    if (rolesSet.has('cuadrilla_cortes')) {
+      items.push({
+        label: 'Panel Cuadrilla',
+        onClick: () => { setMenuOpen(false); router.push('/trabajador'); },
+      });
+    }
+    if (rolesSet.has('residente')) {
+      items.push({
+        label: 'Mi residencia',
+        onClick: irAResidente,
+      });
+    }
+    if (rolesSet.has('admin')) {
+      items.push({
+        label: 'Panel Administrador',
+        onClick: () => { setMenuOpen(false); router.push('/admin'); },
+      });
+    }
+    return items;
+  }, [rolesDisponibles, router, irAResidente]);
   const cambiarRolMut   = trpcReact.usuarios.cambiarRolEnFraccionamiento.useMutation();
   const generarCodigoMut = trpcReact.usuarios.generarCodigoRecuperacion.useMutation();
 
@@ -324,9 +357,7 @@ export function RepresentanteDashboard() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <MultiRoleSwitcher theme="dark" />
-            <div ref={menuRef} style={{ position: 'relative' }}>
+          <div ref={menuRef} style={{ position: 'relative' }}>
             <button
               onClick={() => setMenuOpen(v => !v)}
               aria-expanded={menuOpen}
@@ -350,16 +381,17 @@ export function RepresentanteDashboard() {
                     {fraccionamiento?.nombre ? `Fraccionamiento ${fraccionamiento.nombre}` : 'Representante — SISCO'}
                   </div>
                 </div>
-                <button role="menuitem" onClick={() => { setMenuOpen(false); router.push('/representante'); }}
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: 'none', border: 'none', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#1F2A22', fontFamily: FM, textAlign: 'left' }}>
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-                  Mi panel
-                </button>
-                <button role="menuitem" onClick={irAResidente}
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: 'none', border: 'none', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#1F2A22', fontFamily: FM, textAlign: 'left' }}>
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-                  Mi residencia
-                </button>
+                {otrosRolesNav.map(nav => (
+                  <button
+                    key={nav.label}
+                    role="menuitem"
+                    onClick={nav.onClick}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: 'none', border: 'none', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#1F2A22', fontFamily: FM, textAlign: 'left' }}
+                  >
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                    {nav.label}
+                  </button>
+                ))}
                 <div style={{ height: 1, background: '#E4E1D5', margin: '4px 9px' }} />
                 <button role="menuitem" onClick={() => { setMenuOpen(false); void salir(); }}
                   style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: 'none', border: 'none', borderRadius: 12, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: '#C0453F', fontFamily: FM, textAlign: 'left' }}>
@@ -368,7 +400,6 @@ export function RepresentanteDashboard() {
                 </button>
               </div>
             )}
-          </div>
           </div>
         </div>
 
