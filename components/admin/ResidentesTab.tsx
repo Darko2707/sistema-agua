@@ -318,7 +318,7 @@ export function ResidentesTab({
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
           onClick={(e) => { if (e.target === e.currentTarget) cerrarModal(); }}
         >
-          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl">
+          <div className="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl max-h-[90vh] overflow-y-auto">
             <h2 className="text-lg font-bold text-slate-800">Registrar pago por {metodoSel === 'efectivo' ? 'efectivo' : 'transferencia'}</h2>
             <p className="mt-1 text-sm text-muted-foreground">
               {modalResidente.usuario?.name} · Edif. {modalResidente.edificio} · Depto. {modalResidente.departamento}

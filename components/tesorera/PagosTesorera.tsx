@@ -946,7 +946,7 @@ export function PagosTesorera() {
           style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(0,0,0,.42)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 18 }}
           onClick={e => { if (e.target === e.currentTarget && !procesandoComprobante) { setRechazandoId(null); setMotivoRechazo(''); } }}
         >
-          <div style={{ width: '100%', maxWidth: 420, background: '#fff', borderRadius: 18, padding: 20, boxShadow: '0 22px 70px rgba(0,0,0,.25)' }}>
+          <div style={{ width: '100%', maxWidth: 420, maxHeight: '90vh', overflowY: 'auto', background: '#fff', borderRadius: 18, padding: 20, boxShadow: '0 22px 70px rgba(0,0,0,.25)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
               <h2 id="titulo-rechazo" style={{ fontFamily: FS, fontSize: 17, color: C.danger, fontWeight: 800, margin: 0 }}>Rechazar comprobante</h2>
               <button type="button" aria-label="Cerrar" onClick={() => { setRechazandoId(null); setMotivoRechazo(''); }} disabled={!!procesandoComprobante} style={{ border: 'none', background: C.dangerBg, color: C.danger, borderRadius: 10, width: 34, height: 34, cursor: 'pointer', fontWeight: 800 }}>×</button>

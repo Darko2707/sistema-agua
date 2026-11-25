@@ -706,7 +706,7 @@ export function RepresentanteDashboard() {
                 No hay evidencias fotográficas registradas para este filtro.
               </div>
             ) : (
-              <div style={{ padding: 20, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16 }}>
+              <div style={{ padding: 20, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 240px), 1fr))', gap: 16 }}>
                 {evidenciasQuery.data.map((ev) => (
                   <div
                     key={ev.id}
@@ -786,7 +786,7 @@ export function RepresentanteDashboard() {
       {residenteDetalle && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 55, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,.45)', padding: 16 }}
           onClick={() => setResidenteDetalleId(null)}>
-          <div role="dialog" aria-modal="true" aria-labelledby="detalle-residente-title" style={{ background: '#fff', borderRadius: 20, padding: 28, width: '100%', maxWidth: 480, boxShadow: '0 24px 64px rgba(0,0,0,.2)' }}
+          <div role="dialog" aria-modal="true" aria-labelledby="detalle-residente-title" style={{ background: '#fff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 480, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,.2)' }}
             onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
               <div>
@@ -872,7 +872,7 @@ export function RepresentanteDashboard() {
       {codigoRecuperacion && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 55, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,.45)', padding: 16 }}
           onClick={() => setCodigoRecuperacion(null)}>
-          <div role="dialog" aria-modal="true" aria-labelledby="codigo-recuperacion-title" style={{ background: '#fff', borderRadius: 20, padding: 28, width: '100%', maxWidth: 440, boxShadow: '0 24px 64px rgba(0,0,0,.2)' }}
+          <div role="dialog" aria-modal="true" aria-labelledby="codigo-recuperacion-title" style={{ background: '#fff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 440, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,.2)' }}
             onClick={e => e.stopPropagation()}>
             <div id="codigo-recuperacion-title" style={{ fontFamily: FS, fontSize: 17, fontWeight: 800, color: C.textMain }}>Código de recuperación</div>
             <p style={{ fontSize: 12.5, color: C.textMuted, marginTop: 6, lineHeight: 1.5 }}>
@@ -903,7 +903,7 @@ export function RepresentanteDashboard() {
       {modalPersonal && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,.45)', padding: 16 }}
           onClick={() => setModalPersonal(false)}>
-          <div style={{ background: '#fff', borderRadius: 20, padding: 28, width: '100%', maxWidth: 440, boxShadow: '0 24px 64px rgba(0,0,0,.2)' }}
+          <div style={{ background: '#fff', borderRadius: 20, padding: 24, width: '100%', maxWidth: 440, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,.2)' }}
             onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
               <div>
@@ -975,7 +975,7 @@ export function RepresentanteDashboard() {
           <div
             role="dialog"
             aria-modal="true"
-            style={{ background: '#fff', borderRadius: 20, overflow: 'hidden', width: '100%', maxWidth: 640, boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}
+            style={{ background: '#fff', borderRadius: 20, overflow: 'hidden', width: '100%', maxWidth: 640, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 64px rgba(0,0,0,0.5)' }}
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ position: 'relative', maxHeight: '65vh', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

@@ -150,7 +150,7 @@ export default function AdminRepresentantesPage() {
       {/* Modal de asignación */}
       {editando && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-lg bg-background p-6 shadow-xl">
+          <div className="w-full max-w-md rounded-lg bg-background p-6 shadow-xl max-h-[90vh] overflow-y-auto">
             <div className="mb-5 flex items-center justify-between">
               <div>
                 <h2 className="text-lg font-semibold">Asignar fraccionamiento</h2>

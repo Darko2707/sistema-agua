@@ -122,7 +122,7 @@ function GastoModal({ onClose, titulo, inicial, mes, anio, onGuardar }: GastoMod
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div className="bg-background rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4" onClick={e => e.stopPropagation()}>
+      <div className="bg-background rounded-xl shadow-2xl w-full max-w-md p-6 space-y-4 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
         <h2 className="text-lg font-semibold">{titulo}</h2>
         <p className="text-sm text-muted-foreground">{MESES_FULL[mes - 1]} {anio}</p>
 
@@ -630,7 +630,7 @@ export function ReporteFinanciero() {
       )}
       {gastoDetalle && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setGastoDetalle(null)}>
-          <section role="dialog" aria-modal="true" aria-labelledby="gasto-detalle-titulo" className="w-full max-w-lg space-y-4 rounded-xl bg-background p-6 shadow-2xl" onClick={event => event.stopPropagation()}>
+          <section role="dialog" aria-modal="true" aria-labelledby="gasto-detalle-titulo" className="w-full max-w-lg space-y-4 rounded-xl bg-background p-6 shadow-2xl max-h-[90vh] overflow-y-auto" onClick={event => event.stopPropagation()}>
             <div className="flex items-center justify-between"><h2 id="gasto-detalle-titulo" className="text-lg font-semibold">Detalle del gasto</h2><Button variant="outline" size="sm" onClick={() => setGastoDetalle(null)}>Cerrar</Button></div>
             <dl className="grid grid-cols-[130px_1fr] gap-3 text-sm">
               <dt className="text-muted-foreground">Concepto</dt><dd className="font-medium">{gastoDetalle.concepto}</dd>

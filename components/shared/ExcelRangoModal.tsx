@@ -69,7 +69,7 @@ export function ExcelRangoModal({
     >
       <style>{`@keyframes exr-spin{to{transform:rotate(360deg)}}`}</style>
       <div
-        style={{ background: '#fff', borderRadius: 22, padding: '26px 28px', width: '100%', maxWidth: 400, boxShadow: '0 24px 64px rgba(0,0,0,.22)' }}
+        style={{ background: '#fff', borderRadius: 22, padding: '26px 28px', width: '100%', maxWidth: 400, maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 24px 64px rgba(0,0,0,.22)' }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}

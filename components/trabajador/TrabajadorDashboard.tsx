@@ -431,7 +431,7 @@ export function TrabajadorDashboard() {
           style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(0,0,0,.55)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: 0 }}
           onClick={e => { if (e.target === e.currentTarget && !subiendoFoto) { setModalCorte(null); setFotoCorte(null); setPreviewCorte(null); } }}
         >
-          <div style={{ width: '100%', maxWidth: 460, background: '#fff', borderRadius: '20px 20px 0 0', padding: '20px 20px 32px', boxShadow: '0 -8px 40px rgba(0,0,0,.22)' }}>
+          <div style={{ width: '100%', maxWidth: 460, maxHeight: '90vh', overflowY: 'auto', background: '#fff', borderRadius: '20px 20px 0 0', padding: '20px 20px 32px', boxShadow: '0 -8px 40px rgba(0,0,0,.22)' }}>
             {/* Handle bar */}
             <div style={{ width: 40, height: 4, background: '#E4E1D5', borderRadius: 4, margin: '0 auto 18px' }} />
 
