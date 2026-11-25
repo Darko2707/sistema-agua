@@ -359,7 +359,7 @@ export const serviciosRouter = router({
     const [account] = await db.select({ responsableCargos: user.responsableCargos }).from(user).where(eq(user.id, ctx.user.id)).limit(1);
     if (!account?.responsableCargos) return [];
     const perfil = await residenteRepo.findByUserId(ctx.user.id);
-    if (!perfil) throw new TRPCError({ code: 'NOT_FOUND', message: 'Perfil no encontrado' });
+    if (!perfil) return [];
     return db.select({
       id: cargosServicios.id,
       fraccionamientoServicioId: cargosServicios.fraccionamientoServicioId,
@@ -391,7 +391,7 @@ export const serviciosRouter = router({
     if (!account?.responsableCargos) return { generados: 0, candidatos: 0 };
 
     const perfil = await residenteRepo.findByUserId(ctx.user.id);
-    if (!perfil) throw new TRPCError({ code: 'NOT_FOUND', message: 'Perfil no encontrado' });
+    if (!perfil) return { generados: 0, candidatos: 0 };
 
     const activaciones = await db.select({ id: fraccionamientoServicios.id })
       .from(fraccionamientoServicios)

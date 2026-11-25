@@ -9,6 +9,7 @@ const ROL_CONFIG: Record<string, { label: string; path: string }> = {
   representante: { label: 'Representante', path: '/representante' },
   tesorera: { label: 'Tesorero', path: '/tesorera/reportes' },
   cuadrilla_cortes: { label: 'Cuadrilla', path: '/trabajador' },
+  residente: { label: 'Residente', path: '/residente' },
 };
 
 interface Props {

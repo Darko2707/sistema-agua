@@ -477,8 +477,12 @@ export const usuariosRouter = router({
         }
         await tx.update(fraccionamientos).set({ representanteId: input.userId, updatedAt: new Date() }).where(eq(fraccionamientos.id, input.fraccionamientoId));
       });
+      const perfilExistente = await residenteRepo.findByUserId(input.userId);
       await userRepo.updateRole(input.userId, 'representante');
-      await userRepo.update(input.userId, { fraccionamientoId: input.fraccionamientoId });
+      await userRepo.update(input.userId, {
+        fraccionamientoId: input.fraccionamientoId,
+        roles: perfilExistente ? ['representante', 'residente'] : ['representante'],
+      });
       await db.insert(auditoria).values({ actorId: ctx.user.id, accion: 'fraccionamiento.representante.asignado', entidad: 'fraccionamientos', entidadId: input.fraccionamientoId, detalle: { userId: input.userId } });
       return { ok: true };
     }),

@@ -53,14 +53,15 @@ describe('Guards de navegación y aislamiento de roles en SISCo', () => {
       expect(mockRedirect).toHaveBeenCalledWith('/login');
     });
 
-    it('redirige a /admin a usuarios con rol admin que no tienen perfil de residente', async () => {
+    it('permite acceso a /residente a usuarios con rol admin que no tienen perfil de residente', async () => {
       mockRequireSession.mockResolvedValueOnce({
         user: { id: 'admin-1', role: 'admin', fraccionamientoId: null },
       });
       mockFindByUserId.mockResolvedValueOnce(null);
 
-      await expect(ResidenteLayout({ children: 'Contenido' })).rejects.toThrow('NEXT_REDIRECT: /admin');
-      expect(mockRedirect).toHaveBeenCalledWith('/admin');
+      const jsx = await ResidenteLayout({ children: 'Contenido Admin Sin Perfil' });
+      expect(mockRedirect).not.toHaveBeenCalled();
+      expect(jsx).toBeDefined();
     });
 
     it('permite acceso a /residente a usuarios admin que sí tienen perfil de residente', async () => {
@@ -80,14 +81,15 @@ describe('Guards de navegación y aislamiento de roles en SISCo', () => {
       expect(jsx).toBeDefined();
     });
 
-    it('redirige a /tesorera a personal de tesorería que no tiene perfil de residente', async () => {
+    it('permite acceso a /residente a personal de tesorería que no tiene perfil de residente', async () => {
       mockRequireSession.mockResolvedValueOnce({
         user: { id: 'tesorera-1', role: 'tesorera', fraccionamientoId: 'fracc-1' },
       });
       mockFindByUserId.mockResolvedValueOnce(null);
 
-      await expect(ResidenteLayout({ children: 'Contenido' })).rejects.toThrow('NEXT_REDIRECT: /tesorera');
-      expect(mockRedirect).toHaveBeenCalledWith('/tesorera');
+      const jsx = await ResidenteLayout({ children: 'Contenido Tesorera Sin Perfil' });
+      expect(mockRedirect).not.toHaveBeenCalled();
+      expect(jsx).toBeDefined();
     });
 
     it('permite acceso a /residente a personal de tesorería que sí tiene perfil de residente', async () => {
@@ -107,14 +109,15 @@ describe('Guards de navegación y aislamiento de roles en SISCo', () => {
       expect(jsx).toBeDefined();
     });
 
-    it('redirige a /representante a representantes que no tienen perfil de residente', async () => {
+    it('permite acceso a /residente a representantes que no tienen perfil de residente', async () => {
       mockRequireSession.mockResolvedValueOnce({
         user: { id: 'rep-1', role: 'representante', fraccionamientoId: 'fracc-1' },
       });
       mockFindByUserId.mockResolvedValueOnce(null);
 
-      await expect(ResidenteLayout({ children: 'Contenido' })).rejects.toThrow('NEXT_REDIRECT: /representante');
-      expect(mockRedirect).toHaveBeenCalledWith('/representante');
+      const jsx = await ResidenteLayout({ children: 'Contenido Rep Sin Perfil' });
+      expect(mockRedirect).not.toHaveBeenCalled();
+      expect(jsx).toBeDefined();
     });
 
     it('permite acceso a /residente a representantes que sí tienen perfil de residente', async () => {
@@ -134,14 +137,36 @@ describe('Guards de navegación y aislamiento de roles en SISCo', () => {
       expect(jsx).toBeDefined();
     });
 
-    it('redirige a /trabajador a personal operativo (cuadrilla) que no tiene perfil de residente', async () => {
+    it('permite acceso a /residente a personal operativo (cuadrilla) que no tiene perfil de residente', async () => {
       mockRequireSession.mockResolvedValueOnce({
         user: { id: 'cuadrilla-1', role: 'cuadrilla_cortes', fraccionamientoId: 'fracc-1' },
       });
       mockFindByUserId.mockResolvedValueOnce(null);
 
-      await expect(ResidenteLayout({ children: 'Contenido' })).rejects.toThrow('NEXT_REDIRECT: /trabajador');
-      expect(mockRedirect).toHaveBeenCalledWith('/trabajador');
+      const jsx = await ResidenteLayout({ children: 'Contenido Cuadrilla Sin Perfil' });
+      expect(mockRedirect).not.toHaveBeenCalled();
+      expect(jsx).toBeDefined();
+    });
+
+    it('permite acceso a /residente a usuarios multi-rol aunque no tengan perfil de residente', async () => {
+      mockRequireSession.mockResolvedValueOnce({
+        user: { id: 'dual-1', role: 'residente', roles: ['residente', 'representante'], fraccionamientoId: 'fracc-1' },
+      });
+      mockFindByUserId.mockResolvedValueOnce(null);
+
+      const jsx = await ResidenteLayout({ children: 'Contenido MultiRol Sin Perfil' });
+      expect(mockRedirect).not.toHaveBeenCalled();
+      expect(jsx).toBeDefined();
+    });
+
+    it('redirige a /acceso-no-configurado a roles desconocidos o no autorizados sin perfil', async () => {
+      mockRequireSession.mockResolvedValueOnce({
+        user: { id: 'inv-1', role: 'invitado', fraccionamientoId: 'fracc-1' },
+      });
+      mockFindByUserId.mockResolvedValueOnce(null);
+
+      await expect(ResidenteLayout({ children: 'Contenido Invitado' })).rejects.toThrow('NEXT_REDIRECT: /acceso-no-configurado');
+      expect(mockRedirect).toHaveBeenCalledWith('/acceso-no-configurado');
     });
 
     it('permite acceso a /residente a personal operativo (cuadrilla) que sí tiene perfil de residente', async () => {

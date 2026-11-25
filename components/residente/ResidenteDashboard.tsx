@@ -13,6 +13,7 @@ import { CheckCircle2, Clock, XCircle } from 'lucide-react';
 import { calcularDesglosePago } from '@/src/domain/pagos/calculator';
 import { homePathForRole } from '@/lib/role-home';
 import { isPdfComprobante, normalizeComprobanteViewUrl } from '@/lib/comprobante-file';
+import { MultiRoleSwitcher } from '@/components/shared/MultiRoleSwitcher';
 
 // ── Design tokens ──────────────────────────────────────────────────────────────
 const C = {
@@ -353,6 +354,9 @@ export function ResidenteDashboard() {
   const asignacionQ = trpcReact.usuarios.miAsignacionOperativa.useQuery(undefined, {
     enabled: !!sessionData?.user,
   });
+  const misRolesQ = trpcReact.usuarios.misRoles.useQuery(undefined, {
+    enabled: !!sessionData?.user,
+  });
   const tieneAsignacionCuadrilla = Boolean(asignacionQ.data && asignacionQ.data.length > 0);
   const sincronizarCargosMutation = trpcReact.servicios.sincronizarMisCargos.useMutation({
     onSuccess: () => { void utils.servicios.misCargos.invalidate(); },
@@ -432,11 +436,6 @@ export function ResidenteDashboard() {
 
   const roleWithoutResidentProfile = sessionData?.user?.role;
   const workerHome = homePathForRole(roleWithoutResidentProfile);
-  useEffect(() => {
-    if (historialLoading || sessionPending || historial?.perfil) return;
-    if (roleWithoutResidentProfile === 'residente' || !roleWithoutResidentProfile) return;
-    router.replace(workerHome);
-  }, [historialLoading, sessionPending, historial?.perfil, roleWithoutResidentProfile, router, workerHome]);
 
   const comprobantesPendientesList = useMemo(() => {
     const list = Array.isArray(comprobantesPendientes) ? comprobantesPendientes : [];
@@ -561,18 +560,70 @@ export function ResidenteDashboard() {
 
   if (!historial?.perfil) {
     const isWorker = roleWithoutResidentProfile && roleWithoutResidentProfile !== 'residente';
+    const roleLabel =
+      roleWithoutResidentProfile === 'representante' ? 'Representante' :
+      roleWithoutResidentProfile === 'tesorera' ? 'Tesorería' :
+      roleWithoutResidentProfile === 'cuadrilla_cortes' ? 'Cuadrilla' :
+      roleWithoutResidentProfile === 'admin' ? 'Administrador' :
+      'administrativo';
+
     return (
-      <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: FM }}>
-        <div style={{ background: '#fff', borderRadius: 26, padding: 32, maxWidth: 400, width: '100%', textAlign: 'center', boxShadow: '0 10px 28px rgba(120,90,30,.10)' }}>
-          <p style={{ fontFamily: FB, fontSize: 18, fontWeight: 700, color: C.textMain, marginBottom: 20 }}>
-            {isWorker ? 'Abriendo tu panel de trabajo…' : 'No encontramos tu perfil de residente.'}
+      <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 20, fontFamily: FM }}>
+        <div style={{ background: '#fff', borderRadius: 26, padding: '36px 28px', maxWidth: 440, width: '100%', textAlign: 'center', boxShadow: '0 10px 28px rgba(120,90,30,.10)', border: `1px solid ${C.border}` }}>
+          <div style={{ width: 64, height: 64, borderRadius: 20, background: '#F8F6F0', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 18px', border: `1px solid ${C.border}` }}>
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke={C.gold} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/>
+              <polyline points="9 22 9 12 15 12 15 22"/>
+            </svg>
+          </div>
+
+          <h2 style={{ fontFamily: FB, fontSize: 20, fontWeight: 700, color: C.textMain, marginBottom: 10 }}>
+            {isWorker ? 'Sin vivienda vinculada' : 'No encontramos tu perfil de residente'}
+          </h2>
+
+          <p style={{ fontSize: 14, color: C.textWarm, lineHeight: 1.5, marginBottom: 24 }}>
+            {isWorker
+              ? `Tu cuenta tiene rol de ${roleLabel}, pero aún no cuenta con una vivienda o departamento registrado como residente en este fraccionamiento.`
+              : 'Completa el registro de tu vivienda para consultar tu estado de cuenta, servicios y recibos.'}
           </p>
-          <button
-            onClick={() => router.replace(isWorker ? workerHome : '/registro')}
-            style={{ background: C.gold, color: '#5A3D06', border: 'none', borderRadius: 14, padding: '14px 28px', cursor: 'pointer', fontFamily: FB, fontSize: 15, fontWeight: 700 }}
-          >
-            {isWorker ? 'Ir a mi panel' : 'Completar registro'}
-          </button>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <button
+              onClick={() => router.push(isWorker ? workerHome : '/registro')}
+              style={{
+                background: C.gold,
+                color: '#5A3D06',
+                border: 'none',
+                borderRadius: 14,
+                padding: '13px 24px',
+                cursor: 'pointer',
+                fontFamily: FB,
+                fontSize: 15,
+                fontWeight: 700,
+                boxShadow: '0 4px 12px rgba(244,178,35,.25)',
+              }}
+            >
+              {isWorker ? `Volver a mi panel (${roleLabel})` : 'Completar registro'}
+            </button>
+            {isWorker && (
+              <button
+                onClick={() => router.push('/registro')}
+                style={{
+                  background: 'none',
+                  color: C.textWarm,
+                  border: `1px solid ${C.border}`,
+                  borderRadius: 14,
+                  padding: '11px 20px',
+                  cursor: 'pointer',
+                  fontFamily: FM,
+                  fontSize: 13,
+                  fontWeight: 600,
+                }}
+              >
+                Vincular una vivienda
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );
@@ -646,11 +697,13 @@ export function ResidenteDashboard() {
 
   const resultInfo = displayedPaymentResult ? PAYMENT_RESULT[displayedPaymentResult] : null;
 
+  const rolesDisponibles = misRolesQ.data?.roles ?? (sessionData?.user as { roles?: string[] } | undefined)?.roles ?? [];
+  const primaryAdminRole = rolesDisponibles.find(r => ['admin', 'representante', 'tesorera', 'cuadrilla_cortes'].includes(r)) ?? (miRol !== 'residente' ? miRol : null);
   const roleNav =
-    miRol === 'representante'   ? { label: 'Mi panel (Representante)', path: '/representante' } :
-    miRol === 'tesorera'        ? { label: 'Mi panel (Tesorería)', path: '/tesorera' } :
-    (miRol === 'cuadrilla_cortes' || tieneAsignacionCuadrilla) ? { label: 'Mi panel (Cuadrilla)', path: '/trabajador' } :
-    miRol === 'admin'           ? { label: 'Mi panel (Admin)', path: '/admin' } :
+    primaryAdminRole === 'representante' ? { label: 'Mi panel (Representante)', path: '/representante' } :
+    primaryAdminRole === 'tesorera'      ? { label: 'Mi panel (Tesorería)', path: '/tesorera' } :
+    (primaryAdminRole === 'cuadrilla_cortes' || tieneAsignacionCuadrilla) ? { label: 'Mi panel (Cuadrilla)', path: '/trabajador' } :
+    primaryAdminRole === 'admin'         ? { label: 'Mi panel (Admin)', path: '/admin' } :
     null;
 
   const historyItems = (pagados ?? [])
@@ -902,46 +955,48 @@ export function ResidenteDashboard() {
               </div>
             </div>
 
-            <div ref={menuRef} style={{ position: 'relative' }}>
-              <button
-                type="button"
-                onClick={() => setMenuOpen(v => !v)}
-                aria-expanded={menuOpen}
-                aria-haspopup="menu"
-                aria-label="Menú de cuenta"
-                style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#fff', border: `1px solid ${C.border}`, borderRadius: 30, padding: '5px 12px 5px 6px', cursor: 'pointer', boxShadow: '0 4px 14px rgba(120,90,30,.09)' }}
-              >
-                <span style={{ width: 34, height: 34, borderRadius: '50%', background: C.green, color: C.goldLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13, fontFamily: FB }}>
-                  {initials}
-                </span>
-                <span style={{ fontSize: 13.5, fontWeight: 700, color: C.textMain }}>
-                  {userName.split(' ')[0]}
-                </span>
-                <Chevron up={menuOpen} />
-              </button>
-
-              {menuOpen && (
-                <div
-                  role="menu"
-                  aria-label="Opciones de cuenta"
-                  style={{ position: 'absolute', right: 0, top: 52, width: 220, background: '#fff', borderRadius: 20, boxShadow: '0 18px 46px rgba(120,90,30,.28)', padding: 7, zIndex: 20 }}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <MultiRoleSwitcher theme="light" />
+              <div ref={menuRef} style={{ position: 'relative' }}>
+                <button
+                  type="button"
+                  onClick={() => setMenuOpen(v => !v)}
+                  aria-expanded={menuOpen}
+                  aria-haspopup="menu"
+                  aria-label="Menú de cuenta"
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#fff', border: `1px solid ${C.border}`, borderRadius: 30, padding: '5px 12px 5px 6px', cursor: 'pointer', boxShadow: '0 4px 14px rgba(120,90,30,.09)' }}
                 >
-                  <div style={{ padding: '10px 14px 9px', borderBottom: `1px solid ${C.border}`, marginBottom: 4 }}>
-                    <div style={{ fontFamily: FB, fontWeight: 700, fontSize: 15, color: C.textMain }}>{userName}</div>
-                    <div style={{ fontSize: 12, color: C.textWarm, marginTop: 2 }}>{perfil.edificio}, {perfil.departamento}</div>
-                  </div>
-                  {roleNav && (
-                    <MenuItem
-                      label={roleNav.label}
-                      icon="role"
-                      onClick={() => {
-                        setMenuOpen(false);
-                        void utils.pagos.miHistorial.invalidate();
-                        void utils.usuarios.miPerfil.invalidate();
-                        window.location.href = roleNav.path;
-                      }}
-                    />
-                  )}
+                  <span style={{ width: 34, height: 34, borderRadius: '50%', background: C.green, color: C.goldLight, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 13, fontFamily: FB }}>
+                    {initials}
+                  </span>
+                  <span style={{ fontSize: 13.5, fontWeight: 700, color: C.textMain }}>
+                    {userName.split(' ')[0]}
+                  </span>
+                  <Chevron up={menuOpen} />
+                </button>
+
+                {menuOpen && (
+                  <div
+                    role="menu"
+                    aria-label="Opciones de cuenta"
+                    style={{ position: 'absolute', right: 0, top: 52, width: 220, background: '#fff', borderRadius: 20, boxShadow: '0 18px 46px rgba(120,90,30,.28)', padding: 7, zIndex: 20 }}
+                  >
+                    <div style={{ padding: '10px 14px 9px', borderBottom: `1px solid ${C.border}`, marginBottom: 4 }}>
+                      <div style={{ fontFamily: FB, fontWeight: 700, fontSize: 15, color: C.textMain }}>{userName}</div>
+                      <div style={{ fontSize: 12, color: C.textWarm, marginTop: 2 }}>{perfil.edificio}, {perfil.departamento}</div>
+                    </div>
+                    {roleNav && (
+                      <MenuItem
+                        label={roleNav.label}
+                        icon="role"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          void utils.pagos.miHistorial.invalidate();
+                          void utils.usuarios.miPerfil.invalidate();
+                          router.push(roleNav.path);
+                        }}
+                      />
+                    )}
                   <MenuItem
                     label="Recibos"
                     icon="doc"
@@ -963,6 +1018,7 @@ export function ResidenteDashboard() {
               )}
             </div>
           </div>
+        </div>
 
           {/* Greeting */}
           <div style={{ position: 'relative', zIndex: 1, marginTop: 22 }}>

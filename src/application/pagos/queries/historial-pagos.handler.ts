@@ -21,7 +21,7 @@ export class HistorialPagosHandler {
 
     const perfil = await residenteRepo.findByUserId(query.perfilId);
     if (!perfil) {
-      return { perfil: null, fraccionamiento: null, pagos: [], corteActivo: false, esMoroso: false, mes: null, anio: null };
+      return { perfil: null, fraccionamiento: null, pagos: [], corteActivo: false, esMoroso: false, diasVencido: 0, mes: null, anio: null, desgloseVigente: null };
     }
 
     const historial = await pagoRepo.findByPerfilId(perfil.id, query.limit ?? DEFAULT_HISTORIAL_LIMIT);
