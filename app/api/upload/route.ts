@@ -232,7 +232,8 @@ export async function GET(req: Request) {
   if (ref.length > 256) return Response.json({ error: 'Referencia inválida' }, { status: 400 });
 
   // Prevención de directory traversal
-  const normalized = path.normalize(ref).replace(/^(\.\.(\/|\\|$))+/, '');
+  const cleaned = ref.replace(/^[/\\]+/, '');
+  const normalized = path.normalize(cleaned).replace(/^(\.\.(\/|\\|$))+/, '');
   if (!normalized.startsWith('uploads/') && !normalized.startsWith('uploads\\')) {
     return Response.json({ error: 'Ruta no permitida' }, { status: 400 });
   }

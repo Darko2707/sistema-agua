@@ -15,25 +15,26 @@ import { buildComprobanteViewUrl } from '@/lib/comprobante-file';
 
 const ALLOWED_UPLOAD_REFERENCE = /^uploads\/([^/]+)\/([a-f0-9-]{36})\.(pdf|jpg|jpeg|png|webp)$/i;
 
-type UploadAccessUser = { id: string; role: string; fraccionamientoId: string | null };
+type UploadAccessUser = { id: string; role: string; roles?: string[] | null; fraccionamientoId: string | null };
 
 async function canAccessTenant(viewer: UploadAccessUser, tenantId: string, ownerId: string): Promise<boolean> {
-  if (viewer.id === ownerId || viewer.role === 'admin') return true;
+  const rolesSet = new Set([viewer.role, ...(viewer.roles ?? [])]);
+  if (viewer.id === ownerId || rolesSet.has('admin')) return true;
   if (viewer.fraccionamientoId !== tenantId) return false;
 
-  if (viewer.role === 'representante') {
+  if (rolesSet.has('representante')) {
     const [tenant] = await db.select({ id: fraccionamientos.id }).from(fraccionamientos).where(and(
       eq(fraccionamientos.id, tenantId), eq(fraccionamientos.representanteId, viewer.id), eq(fraccionamientos.activo, true),
     )).limit(1);
-    return Boolean(tenant);
+    if (tenant) return true;
   }
-  if (viewer.role === 'tesorera') {
+  if (rolesSet.has('tesorera')) {
     const [tenant] = await db.select({ id: fraccionamientos.id }).from(fraccionamientos).where(and(
       eq(fraccionamientos.id, tenantId), eq(fraccionamientos.tesoreraId, viewer.id), eq(fraccionamientos.activo, true),
     )).limit(1);
-    return Boolean(tenant);
+    if (tenant) return true;
   }
-  if (viewer.role === 'cuadrilla_cortes') {
+  if (rolesSet.has('cuadrilla_cortes')) {
     const [assignment] = await db.select({ id: asignacionesFraccionamiento.id })
       .from(asignacionesFraccionamiento)
       .innerJoin(fraccionamientoServicios, eq(fraccionamientoServicios.id, asignacionesFraccionamiento.fraccionamientoServicioId))
@@ -47,7 +48,7 @@ async function canAccessTenant(viewer: UploadAccessUser, tenantId: string, owner
         eq(fraccionamientoServicios.estado, 'activo'),
         eq(servicios.clave, 'agua'),
       )).limit(1);
-    return Boolean(assignment);
+    if (assignment) return true;
   }
   return false;
 }
@@ -58,11 +59,13 @@ export async function canReadPrivateUpload(userId: string, reference: string): P
   if (!match) return false;
   const ownerId = match[1]!;
   const viewUrl = buildComprobanteViewUrl(reference);
-  const [viewer] = await db.select({ id: user.id, role: user.role, fraccionamientoId: user.fraccionamientoId })
+  const altReference = reference.startsWith('/') ? reference.slice(1) : `/${reference}`;
+  const [viewer] = await db.select({ id: user.id, role: user.role, roles: user.roles, fraccionamientoId: user.fraccionamientoId })
     .from(user).where(eq(user.id, userId)).limit(1);
   if (!viewer) return false;
+  const viewerRoles = new Set([viewer.role, ...(viewer.roles ?? [])]);
   if (viewer.id === ownerId) return true;
-  if (viewer.role === 'admin') return true;
+  if (viewerRoles.has('admin')) return true;
 
   const receipts = await db.select({
     ownerId: perfilesResidente.userId,
@@ -71,6 +74,7 @@ export async function canReadPrivateUpload(userId: string, reference: string): P
     .innerJoin(perfilesResidente, eq(perfilesResidente.id, comprobantesTransferencia.perfilId))
     .where(or(
       eq(comprobantesTransferencia.comprobanteUrl, reference),
+      eq(comprobantesTransferencia.comprobanteUrl, altReference),
       eq(comprobantesTransferencia.comprobanteUrl, viewUrl),
     ));
   for (const receipt of receipts) {
@@ -82,7 +86,11 @@ export async function canReadPrivateUpload(userId: string, reference: string): P
     tenantId: perfilesResidente.fraccionamientoId,
   }).from(bitacoraCortes)
     .innerJoin(perfilesResidente, eq(perfilesResidente.id, bitacoraCortes.perfilId))
-    .where(or(eq(bitacoraCortes.fotoUrl, reference), eq(bitacoraCortes.fotoUrl, viewUrl)));
+    .where(or(
+      eq(bitacoraCortes.fotoUrl, reference),
+      eq(bitacoraCortes.fotoUrl, altReference),
+      eq(bitacoraCortes.fotoUrl, viewUrl),
+    ));
   for (const photo of photos) {
     if (photo.ownerId === viewer.id || (photo.tenantId && await canAccessTenant(viewer, photo.tenantId, photo.ownerId ?? ''))) return true;
   }
@@ -93,6 +101,7 @@ export async function canReadPrivateUpload(userId: string, reference: string): P
   }).from(evidenciasOrdenTrabajo)
     .where(or(
       eq(evidenciasOrdenTrabajo.referenciaArchivo, reference),
+      eq(evidenciasOrdenTrabajo.referenciaArchivo, altReference),
       eq(evidenciasOrdenTrabajo.referenciaArchivo, viewUrl),
     ));
   for (const ev of orderEvidence) {

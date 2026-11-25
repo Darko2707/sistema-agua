@@ -5,6 +5,7 @@ import { TRPCError } from '@trpc/server';
 import { and, desc, eq, inArray, isNotNull } from 'drizzle-orm';
 
 import { schedulePushDispatch } from '@/lib/push-dispatcher';
+import { normalizeComprobanteViewUrl } from '@/lib/comprobante-file';
 import { ConfirmarCorteHandler } from '@/src/application/cortes/commands/confirmar-corte.handler';
 import { ConfirmarReconexionHandler } from '@/src/application/cortes/commands/confirmar-reconexion.handler';
 import { PendientesCorteHandler } from '@/src/application/cortes/queries/pendientes-corte.handler';
@@ -301,7 +302,7 @@ export const cortesRouter = router({
           return {
             id: b.id,
             tipo: tipoOrden,
-            url: `/api/upload?ref=${encodeURIComponent(ref)}`,
+            url: normalizeComprobanteViewUrl(ref),
             referencia: ref,
             fechaCaptura: b.creadoEn,
             trabajador: {
@@ -321,7 +322,7 @@ export const cortesRouter = router({
         ...ordenRows.map((o) => ({
           id: o.id,
           tipo: o.ordenTipo as 'corte' | 'reconexion',
-          url: `/api/upload?ref=${encodeURIComponent(o.referenciaArchivo)}`,
+          url: normalizeComprobanteViewUrl(o.referenciaArchivo),
           referencia: o.referenciaArchivo,
           fechaCaptura: o.creadoEn,
           trabajador: {
