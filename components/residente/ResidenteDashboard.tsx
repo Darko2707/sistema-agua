@@ -879,7 +879,13 @@ export function ResidenteDashboard() {
 
   return (
     <div style={{ minHeight: '100vh', background: C.bg, paddingBottom: 64, fontFamily: FM }}>
-      <div style={{ maxWidth: 580, margin: '0 auto' }}>
+      <style>{`
+        .res-container { max-width: 580px; margin: 0 auto; width: 100%; }
+        @media(min-width: 768px) {
+          .res-container { max-width: 840px; }
+        }
+      `}</style>
+      <div className="res-container">
 
         {/* ── Top bar ── */}
         <div style={{ background: C.header, borderBottomLeftRadius: 36, borderBottomRightRadius: 36, padding: '24px 22px 28px', position: 'relative' }}>

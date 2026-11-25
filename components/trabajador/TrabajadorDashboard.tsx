@@ -89,32 +89,34 @@ function JobCard({ job, tipo, procesando, onAction }: JobCardProps) {
   const btnBg = procesando ? '#888' : isCorte ? C.danger : C.ok;
 
   return (
-    <div style={{ background: C.card, borderRadius: 18, padding: 15, borderLeft: `3px solid ${color}`, boxShadow: '0 4px 14px rgba(20,40,30,.06)' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontFamily: FS, fontSize: 15, fontWeight: 700, color: C.textMain, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {job.usuario?.name ?? 'Sin nombre'}
+    <div style={{ background: C.card, borderRadius: 18, padding: '16px 18px', border: `1px solid ${C.cardBorder}`, borderLeftWidth: 4, borderLeftColor: color, boxShadow: '0 4px 14px rgba(20,40,30,.06)', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontFamily: FS, fontSize: 16, fontWeight: 700, color: C.textMain, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {job.usuario?.name ?? 'Sin nombre'}
+            </div>
+            <div style={{ fontSize: 12.5, color: C.textMuted, marginTop: 2, fontWeight: 600 }}>
+              Edif. {job.edificio}, Depto {job.departamento}
+            </div>
           </div>
-          <div style={{ fontSize: 12, color: C.textMuted, marginTop: 2 }}>
-            Edif. {job.edificio}, Depto {job.departamento}
-          </div>
+          <span style={{ fontSize: 11, fontWeight: 700, padding: '4px 10px', borderRadius: 20, background: badgeBg, color, whiteSpace: 'nowrap', flexShrink: 0 }}>
+            {label}
+          </span>
         </div>
-        <span style={{ fontSize: 11, fontWeight: 700, padding: '5px 10px', borderRadius: 20, background: badgeBg, color, whiteSpace: 'nowrap', flexShrink: 0 }}>
-          {label}
-        </span>
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, gap: 8 }}>
-        <span style={{ fontSize: 12, color: C.textMuted, lineHeight: 1.4 }}>{desc}</span>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 14, gap: 10, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 12, color: C.textMuted, lineHeight: 1.4, flex: 1 }}>{desc}</span>
         <button
           onClick={onAction}
           disabled={procesando}
           aria-busy={procesando}
           style={{
             background: btnBg, color: '#fff', border: 'none', borderRadius: 12,
-            padding: '8px 14px', fontSize: 12.5, fontWeight: 700, fontFamily: FM,
+            padding: '8px 16px', fontSize: 12.5, fontWeight: 700, fontFamily: FM,
             cursor: procesando ? 'not-allowed' : 'pointer', flexShrink: 0,
-            opacity: procesando ? 0.7 : 1,
+            opacity: procesando ? 0.7 : 1, transition: 'opacity .15s',
           }}
         >
           {btnLabel}
@@ -266,28 +268,42 @@ export function TrabajadorDashboard() {
   return (
     <div className="cuad-outer" style={{ minHeight: '100vh', background: C.bgOuter, display: 'flex', justifyContent: 'center', fontFamily: FM, color: C.textMain }}>
       <style>{`
+        .cuad-inner { width: 100%; max-width: 100%; padding-bottom: 32px; }
+        .cuad-header { background: ${C.bgHeader}; padding: 18px 20px 20px; }
+        .cuad-body { padding: 16px 14px 0; display: flex; flex-direction: column; gap: 12px; }
+        .cuad-jobs-container { display: flex; flex-direction: column; gap: 10px; }
         @media(min-width:680px){
-          .cuad-outer{align-items:flex-start;padding-top:48px;padding-bottom:80px}
-          .cuad-inner{border-radius:32px;overflow:hidden;box-shadow:0 24px 64px rgba(20,40,30,.18)}
+          .cuad-outer { align-items: flex-start; padding: 32px 24px 80px; }
+          .cuad-inner { max-width: 1080px !important; border-radius: 28px; overflow: hidden; box-shadow: 0 20px 60px rgba(20,40,30,.12); background: #fff; }
+          .cuad-header { padding: 26px 32px 28px !important; border-top-left-radius: 28px; border-top-right-radius: 28px; }
+          .cuad-body { padding: 26px 32px 36px !important; }
+          .cuad-jobs-container { display: grid !important; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)) !important; gap: 14px !important; }
         }
       `}</style>
-      <div className="cuad-inner" style={{ width: '100%', maxWidth: 460, paddingBottom: 32 }}>
+      <div className="cuad-inner">
 
         {/* ── Dark green header ── */}
-        <div style={{ background: C.bgHeader, padding: '18px 20px 20px' }}>
+        <div className="cuad-header">
 
           {/* Brand + avatar */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ width: 36, height: 36, borderRadius: 10, background: C.gold, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={C.bgHeader} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ width: 38, height: 38, borderRadius: 10, background: C.gold, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.bgHeader} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="M3 21h18M5 21V9l7-5 7 5v12M9 21v-6h6v6" />
                 </svg>
               </span>
-              <div style={{ fontFamily: FS, fontSize: 16, fontWeight: 700, color: '#fff', letterSpacing: '.02em' }}>Cuadrilla SISCO</div>
+              <div>
+                <div style={{ fontFamily: FS, fontSize: 17, fontWeight: 800, color: '#fff', letterSpacing: '.02em', lineHeight: 1.2 }}>
+                  Cuadrilla SISCO
+                </div>
+                <div style={{ fontSize: 11.5, color: '#9FC2AC', marginTop: 2 }}>
+                  Operación de cortes y reconexiones en campo
+                </div>
+              </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <MultiRoleSwitcher theme="dark" />
               <div ref={menuRef} style={{ position: 'relative' }}>
               <button
@@ -336,10 +352,10 @@ export function TrabajadorDashboard() {
           </div>
 
           {/* Shift label + stat cards */}
-          <div style={{ marginTop: 18, fontSize: 12, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: '#B9D6C4' }}>
+          <div style={{ marginTop: 20, fontSize: 12, fontWeight: 700, letterSpacing: '.08em', textTransform: 'uppercase', color: '#B9D6C4' }}>
             Día {hoy}
           </div>
-          <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginTop: 10 }}>
             <StatCard value={pendientesCorte.length}    label="Cortes pendientes" color="#fff" />
             <StatCard value={pendientesReconexion.length} label="Reconexiones"     color={C.gold} />
             <StatCard value={total}                     label="Total en turno"    color="#8FD19E" />
@@ -347,7 +363,7 @@ export function TrabajadorDashboard() {
         </div>
 
         {/* ── Body ── */}
-        <div style={{ padding: '16px 14px 0', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div className="cuad-body">
 
           {error && (
             <div role="alert" aria-live="assertive" style={{ background: C.dangerBg, border: '1px solid #F3BFBF', borderRadius: 14, padding: '10px 14px', fontSize: 13, color: C.danger, fontWeight: 600 }}>
@@ -402,7 +418,7 @@ export function TrabajadorDashboard() {
               )}
             </div>
           ) : (
-            <div role="list" aria-label="Lista de trabajos pendientes" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div role="list" aria-label="Lista de trabajos pendientes" className="cuad-jobs-container">
               {visibleJobs.map(({ job, tipo }) => (
                 <div key={`${tipo}-${job.id}`} role="listitem">
                   <JobCard
@@ -416,7 +432,7 @@ export function TrabajadorDashboard() {
             </div>
           )}
 
-          <div style={{ textAlign: 'center', fontSize: 11, color: '#A6A399', marginTop: 6, lineHeight: 1.5, paddingBottom: 4 }}>
+          <div style={{ textAlign: 'center', fontSize: 11, color: '#A6A399', marginTop: 10, lineHeight: 1.5, paddingBottom: 4 }}>
             SISCO · Panel de Cuadrilla
           </div>
         </div>
