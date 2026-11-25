@@ -319,24 +319,24 @@ export function TrabajadorDashboard() {
         <div className="cuad-header">
 
           {/* Brand + avatar */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
               <span style={{ width: 38, height: 38, borderRadius: 10, background: C.gold, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke={C.bgHeader} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                   <path d="M3 21h18M5 21V9l7-5 7 5v12M9 21v-6h6v6" />
                 </svg>
               </span>
-              <div>
+              <div style={{ minWidth: 0 }}>
                 <div style={{ fontFamily: FS, fontSize: 17, fontWeight: 800, color: '#fff', letterSpacing: '.02em', lineHeight: 1.2 }}>
                   Cuadrilla SISCO
                 </div>
-                <div style={{ fontSize: 11.5, color: '#9FC2AC', marginTop: 2 }}>
+                <div style={{ fontSize: 11.5, color: '#9FC2AC', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   Operación de cortes y reconexiones en campo
                 </div>
               </div>
             </div>
 
-            <div ref={menuRef} style={{ position: 'relative' }}>
+            <div ref={menuRef} style={{ position: 'relative', flexShrink: 0 }}>
               <button
                 onClick={() => setMenuOpen(v => !v)}
                 aria-expanded={menuOpen}
