@@ -416,10 +416,20 @@ describe('Reportes de Tesorería — Exportación Excel de Todos los Servicios',
     const resSinSesion = await getReporteFinanciero(new Request('https://app.example/api/reportes/financiero'));
     expect(resSinSesion.status).toBe(401);
 
-    // Caso 2: Rol residente
-    mocks.findUser.mockResolvedValueOnce({ id: 'res-1', role: 'residente', fraccionamientoId: dummyFraccionamiento.id, deletedAt: null });
+    // Caso 2: Rol residente sin rol administrativo
+    mocks.findUser.mockResolvedValueOnce({ id: 'res-1', role: 'residente', roles: ['residente'], fraccionamientoId: dummyFraccionamiento.id, deletedAt: null });
     const resRolInvalido = await getReporteFinanciero(new Request('https://app.example/api/reportes/financiero'));
     expect(resRolInvalido.status).toBe(403);
+
+    // Caso 3: Representante autorizado de fraccionamiento puede exportar
+    mocks.findUser.mockResolvedValueOnce({ id: 'rep-1', role: 'representante', roles: ['representante'], fraccionamientoId: dummyFraccionamiento.id, deletedAt: null });
+    const resRep = await getReporteFinanciero(new Request('https://app.example/api/reportes/financiero?mes=10&anio=2026'));
+    expect(resRep.status).toBe(200);
+
+    // Caso 4: Admin puede exportar
+    mocks.findUser.mockResolvedValueOnce({ id: 'adm-1', role: 'admin', roles: ['admin'], fraccionamientoId: dummyFraccionamiento.id, deletedAt: null });
+    const resAdm = await getReporteFinanciero(new Request('https://app.example/api/reportes/financiero?mes=10&anio=2026'));
+    expect(resAdm.status).toBe(200);
   });
 
   // ─── 8. Los servicios sin movimientos no generan pagos ficticios ───────────

@@ -204,9 +204,24 @@ function mapearEstadoServicios(
   );
 }
 
-async function resolverFraccionamiento(userId: string, fraccionamientoId: string) {
+async function resolverFraccionamiento(user: { id: string; role: string; roles?: string[] | null }, fraccionamientoId: string) {
+  const rolesSet = new Set([user.role, ...(user.roles ?? [])]);
+  if (rolesSet.has('admin')) {
+    const fracc = await db.query.fraccionamientos.findFirst({
+      where: (f, { eq, and }) => and(eq(f.id, fraccionamientoId), eq(f.activo, true)),
+    });
+    return fracc ?? null;
+  }
+
   const fraccionamiento = await db.query.fraccionamientos.findFirst({
-    where: (f, { eq, and }) => and(eq(f.id, fraccionamientoId), eq(f.tesoreraId, userId), eq(f.activo, true)),
+    where: (f, { eq, and, or }) => and(
+      eq(f.id, fraccionamientoId),
+      eq(f.activo, true),
+      or(
+        eq(f.tesoreraId, user.id),
+        eq(f.representanteId, user.id),
+      ),
+    ),
   });
   return fraccionamiento ?? null;
 }
@@ -218,16 +233,21 @@ export async function GET(req: Request) {
   const dbUser = await db.query.user.findFirst({
     where: (u) => and(eq(u.id, session.user.id), isNull(u.deletedAt)),
   });
-  if (dbUser?.role !== 'tesorera') return new Response('Prohibido', { status: 403 });
-  if (!dbUser.fraccionamientoId) return new Response('Cuenta sin fraccionamiento', { status: 403 });
+  if (!dbUser) return new Response('No autorizado', { status: 401 });
+
+  const userRoles = new Set([dbUser.role, ...(dbUser.roles ?? [])]);
+  const isAuthorizedRole = userRoles.has('tesorera') || userRoles.has('representante') || userRoles.has('admin');
+  if (!isAuthorizedRole) return new Response('Prohibido', { status: 403 });
+  if (!dbUser.fraccionamientoId && !userRoles.has('admin')) return new Response('Cuenta sin fraccionamiento', { status: 403 });
 
   const exportGuard = await guardReportExport(session.user.id);
   if (!exportGuard.allowed) return exportGuard.response;
 
   try {
-
-  const fraccionamiento = await resolverFraccionamiento(session.user.id, dbUser.fraccionamientoId);
-  if (!fraccionamiento) return new Response('Sin fraccionamiento activo asignado', { status: 404 });
+    const fraccionamientoId = dbUser.fraccionamientoId;
+    if (!fraccionamientoId) return new Response('Sin fraccionamiento asignado', { status: 404 });
+    const fraccionamiento = await resolverFraccionamiento(dbUser, fraccionamientoId);
+    if (!fraccionamiento) return new Response('Sin fraccionamiento activo asignado', { status: 404 });
 
   const url      = new URL(req.url);
   const mesDesdeRaw  = url.searchParams.get('mesDesde');
