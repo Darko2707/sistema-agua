@@ -554,6 +554,20 @@ export function ResidenteDashboard() {
     return disponibles;
   }, [mesActual, anioActual, pagadosKeys, mesesEnRevision]);
 
+  const rolesDisponibles = useMemo(
+    () => misRolesQ.data?.roles ?? (sessionData?.user as { roles?: string[] } | undefined)?.roles ?? [],
+    [misRolesQ.data?.roles, sessionData?.user],
+  );
+  const otrosRolesNav = useMemo(() => {
+    const items: Array<{ label: string; path: string }> = [];
+    const rolesSet = new Set(rolesDisponibles);
+    if (rolesSet.has('representante')) items.push({ label: 'Panel Representante', path: '/representante' });
+    if (rolesSet.has('tesorera')) items.push({ label: 'Panel Tesorería', path: '/tesorera/reportes' });
+    if (rolesSet.has('cuadrilla_cortes') || tieneAsignacionCuadrilla) items.push({ label: 'Panel Cuadrilla', path: '/trabajador' });
+    if (rolesSet.has('admin')) items.push({ label: 'Panel Administrador', path: '/admin' });
+    return items;
+  }, [rolesDisponibles, tieneAsignacionCuadrilla]);
+
   const cargando = historialLoading || sessionPending;
   if (cargando) return <ResidenteDashboardSkeleton />;
 
@@ -695,17 +709,6 @@ export function ResidenteDashboard() {
   const fechaCorteStr = corteActivo?.fechaCorte ? formatFecha(corteActivo.fechaCorte) : null;
 
   const resultInfo = displayedPaymentResult ? PAYMENT_RESULT[displayedPaymentResult] : null;
-
-  const rolesDisponibles = misRolesQ.data?.roles ?? (sessionData?.user as { roles?: string[] } | undefined)?.roles ?? [];
-  const otrosRolesNav = useMemo(() => {
-    const items: Array<{ label: string; path: string }> = [];
-    const rolesSet = new Set(rolesDisponibles);
-    if (rolesSet.has('representante')) items.push({ label: 'Panel Representante', path: '/representante' });
-    if (rolesSet.has('tesorera')) items.push({ label: 'Panel Tesorería', path: '/tesorera/reportes' });
-    if (rolesSet.has('cuadrilla_cortes') || tieneAsignacionCuadrilla) items.push({ label: 'Panel Cuadrilla', path: '/trabajador' });
-    if (rolesSet.has('admin')) items.push({ label: 'Panel Administrador', path: '/admin' });
-    return items;
-  }, [rolesDisponibles, tieneAsignacionCuadrilla]);
 
   const historyItems = (pagados ?? [])
     .filter(p => p && p.estado === 'pagado')
