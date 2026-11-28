@@ -1,4 +1,4 @@
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull, or } from 'drizzle-orm';
 import { db } from '@/db';
 import { notasOperativas, user } from '@/db/schema';
 import type {
@@ -8,13 +8,24 @@ import type {
 } from '@/src/application/ports/notas-operativas.repository';
 
 export class DrizzleNotasOperativasRepository implements NotasOperativasRepository {
-  async listarPorFraccionamiento(fraccionamientoId: string): Promise<NotaOperativaData[]> {
+  async listarPorFraccionamiento(fraccionamientoId: string, rolConsulta?: string): Promise<NotaOperativaData[]> {
+    const whereClause = rolConsulta
+      ? and(
+          eq(notasOperativas.fraccionamientoId, fraccionamientoId),
+          or(
+            isNull(notasOperativas.rolDestino),
+            eq(notasOperativas.rolDestino, rolConsulta),
+          ),
+        )
+      : eq(notasOperativas.fraccionamientoId, fraccionamientoId);
+
     const rows = await db
       .select({
         id: notasOperativas.id,
         fraccionamientoId: notasOperativas.fraccionamientoId,
         autorId: notasOperativas.autorId,
         rolAutor: notasOperativas.rolAutor,
+        rolDestino: notasOperativas.rolDestino,
         contenido: notasOperativas.contenido,
         createdAt: notasOperativas.createdAt,
         autorNombre: user.name,
@@ -22,7 +33,7 @@ export class DrizzleNotasOperativasRepository implements NotasOperativasReposito
       })
       .from(notasOperativas)
       .innerJoin(user, eq(user.id, notasOperativas.autorId))
-      .where(eq(notasOperativas.fraccionamientoId, fraccionamientoId))
+      .where(whereClause)
       .orderBy(desc(notasOperativas.createdAt));
 
     return rows;
@@ -35,6 +46,7 @@ export class DrizzleNotasOperativasRepository implements NotasOperativasReposito
         fraccionamientoId: input.fraccionamientoId,
         autorId: input.autorId,
         rolAutor: input.rolAutor,
+        rolDestino: input.rolDestino,
         contenido: input.contenido,
       })
       .returning();

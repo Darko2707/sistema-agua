@@ -210,7 +210,7 @@ export function AdminDashboard() {
           />
         )}
         {tab === 'operacion' && <OperacionTab />}
-        {tab === 'notas' && <NotasOperativasPanel />}
+        {tab === 'notas' && <NotasOperativasPanel panelRol="admin" />}
       </div>
     </div>
   );

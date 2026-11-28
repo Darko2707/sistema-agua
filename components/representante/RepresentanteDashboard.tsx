@@ -837,6 +837,7 @@ export function RepresentanteDashboard() {
         {tab === 'notas' && (
           <NotasOperativasPanel
             fraccionamientoId={fraccionamiento?.id}
+            panelRol="representante"
           />
         )}
       </div>

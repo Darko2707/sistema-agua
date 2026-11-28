@@ -410,7 +410,7 @@ export function TrabajadorDashboard() {
 
           {mostrarNotas && (
             <div style={{ marginTop: 10 }}>
-              <NotasOperativasPanel />
+              <NotasOperativasPanel panelRol="cuadrilla_cortes" />
             </div>
           )}
 

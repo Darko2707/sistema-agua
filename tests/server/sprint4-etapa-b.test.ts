@@ -361,7 +361,7 @@ describe('Sprint 4 - Etapa B: Backend, Seguridad y Lógica de Negocio', () => {
       await expect(caller.listar()).rejects.toThrow(TRPCError);
     });
 
-    it('permite a representante crear nota operativa registrando autorId y rolAutor', async () => {
+    it('permite a representante crear nota operativa solo de rol por defecto registrando rolDestino', async () => {
       const caller = notasOperativasRouter.createCaller(buildContext({
         id: USER_REP_A,
         role: 'representante',
@@ -373,6 +373,7 @@ describe('Sprint 4 - Etapa B: Backend, Seguridad y Lógica de Negocio', () => {
         fraccionamientoId: FRACC_A,
         autorId: USER_REP_A,
         rolAutor: 'Representante',
+        rolDestino: 'representante',
         contenido: 'Mantenimiento preventivo en cisterna el próximo jueves.',
         createdAt: new Date(),
       };
@@ -388,8 +389,59 @@ describe('Sprint 4 - Etapa B: Backend, Seguridad y Lógica de Negocio', () => {
         fraccionamientoId: FRACC_A,
         autorId: USER_REP_A,
         rolAutor: 'Representante',
+        rolDestino: 'representante',
         contenido: 'Mantenimiento preventivo en cisterna el próximo jueves.',
       });
+    });
+
+    it('permite crear nota global (rolDestino: null) desde cualquier rol operativo', async () => {
+      const caller = notasOperativasRouter.createCaller(buildContext({
+        id: 'user-cuadrilla-1',
+        role: 'cuadrilla_cortes',
+        fraccionamientoId: FRACC_A,
+      }));
+
+      const mockNotaGlobal = {
+        id: 'nota-global-1',
+        fraccionamientoId: FRACC_A,
+        autorId: 'user-cuadrilla-1',
+        rolAutor: 'Cuadrilla',
+        rolDestino: null,
+        contenido: 'Fuga general en válvula principal, corte temporal.',
+        createdAt: new Date(),
+      };
+
+      mocks.notasOperativasCrear.mockResolvedValue(mockNotaGlobal);
+
+      const res = await caller.crear({
+        contenido: 'Fuga general en válvula principal, corte temporal.',
+        alcance: 'global',
+      });
+
+      expect(res).toEqual(mockNotaGlobal);
+      expect(mocks.notasOperativasCrear).toHaveBeenCalledWith({
+        fraccionamientoId: FRACC_A,
+        autorId: 'user-cuadrilla-1',
+        rolAutor: 'Cuadrilla',
+        rolDestino: null,
+        contenido: 'Fuga general en válvula principal, corte temporal.',
+      });
+    });
+
+    it('filtra las notas listadas según el rol del usuario o panelRol autorizado', async () => {
+      const caller = notasOperativasRouter.createCaller(buildContext({
+        id: 'user-multi-1',
+        role: 'representante',
+        roles: ['representante', 'tesorera'],
+        fraccionamientoId: FRACC_A,
+      }));
+
+      mocks.notasOperativasListar.mockResolvedValue([]);
+
+      await caller.listar({ panelRol: 'tesorera' });
+      expect(mocks.notasOperativasListar).toHaveBeenCalledWith(FRACC_A, 'tesorera');
+
+      await expect(caller.listar({ panelRol: 'cuadrilla_cortes' })).rejects.toThrow(TRPCError);
     });
 
     it('bloquea a representante que intenta crear o listar nota en otro fraccionamiento', async () => {

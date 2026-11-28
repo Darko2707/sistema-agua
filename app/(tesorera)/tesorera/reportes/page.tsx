@@ -188,7 +188,7 @@ export default function TesoreraReportesPage() {
         {tab === 'pagos'      && <PagosTesorera />}
         {tab === 'residentes' && <ReporteResidentes />}
         {tab === 'financiero' && <ReporteFinanciero />}
-        {tab === 'notas'      && <NotasOperativasPanel fraccionamientoId={fraccionamientoQuery.data?.id} />}
+        {tab === 'notas'      && <NotasOperativasPanel fraccionamientoId={fraccionamientoQuery.data?.id} panelRol="tesorera" />}
       </div>
     </div>
   );

@@ -138,6 +138,7 @@ describe('SCRUM-43: Integridad de Esquema, Restricciones y Migraciones', () => {
     expect(notasCols.fraccionamientoId).toBeDefined();
     expect(notasCols.autorId).toBeDefined();
     expect(notasCols.rolAutor).toBeDefined();
+    expect(notasCols.rolDestino).toBeDefined();
     expect(notasCols.contenido).toBeDefined();
     expect(notasCols.createdAt).toBeDefined();
 
@@ -150,6 +151,9 @@ describe('SCRUM-43: Integridad de Esquema, Restricciones y Migraciones', () => {
     expect(sql0062).toContain('dueno_perfil_id');
     expect(sql0062).toContain('notas_operativas');
     expect(sql0062).toContain('insumos');
+
+    const sql0063 = readFileSync(resolve(process.cwd(), 'db/migrations/0063_notas_operativas_rol_destino.sql'), 'utf8');
+    expect(sql0063).toContain('rol_destino');
   });
 });
 

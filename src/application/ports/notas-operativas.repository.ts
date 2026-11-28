@@ -3,6 +3,7 @@ export type NotaOperativaData = {
   fraccionamientoId: string;
   autorId: string;
   rolAutor: string;
+  rolDestino: string | null;
   contenido: string;
   createdAt: Date;
   autorNombre?: string;
@@ -13,10 +14,11 @@ export type CrearNotaOperativaInput = {
   fraccionamientoId: string;
   autorId: string;
   rolAutor: string;
+  rolDestino: string | null;
   contenido: string;
 };
 
 export interface NotasOperativasRepository {
-  listarPorFraccionamiento(fraccionamientoId: string): Promise<NotaOperativaData[]>;
+  listarPorFraccionamiento(fraccionamientoId: string, rolConsulta?: string): Promise<NotaOperativaData[]>;
   crear(input: CrearNotaOperativaInput): Promise<NotaOperativaData>;
 }

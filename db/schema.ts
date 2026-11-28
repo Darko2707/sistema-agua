@@ -760,10 +760,12 @@ export const notasOperativas = pgTable('notas_operativas', {
   fraccionamientoId: uuid('fraccionamiento_id').notNull().references(() => fraccionamientos.id, { onDelete: 'cascade' }),
   autorId:           text('autor_id').notNull().references(() => user.id, { onDelete: 'restrict' }),
   rolAutor:          text('rol_autor').notNull(),
+  rolDestino:        text('rol_destino'),
   contenido:         text('contenido').notNull(),
   createdAt:         timestamp('created_at').notNull().defaultNow(),
 }, (t) => [
   index('idx_notas_operativas_fraccionamiento').on(t.fraccionamientoId, t.createdAt),
+  index('idx_notas_operativas_fracc_destino').on(t.fraccionamientoId, t.rolDestino, t.createdAt),
 ]);
 
 // ─────────────────────────────────────────────
